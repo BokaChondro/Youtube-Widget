@@ -1,7 +1,6 @@
 // functions/api/yt-comments.js
-// Returns latest comments. Uses channel-wide commentThreads first,
-// then falls back to recent videos if needed.
-// Output is always "clean" (no _scope/_mode), unless debug=1 adds debug info.
+// Published comments only (safe for Notion)
+// Channel-wide first, then per-video fallback if channel-wide returns empty.
 
 async function getAccessToken(env) {
   const body = new URLSearchParams({
@@ -46,7 +45,7 @@ function clean(items, limit) {
   return cleaned.slice(0, limit);
 }
 
-async function fetchThreads({ token, channelId, videoId, moderationStatus, maxResults }) {
+async function fetchThreads({ token, channelId, videoId, maxResults }) {
   const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
   url.searchParams.set("part", "snippet");
   url.searchParams.set("order", "time");
@@ -57,10 +56,7 @@ async function fetchThreads({ token, channelId, videoId, moderationStatus, maxRe
   if (videoId) url.searchParams.set("videoId", videoId);
   else url.searchParams.set("allThreadsRelatedToChannelId", channelId);
 
-  // "published" is default; only send moderationStatus when not published
-  if (moderationStatus && moderationStatus !== "published") {
-    url.searchParams.set("moderationStatus", moderationStatus);
-  }
+  // moderationStatus omitted => defaults to "published"
 
   const r = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
@@ -73,7 +69,7 @@ async function fetchThreads({ token, channelId, videoId, moderationStatus, maxRe
     data = { raw: await r.text() };
   }
 
-  return { ok: r.ok, status: r.status, data, url: url.toString() };
+  return { ok: r.ok, status: r.status, data };
 }
 
 export async function onRequest(context) {
@@ -84,29 +80,37 @@ export async function onRequest(context) {
   try {
     const token = await getAccessToken(context.env);
 
-    // Get channelId from your own endpoint
+    // get channelId from your own endpoint
     const base = new URL(context.request.url);
     base.pathname = "/api/yt-channel";
     base.search = "";
     const ch = await (await fetch(base.toString())).json();
 
+    if (ch?.error) {
+      return Response.json(
+        { items: [], mode: "channel-error", ...(debug ? { debug: { ch } } : {}) },
+        { status: 200 }
+      );
+    }
+
     const channelId = ch.channelId;
     if (!channelId) {
-      return Response.json({ items: [], mode: "no-channel", ...(debug ? { debug: { ch } } : {}) });
+      return Response.json(
+        { items: [], mode: "no-channelId", ...(debug ? { debug: { ch } } : {}) },
+        { status: 200 }
+      );
     }
 
     const dbg = { channelId, tried: [], videosChecked: 0 };
     const collected = [];
 
-    // 1) Channel-wide: published + heldForReview + likelySpam
-    for (const m of ["published", "heldForReview", "likelySpam"]) {
-      const res = await fetchThreads({ token, channelId, moderationStatus: m, maxResults: limit });
-      dbg.tried.push({ scope: "channel", moderationStatus: m, ok: res.ok, status: res.status });
+    // 1) Channel-wide published
+    const res1 = await fetchThreads({ token, channelId, maxResults: limit });
+    dbg.tried.push({ scope: "channel", ok: res1.ok, status: res1.status });
 
-      if (res.ok) {
-        const items = (res.data.items || []).map(toItem).filter((x) => x.text);
-        collected.push(...items);
-      }
+    if (res1.ok) {
+      const items = (res1.data.items || []).map(toItem).filter((x) => x.text);
+      collected.push(...items);
     }
 
     if (collected.length) {
@@ -117,7 +121,7 @@ export async function onRequest(context) {
       });
     }
 
-    // 2) Fallback: get latest videos, then fetch latest comments per video
+    // 2) Fallback: latest 10 videos → pull latest published comments per video
     const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
     searchUrl.searchParams.set("part", "id");
     searchUrl.searchParams.set("channelId", channelId);
@@ -125,35 +129,23 @@ export async function onRequest(context) {
     searchUrl.searchParams.set("type", "video");
     searchUrl.searchParams.set("maxResults", "10");
 
-    const sr = await fetch(searchUrl.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    const sr = await fetch(searchUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const sd = await sr.json();
     const videoIds = (sd.items || []).map((x) => x.id?.videoId).filter(Boolean);
+
     dbg.videosChecked = videoIds.length;
 
     for (const vid of videoIds) {
-      for (const m of ["published", "heldForReview"]) {
-        const res = await fetchThreads({
-          token,
-          channelId,
-          videoId: vid,
-          moderationStatus: m,
-          maxResults: 10,
-        });
+      const res = await fetchThreads({ token, channelId, videoId: vid, maxResults: 10 });
+      const reason = res.data?.error?.errors?.[0]?.reason;
 
-        const reason = res.data?.error?.errors?.[0]?.reason;
-        dbg.tried.push({
-          scope: "video",
-          videoId: vid,
-          moderationStatus: m,
-          ok: res.ok,
-          status: res.status,
-          reason,
-        });
+      dbg.tried.push({ scope: "video", videoId: vid, ok: res.ok, status: res.status, reason });
 
-        if (res.ok) {
-          const items = (res.data.items || []).map(toItem).filter((x) => x.text);
-          collected.push(...items);
-        }
+      if (res.ok) {
+        const items = (res.data.items || []).map(toItem).filter((x) => x.text);
+        collected.push(...items);
       }
     }
 
