@@ -8,8 +8,13 @@ const ranges = [
 
 let currentRange = "28d";
 
-function fmt(n) { return Intl.NumberFormat().format(Number(n || 0)); }
-function nowStamp() { return new Date().toLocaleString(); }
+function fmt(n) {
+  return Intl.NumberFormat().format(Number(n || 0));
+}
+
+function nowStamp() {
+  return new Date().toLocaleString();
+}
 
 async function fetchJSON(url) {
   const r = await fetch(url, { cache: "no-store" });
@@ -17,7 +22,7 @@ async function fetchJSON(url) {
 }
 
 function setActive(range) {
-  document.querySelectorAll(".pill").forEach(p =>
+  document.querySelectorAll(".pill").forEach((p) =>
     p.classList.toggle("active", p.dataset.range === range)
   );
 }
@@ -25,7 +30,7 @@ function setActive(range) {
 function renderPills() {
   const el = document.getElementById("rangePills");
   el.innerHTML = "";
-  ranges.forEach(r => {
+  ranges.forEach((r) => {
     const b = document.createElement("div");
     b.className = "pill";
     b.textContent = r.label;
@@ -66,7 +71,7 @@ function renderTop10(items) {
   `;
   el.appendChild(header);
 
-  items.forEach(it => {
+  items.forEach((it) => {
     const row = document.createElement("div");
     row.className = "rowItem";
     row.innerHTML = `
@@ -83,7 +88,7 @@ function renderTop10(items) {
 function renderTop48h(items) {
   const el = document.getElementById("top48h");
   el.innerHTML = "";
-  items.forEach(it => {
+  items.forEach((it) => {
     const row = document.createElement("div");
     row.className = "listItem";
     row.innerHTML = `
@@ -94,15 +99,54 @@ function renderTop48h(items) {
   });
 }
 
+// --- COMMENTS (Improved UI) ---
+function timeAgo(iso) {
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function escapeHtml(s) {
+  return (s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 function renderComments(items) {
   const el = document.getElementById("comments");
   el.innerHTML = "";
-  items.forEach(it => {
+
+  if (!items || items.length === 0) {
+    el.innerHTML = `<div class="muted">No recent comments found.</div>`;
+    return;
+  }
+
+  items.forEach((it) => {
     const row = document.createElement("div");
+    row.className = "commentCard";
+
+    const safeText = escapeHtml(it.text || "");
+    const videoUrl = it.videoId ? `https://www.youtube.com/watch?v=${it.videoId}` : "";
+
     row.innerHTML = `
-      <div class="author">${it.author || "Unknown"} • ${new Date(it.publishedAt).toLocaleString()}</div>
-      <div class="commentText">${(it.text || "").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</div>
+      <div class="commentTop">
+        <div class="commentAuthor">${escapeHtml(it.author || "Unknown")}</div>
+        <div class="commentMeta">${it.publishedAt ? timeAgo(it.publishedAt) : ""}</div>
+      </div>
+      <div class="commentText">${safeText}</div>
+      ${
+        videoUrl
+          ? `<a class="commentLink" href="${videoUrl}" target="_blank" rel="noopener">View video →</a>`
+          : ""
+      }
     `;
+
     el.appendChild(row);
   });
 }
