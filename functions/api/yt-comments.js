@@ -17,93 +17,63 @@ async function getAccessToken(env) {
   return data.access_token;
 }
 
-function toCommentItem(it) {
-  const s = it?.snippet?.topLevelComment?.snippet;
+function toItem(thread) {
+  const s = thread?.snippet?.topLevelComment?.snippet;
   return {
     author: s?.authorDisplayName,
     text: s?.textDisplay,
     publishedAt: s?.publishedAt,
     videoId: s?.videoId,
+    moderationStatus: s?.moderationStatus, // may appear for held comments
   };
 }
 
+async function fetchThreads({ token, channelId, videoId, moderationStatus, maxResults }) {
+  const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("order", "time");
+  url.searchParams.set("maxResults", String(maxResults));
+  url.searchParams.set("textFormat", "plainText");
+
+  // exactly one filter:
+  if (videoId) url.searchParams.set("videoId", videoId);
+  else url.searchParams.set("allThreadsRelatedToChannelId", channelId);
+
+  // published / heldForReview / likelySpam (default is published) :contentReference[oaicite:2]{index=2}
+  if (moderationStatus) url.searchParams.set("moderationStatus", moderationStatus);
+
+  const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  let data = null;
+  try { data = await r.json(); } catch { data = { raw: await r.text() }; }
+
+  return { ok: r.ok, status: r.status, data, url: url.toString() };
+}
+
 export async function onRequest(context) {
+  const u = new URL(context.request.url);
+  const limit = Math.min(Number(u.searchParams.get("limit") || 8), 20);
+  const debug = u.searchParams.get("debug") === "1";
+
   try {
     const token = await getAccessToken(context.env);
-    const u = new URL(context.request.url);
-    const limit = Math.min(Number(u.searchParams.get("limit") || 8), 20);
 
-    // 1) Get channelId
+    // get channelId
     const base = new URL(context.request.url);
     base.pathname = "/api/yt-channel";
     base.search = "";
     const ch = await (await fetch(base.toString())).json();
-    if (!ch.channelId) return Response.json({ items: [], debug: "No channelId" });
+    const channelId = ch.channelId;
 
-    // 2) Try channel-wide comments first (default moderationStatus is 'published')
-    // Docs: commentThreads.list supports allThreadsRelatedToChannelId + order=time :contentReference[oaicite:2]{index=2}
-    const url1 = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
-    url1.searchParams.set("part", "snippet");
-    url1.searchParams.set("allThreadsRelatedToChannelId", ch.channelId);
-    url1.searchParams.set("order", "time");
-    url1.searchParams.set("maxResults", String(limit));
-    url1.searchParams.set("textFormat", "plainText");
+    const dbg = { channelId, tried: [], videosChecked: 0 };
 
-    const r1 = await fetch(url1.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data1 = await r1.json();
-
-    const items1 = (data1.items || []).map(toCommentItem).filter(x => x.text);
-    if (items1.length > 0) {
-      return Response.json({ items: items1, mode: "channel" });
-    }
-
-    // 3) Fallback: fetch latest videos, then pull latest comments per video
-    // This is more reliable when channel-wide returns empty. :contentReference[oaicite:3]{index=3}
-    const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
-    searchUrl.searchParams.set("part", "id");
-    searchUrl.searchParams.set("channelId", ch.channelId);
-    searchUrl.searchParams.set("order", "date");
-    searchUrl.searchParams.set("type", "video");
-    searchUrl.searchParams.set("maxResults", "10");
-
-    const sr = await fetch(searchUrl.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const sd = await sr.json();
-    const videoIds = (sd.items || [])
-      .map(x => x.id?.videoId)
-      .filter(Boolean);
-
+    // 1) Channel-wide: published + heldForReview + likelySpam
+    const moderationModes = ["published", "heldForReview", "likelySpam"];
     let collected = [];
 
-    for (const vid of videoIds) {
-      // grab a few latest threads per video
-      const ct = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
-      ct.searchParams.set("part", "snippet");
-      ct.searchParams.set("videoId", vid);
-      ct.searchParams.set("order", "time");
-      ct.searchParams.set("maxResults", "5");
-      ct.searchParams.set("textFormat", "plainText");
+    for (const m of moderationModes) {
+      const res = await fetchThreads({ token, channelId, moderationStatus: m, maxResults: limit });
+      dbg.tried.push({ scope: "channel", moderationStatus: m, ok: res.ok, status: res.status });
 
-      const rr = await fetch(ct.toString(), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      // skip videos with comments disabled
-      if (!rr.ok) continue;
-
-      const dd = await rr.json();
-      const these = (dd.items || []).map(toCommentItem).filter(x => x.text);
-      collected.push(...these);
-    }
-
-    collected.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-    collected = collected.slice(0, limit);
-
-    return Response.json({ items: collected, mode: "per-video-fallback" });
-  } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
-  }
-}
+      if (res.ok) {
+        const items = (res.data.items || []).map(toItem).filter(x => x.text);
+        collected.push(...items.map
