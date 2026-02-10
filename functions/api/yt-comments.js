@@ -1,3 +1,8 @@
+// functions/api/yt-comments.js
+// Returns latest comments. Uses channel-wide commentThreads first,
+// then falls back to recent videos if needed.
+// Output is always "clean" (no _scope/_mode), unless debug=1 adds debug info.
+
 async function getAccessToken(env) {
   const body = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
@@ -20,12 +25,25 @@ async function getAccessToken(env) {
 function toItem(thread) {
   const s = thread?.snippet?.topLevelComment?.snippet;
   return {
-    author: s?.authorDisplayName,
-    text: s?.textDisplay,
-    publishedAt: s?.publishedAt,
-    videoId: s?.videoId,
-    moderationStatus: s?.moderationStatus, // may appear for held comments
+    author: s?.authorDisplayName || "Unknown",
+    text: s?.textDisplay || "",
+    publishedAt: s?.publishedAt || null,
+    videoId: s?.videoId || null,
   };
+}
+
+function clean(items, limit) {
+  const cleaned = (items || [])
+    .map((x) => ({
+      author: x.author,
+      text: x.text,
+      publishedAt: x.publishedAt,
+      videoId: x.videoId,
+    }))
+    .filter((x) => x.text && x.publishedAt);
+
+  cleaned.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+  return cleaned.slice(0, limit);
 }
 
 async function fetchThreads({ token, channelId, videoId, moderationStatus, maxResults }) {
@@ -39,15 +57,21 @@ async function fetchThreads({ token, channelId, videoId, moderationStatus, maxRe
   if (videoId) url.searchParams.set("videoId", videoId);
   else url.searchParams.set("allThreadsRelatedToChannelId", channelId);
 
-  // published / heldForReview / likelySpam (default is published) :contentReference[oaicite:2]{index=2}
+  // "published" is default; only send moderationStatus when not published
   if (moderationStatus && moderationStatus !== "published") {
-  url.searchParams.set("moderationStatus", moderationStatus);
-}
+    url.searchParams.set("moderationStatus", moderationStatus);
+  }
 
+  const r = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
-  const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
   let data = null;
-  try { data = await r.json(); } catch { data = { raw: await r.text() }; }
+  try {
+    data = await r.json();
+  } catch {
+    data = { raw: await r.text() };
+  }
 
   return { ok: r.ok, status: r.status, data, url: url.toString() };
 }
@@ -60,37 +84,40 @@ export async function onRequest(context) {
   try {
     const token = await getAccessToken(context.env);
 
-    // get channelId
+    // Get channelId from your own endpoint
     const base = new URL(context.request.url);
     base.pathname = "/api/yt-channel";
     base.search = "";
     const ch = await (await fetch(base.toString())).json();
+
     const channelId = ch.channelId;
+    if (!channelId) {
+      return Response.json({ items: [], mode: "no-channel", ...(debug ? { debug: { ch } } : {}) });
+    }
 
     const dbg = { channelId, tried: [], videosChecked: 0 };
+    const collected = [];
 
     // 1) Channel-wide: published + heldForReview + likelySpam
-    const moderationModes = ["published", "heldForReview", "likelySpam"];
-    let collected = [];
-
-    for (const m of moderationModes) {
+    for (const m of ["published", "heldForReview", "likelySpam"]) {
       const res = await fetchThreads({ token, channelId, moderationStatus: m, maxResults: limit });
       dbg.tried.push({ scope: "channel", moderationStatus: m, ok: res.ok, status: res.status });
 
       if (res.ok) {
-        const items = (res.data.items || []).map(toItem).filter(x => x.text);
-        collected.push(...items.map(x => ({ ...x, _scope: "channel", _mode: m })));
+        const items = (res.data.items || []).map(toItem).filter((x) => x.text);
+        collected.push(...items);
       }
     }
 
-    // If we found any, return them
     if (collected.length) {
-      collected.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-      collected = collected.slice(0, limit);
-      return Response.json({ items: collected, mode: "channel-mixed", ...(debug ? { debug: dbg } : {}) });
+      return Response.json({
+        items: clean(collected, limit),
+        mode: "channel",
+        ...(debug ? { debug: dbg } : {}),
+      });
     }
 
-    // 2) Fallback: latest 10 videos, then comments per-video (published + heldForReview)
+    // 2) Fallback: get latest videos, then fetch latest comments per video
     const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
     searchUrl.searchParams.set("part", "id");
     searchUrl.searchParams.set("channelId", channelId);
@@ -100,43 +127,41 @@ export async function onRequest(context) {
 
     const sr = await fetch(searchUrl.toString(), { headers: { Authorization: `Bearer ${token}` } });
     const sd = await sr.json();
-    const videoIds = (sd.items || []).map(x => x.id?.videoId).filter(Boolean);
-
+    const videoIds = (sd.items || []).map((x) => x.id?.videoId).filter(Boolean);
     dbg.videosChecked = videoIds.length;
 
     for (const vid of videoIds) {
       for (const m of ["published", "heldForReview"]) {
-        const res = await fetchThreads({ token, channelId, videoId: vid, moderationStatus: m, maxResults: 10 });
-        // API can return 403 commentsDisabled when comments are off. :contentReference[oaicite:3]{index=3}
-        const reason = res.data?.error?.errors?.[0]?.reason;
+        const res = await fetchThreads({
+          token,
+          channelId,
+          videoId: vid,
+          moderationStatus: m,
+          maxResults: 10,
+        });
 
-        dbg.tried.push({ scope: "video", videoId: vid, moderationStatus: m, ok: res.ok, status: res.status, reason });
+        const reason = res.data?.error?.errors?.[0]?.reason;
+        dbg.tried.push({
+          scope: "video",
+          videoId: vid,
+          moderationStatus: m,
+          ok: res.ok,
+          status: res.status,
+          reason,
+        });
 
         if (res.ok) {
-          const items = (res.data.items || []).map(toItem).filter(x => x.text);
-          collected.push(...items.map(x => ({ ...x, _scope: "video", _mode: m })));
+          const items = (res.data.items || []).map(toItem).filter((x) => x.text);
+          collected.push(...items);
         }
       }
     }
 
-    collected.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-    collected = collected.slice(0, limit);
-
-    const cleanItems = collected.map(x => ({
-  author: x.author,
-  text: x.text,
-  publishedAt: x.publishedAt,
-  videoId: x.videoId,
-}));
-
-cleanItems.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
-
-return Response.json({
-  items: cleanItems.slice(0, limit),
-  mode: "clean",
-  ...(debug ? { debug: dbg } : {}),
-});
-
+    return Response.json({
+      items: clean(collected, limit),
+      mode: "per-video-fallback",
+      ...(debug ? { debug: dbg } : {}),
+    });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 });
   }
