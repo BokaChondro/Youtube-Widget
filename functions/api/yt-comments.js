@@ -76,4 +76,55 @@ export async function onRequest(context) {
 
       if (res.ok) {
         const items = (res.data.items || []).map(toItem).filter(x => x.text);
-        collected.push(...items.map
+        collected.push(...items.map(x => ({ ...x, _scope: "channel", _mode: m })));
+      }
+    }
+
+    // If we found any, return them
+    if (collected.length) {
+      collected.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+      collected = collected.slice(0, limit);
+      return Response.json({ items: collected, mode: "channel-mixed", ...(debug ? { debug: dbg } : {}) });
+    }
+
+    // 2) Fallback: latest 10 videos, then comments per-video (published + heldForReview)
+    const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+    searchUrl.searchParams.set("part", "id");
+    searchUrl.searchParams.set("channelId", channelId);
+    searchUrl.searchParams.set("order", "date");
+    searchUrl.searchParams.set("type", "video");
+    searchUrl.searchParams.set("maxResults", "10");
+
+    const sr = await fetch(searchUrl.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    const sd = await sr.json();
+    const videoIds = (sd.items || []).map(x => x.id?.videoId).filter(Boolean);
+
+    dbg.videosChecked = videoIds.length;
+
+    for (const vid of videoIds) {
+      for (const m of ["published", "heldForReview"]) {
+        const res = await fetchThreads({ token, channelId, videoId: vid, moderationStatus: m, maxResults: 10 });
+        // API can return 403 commentsDisabled when comments are off. :contentReference[oaicite:3]{index=3}
+        const reason = res.data?.error?.errors?.[0]?.reason;
+
+        dbg.tried.push({ scope: "video", videoId: vid, moderationStatus: m, ok: res.ok, status: res.status, reason });
+
+        if (res.ok) {
+          const items = (res.data.items || []).map(toItem).filter(x => x.text);
+          collected.push(...items.map(x => ({ ...x, _scope: "video", _mode: m })));
+        }
+      }
+    }
+
+    collected.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+    collected = collected.slice(0, limit);
+
+    return Response.json({
+      items: collected,
+      mode: "per-video-fallback-mixed",
+      ...(debug ? { debug: dbg } : {}),
+    });
+  } catch (e) {
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
+}
