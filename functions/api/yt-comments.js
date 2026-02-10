@@ -122,11 +122,21 @@ export async function onRequest(context) {
     collected.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
     collected = collected.slice(0, limit);
 
-    return Response.json({
-      items: collected,
-      mode: "per-video-fallback-mixed",
-      ...(debug ? { debug: dbg } : {}),
-    });
+    const cleanItems = collected.map(x => ({
+  author: x.author,
+  text: x.text,
+  publishedAt: x.publishedAt,
+  videoId: x.videoId,
+}));
+
+cleanItems.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+
+return Response.json({
+  items: cleanItems.slice(0, limit),
+  mode: "clean",
+  ...(debug ? { debug: dbg } : {}),
+});
+
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 });
   }
