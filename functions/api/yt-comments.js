@@ -40,7 +40,10 @@ async function fetchThreads({ token, channelId, videoId, moderationStatus, maxRe
   else url.searchParams.set("allThreadsRelatedToChannelId", channelId);
 
   // published / heldForReview / likelySpam (default is published) :contentReference[oaicite:2]{index=2}
-  if (moderationStatus) url.searchParams.set("moderationStatus", moderationStatus);
+  if (moderationStatus && moderationStatus !== "published") {
+  url.searchParams.set("moderationStatus", moderationStatus);
+}
+
 
   const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
   let data = null;
