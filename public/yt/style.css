@@ -21,6 +21,55 @@ body { margin:0; background:#0f0f0f; color:#fff; font-family: system-ui, -apple-
 
 .list { margin-top:10px; display:grid; gap:10px; }
 .listItem { display:grid; grid-template-columns: 1fr 120px; gap:10px; align-items:center; }
-.commentText { opacity:.9; font-size:13px; line-height:1.3; }
-.author { opacity:.7; font-size:12px; margin-bottom:2px; }
+
 .foot { opacity:.55; font-size:12px; text-align:center; padding:6px 0; }
+
+/* --- COMMENTS (Studio-like cards) --- */
+.commentCard {
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  padding: 12px;
+  background: #171717;
+}
+
+.commentTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.commentAuthor {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.commentMeta {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.commentText {
+  opacity: .92;
+  font-size: 13px;
+  line-height: 1.35;
+
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.commentLink {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+  text-decoration: none;
+}
+
+.commentLink:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
