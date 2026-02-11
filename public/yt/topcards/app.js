@@ -1,3 +1,5 @@
+// public/yt/topcards/app.js
+
 const NF_INT = new Intl.NumberFormat();
 const NF_1 = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -251,7 +253,7 @@ function renderPacing(elId, cur, prev, suffix = "") {
   safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL ---
+// --- CASINO ROLL (SLOWER + WORKS FOR UP OR DOWN) ---
 function ensureRoll(el) {
   if (!el) return;
   if (el._rollWrap && el._rollCol) return;
@@ -280,6 +282,7 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   if (!el) return;
   const decimals = opts.decimals ?? 0;
   const suffix = opts.suffix ?? "";
+  const duration = opts.duration ?? 1600; // slower by default
 
   const start = Number(fromVal || 0);
   const end = Number(toVal || 0);
@@ -304,31 +307,31 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   const diff = b - a;
   const absDiff = Math.abs(diff);
 
-  let html = "";
-  let finalY = 0;
+  // build step list, but cap it to keep UI smooth
+  const MAX_STEPS = 28;
+  let steps = [];
 
-  if (absDiff <= 20) {
-    const steps = [];
+  if (absDiff <= MAX_STEPS) {
     const dir = diff > 0 ? 1 : -1;
     for (let i = 0; i <= absDiff; i++) steps.push(a + (i * dir));
-    html = steps.map(v => `<span class="rollLine">${txt(v)}</span>`).join("");
-    finalY = -1.1 * absDiff;
   } else {
-    html = `
-      <span class="rollLine">${txt(a)}</span>
-      <span class="rollLine" style="filter:blur(2px)">${txt(a + Math.round(diff / 2))}</span>
-      <span class="rollLine">${txt(b)}</span>
-    `;
-    finalY = -1.1 * 2;
+    // for big jumps, use “blur middle” trick
+    steps = [a, a + Math.round(diff / 2), b];
   }
 
   col.style.transition = "none";
   col.style.transform = "translateY(0)";
-  col.innerHTML = html;
+  col.innerHTML = steps.map((v, i) => {
+    const blur = (steps.length === 3 && i === 1) ? ' style="filter:blur(2px)"' : "";
+    return `<span class="rollLine"${blur}>${txt(v)}</span>`;
+  }).join("");
 
   void col.offsetHeight;
 
-  col.style.transition = `transform 800ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+  const lines = steps.length - 1;
+  const finalY = -1.1 * lines;
+
+  col.style.transition = `transform ${duration}ms cubic-bezier(0.18, 0.9, 0.2, 1)`;
   col.style.transform = `translateY(${finalY}em)`;
 }
 
@@ -372,7 +375,7 @@ function spawnFloatIcon(cardId, type) {
   el.className = "floatIcon";
   el.innerHTML = SVGS[type] || "";
   card.appendChild(el);
-  setTimeout(() => el.remove(), 5500);
+  setTimeout(() => el.remove(), 7000);
 }
 
 // --- GLOW ONCE ---
@@ -471,13 +474,13 @@ function render(data, isFirst) {
     safeSetText("watchNextPct", pWatch + "%");
     safeSetStyle("watchProgressFill", "width", pWatch + "%");
 
-    // Counters
+    // Counters (slow roll up OR down, every refresh if changed)
     const subsEl = document.getElementById("subsNow");
     if (isFirst) {
       animateSpeedometer(subsEl, cur.subs, { duration: 650 });
-    } else if ((cur.subs - state.subs) >= 1) {
-      animateCasinoRoll(subsEl, state.subs, cur.subs, { decimals: 0, suffix: "" });
-      spawnFloatIcon("cardSubs", "subs");
+    } else if (Math.round(cur.subs) !== Math.round(state.subs)) {
+      animateCasinoRoll(subsEl, state.subs, cur.subs, { duration: 1800 });
+      if (cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs");
     } else {
       setRollInstant(subsEl, fmt(cur.subs));
     }
@@ -485,9 +488,9 @@ function render(data, isFirst) {
     const viewsEl = document.getElementById("viewsTotal");
     if (isFirst) {
       animateSpeedometer(viewsEl, cur.views, { duration: 650 });
-    } else if ((cur.views - state.views) >= 1) {
-      animateCasinoRoll(viewsEl, state.views, cur.views, { decimals: 0, suffix: "" });
-      spawnFloatIcon("cardViews", "views");
+    } else if (Math.round(cur.views) !== Math.round(state.views)) {
+      animateCasinoRoll(viewsEl, state.views, cur.views, { duration: 1800 });
+      if (cur.views > state.views) spawnFloatIcon("cardViews", "views");
     } else {
       setRollInstant(viewsEl, fmt(cur.views));
     }
@@ -496,11 +499,15 @@ function render(data, isFirst) {
     const wDec = cur.watch < 100 ? 1 : 0;
     const watchTxt = (n) => (wDec ? fmt1(n) : fmt(Math.round(n))) + "h";
 
+    const watchScale = wDec ? 10 : 1;
+    const aW = Math.round(state.watch * watchScale);
+    const bW = Math.round(cur.watch * watchScale);
+
     if (isFirst) {
       animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: wDec, suffix: "h" });
-    } else if ((cur.watch - state.watch) >= 1) {
-      animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h" });
-      spawnFloatIcon("cardWatch", "watch");
+    } else if (aW !== bW) {
+      animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h", duration: 1800 });
+      if (cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
     } else {
       setRollInstant(watchEl, watchTxt(cur.watch));
     }
@@ -520,7 +527,7 @@ function render(data, isFirst) {
       triggerGlowOnce("cardWatch");
     }, 30000);
 
-    // HUD update (no spam reset)
+    // HUD update
     updateHud(data);
 
     document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
@@ -564,10 +571,23 @@ const HUD_CONFIG = {
   interval: 16000, // MUST be 16s
   timer: null,
   started: false,
+  bootAt: Date.now(),
   lastKey: null,
-  ringLen: 0,
-  bootTime: Date.now(),
+  recentKeys: [],
+  shownAt: Object.create(null),
+  // cooldowns to stop “status” spamming
+  cooldownMs: {
+    freshness: 10 * 60 * 1000,   // 10 min
+    birthday: 15 * 60 * 1000,    // 15 min
+    status: 8 * 60 * 1000,       // 8 min
+    trivia: 60 * 1000,           // 1 min (still ok)
+    tip: 60 * 1000,              // 1 min
+    motivation: 90 * 1000,
+  }
 };
+
+// Force CSS var too (so even if old CSS loads, timing matches 16s)
+document.documentElement.style.setProperty("--hud-interval", "16s");
 
 // White SVG Icons
 const HUD_ICONS = {
@@ -582,20 +602,59 @@ const HUD_ICONS = {
   chat: `<svg viewBox="0 0 24 24" fill="white"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`,
 };
 
-// --- Your required lists + extra (no duplicates) ---
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+function secondsToMinSec(s) {
+  const n = Math.max(0, Math.floor(Number(s || 0)));
+  const m = Math.floor(n / 60);
+  const r = n % 60;
+  return `${m}m ${String(r).padStart(2, "0")}s`;
+}
+
+function daysBetweenISO(aIso, bIso) {
+  try {
+    const a = new Date(aIso);
+    const b = new Date(bIso);
+    return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+  } catch { return null; }
+}
+
+function countryName(code) {
+  try {
+    if (!code) return "";
+    const dn = new Intl.DisplayNames([navigator.language || "en"], { type: "region" });
+    return dn.of(code) || code;
+  } catch {
+    return code || "";
+  }
+}
+
+function trafficLabel(k) {
+  const map = {
+    YT_SEARCH: "YouTube Search",
+    SUGGESTED_VIDEO: "Suggested Videos",
+    BROWSE_FEATURES: "Browse Features",
+    EXTERNAL: "External",
+    PLAYLIST: "Playlists",
+    DIRECT_OR_UNKNOWN: "Direct / Unknown",
+    CHANNEL_PAGES: "Channel Pages",
+    NOTIFICATION: "Notifications",
+    END_SCREEN: "End Screens",
+    CARD: "Cards",
+    OTHER: "Other",
+  };
+  return map[k] || k;
+}
+
+// --- required lists + extra (no duplicates) ---
 function uniqPush(arr, s) {
   if (!s) return;
   if (!arr.includes(s)) arr.push(s);
 }
 
-const KB = {
-  facts: [],
-  tips: [],
-  motivation: [],
-  nostalgia: [],
-};
+const KB = { facts: [], tips: [], motivation: [], nostalgia: [] };
 
-// REQUIRED (from your message)
+// REQUIRED
 [
   "YouTube is the 2nd most visited site in existence.",
   "The first video 'Me at the zoo' has over 200M views.",
@@ -647,22 +706,22 @@ const KB = {
   "Think back to your first comment. That feeling matters."
 ].forEach(x => uniqPush(KB.nostalgia, x));
 
-// Extra (safe, simple)
+// Extra (safe + simple)
 [
-  "You can change a title and thumbnail any time. Small edits can revive old videos.",
-  "Videos that keep viewers watching longer often get more suggestions.",
-  "A clear thumbnail + clear title usually beats a complicated design.",
+  "Changing only the thumbnail and title can sometimes revive an older video.",
+  "Videos that keep viewers watching longer often get recommended more.",
+  "A clear thumbnail and clear title usually beats a complicated design.",
 ].forEach(x => uniqPush(KB.facts, x));
 
 [
-  "Try one simple goal: improve only ONE thing in your next video (title, intro, or pacing).",
-  "Use a pinned comment to guide viewers to your next best video.",
-  "If your video is long, add chapters so people can jump to the good parts.",
+  "Pick ONE thing to improve next video: intro, pacing, title, or thumbnail.",
+  "Use a pinned comment to guide viewers to the next best video.",
+  "Add chapters on longer videos so viewers can jump to the good parts.",
 ].forEach(x => uniqPush(KB.tips, x));
 
 [
   "Small progress every week beats one big burst and then stopping.",
-  "One good idea, executed well, can beat ten random uploads.",
+  "One strong idea, executed well, can beat ten random uploads.",
 ].forEach(x => uniqPush(KB.motivation, x));
 
 function pick(arr) {
@@ -670,50 +729,59 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function pct(a, b) {
-  const A = Number(a || 0), B = Number(b || 0);
-  if (B === 0) return 0;
-  return Math.round(((A - B) / B) * 100);
+// ====== HUD RING (FULL RECT, ALWAYS) ======
+function initHudRing() {
+  const rect = document.getElementById("hudRingRect");
+  if (!rect) return;
+
+  // disable any CSS animation that might be present (prevents “bottom only” bug)
+  rect.style.animation = "none";
+
+  // normalized length => full border fill always works
+  rect.setAttribute("pathLength", "100");
+  rect.style.strokeDasharray = "100";
+  rect.style.strokeDashoffset = "100";
+  rect.style.strokeLinejoin = "round";
+  rect.style.strokeLinecap = "round";
 }
 
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function animateHudRing(colorHex) {
+  const rect = document.getElementById("hudRingRect");
+  if (!rect) return;
 
-function secondsToMinSec(s) {
-  const n = Math.max(0, Math.floor(Number(s || 0)));
-  const m = Math.floor(n / 60);
-  const r = n % 60;
-  return `${m}m ${String(r).padStart(2, "0")}s`;
+  rect.style.stroke = colorHex;
+
+  // reset to empty
+  rect.style.transition = "none";
+  rect.style.strokeDashoffset = "100";
+
+  // animate to full
+  requestAnimationFrame(() => {
+    rect.style.transition = `stroke-dashoffset ${HUD_CONFIG.interval}ms linear`;
+    rect.style.strokeDashoffset = "0";
+  });
 }
 
-function countryName(code) {
+// ====== HUD MEMORY (stops spam across refreshes) ======
+function hudMemLoad() {
   try {
-    if (!code) return "";
-    const dn = new Intl.DisplayNames([navigator.language || "en"], { type: "region" });
-    return dn.of(code) || code;
-  } catch {
-    return code || "";
-  }
+    const rec = JSON.parse(localStorage.getItem("aihud_recentKeys") || "[]");
+    const shown = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}");
+    if (Array.isArray(rec)) HUD_CONFIG.recentKeys = rec.slice(0, 6);
+    if (shown && typeof shown === "object") HUD_CONFIG.shownAt = shown;
+  } catch {}
 }
-
-function trafficLabel(k) {
-  const map = {
-    YT_SEARCH: "YouTube Search",
-    SUGGESTED_VIDEO: "Suggested Videos",
-    BROWSE_FEATURES: "Browse Features",
-    EXTERNAL: "External",
-    PLAYLIST: "Playlists",
-    DIRECT_OR_UNKNOWN: "Direct / Unknown",
-    CHANNEL_PAGES: "Channel Pages",
-    NOTIFICATION: "Notifications",
-    END_SCREEN: "End Screens",
-    CARD: "Cards",
-    OTHER: "Other",
-  };
-  return map[k] || k;
+function hudMemSave() {
+  try {
+    localStorage.setItem("aihud_recentKeys", JSON.stringify(HUD_CONFIG.recentKeys.slice(0, 6)));
+    localStorage.setItem("aihud_shownAt", JSON.stringify(HUD_CONFIG.shownAt));
+  } catch {}
 }
+hudMemLoad();
 
+// ====== BUILD INTEL (clear English, not short/cryptic) ======
 function buildIntel(data) {
-  const intel = [];
+  const out = [];
   const ch = data.channel || {};
   const w = data.weekly || {};
   const m28 = data.m28 || {};
@@ -728,9 +796,6 @@ function buildIntel(data) {
   const weekL = Number(w.subscribersLost || 0);
   const weekNet = Number(w.netSubs || 0);
 
-  const prevWeekViews = Number(w.prevViews || 0);
-  const prevWeekNet = Number(w.prevNetSubs || 0);
-
   const last28Views = Number(m28.last28?.views || 0);
   const prev28Views = Number(m28.prev28?.views || 0);
   const last28Subs = Number(m28.last28?.netSubs || 0);
@@ -740,9 +805,8 @@ function buildIntel(data) {
 
   const avg6mViews = Number(m28.avg6m?.views || 0);
   const avg6mSubs = Number(m28.avg6m?.netSubs || 0);
-  const avg6mWatch = Number(m28.avg6m?.watchHours || 0);
 
-  // Derived signals (requested)
+  // requested derived signals
   const churnPct = weekG > 0 ? Math.round((weekL / weekG) * 100) : (weekL > 0 ? 100 : 0);
   const minsPerView = weekViews > 0 ? (weekMin / weekViews) : 0;
   const subsPer1k = weekViews > 0 ? (weekNet / weekViews) * 1000 : 0;
@@ -751,196 +815,205 @@ function buildIntel(data) {
   const usualWeekSubs = avg6mSubs > 0 ? (avg6mSubs / 4) : 0;
   const weekVsUsualViewsPct = usualWeekViews > 0 ? Math.round(((weekViews - usualWeekViews) / usualWeekViews) * 100) : 0;
 
-  // Momentum streak (last 3 windows increasing?)
+  // momentum streaks (last 3 windows)
   const winViews = hist.slice(0, 3).map(x => Number(x.views || 0));
-  const winSubs = hist.slice(0, 3).map(x => Number(x.netSubs || 0));
   const viewsUpStreak = (winViews.length === 3 && winViews[0] > winViews[1] && winViews[1] > winViews[2]);
   const viewsDownStreak = (winViews.length === 3 && winViews[0] < winViews[1] && winViews[1] < winViews[2]);
 
-  // Volatility (previous 6 windows)
+  // volatility (previous 6 windows)
   const prev6Views = hist.slice(1, 7).map(x => Number(x.views || 0)).filter(Number.isFinite);
   const vMax = prev6Views.length ? Math.max(...prev6Views) : 0;
   const vMin = prev6Views.length ? Math.min(...prev6Views) : 0;
-  const volatility = (vMin > 0) ? (vMax / vMin) : 0; // 1.0 = stable, 2.0 = very swingy
+  const volatility = (vMin > 0) ? (vMax / vMin) : 0;
 
-  // Upload gap
-  const latestUpload = hud.uploads?.latest || null;
+  // upload gap (based on statsThrough)
   const statsThrough = hud.statsThrough || w.endDate || "";
+  const latestUpload = hud.uploads?.latest || null;
+  const recentUploads = hud.uploads?.recent || [];
   let uploadDaysAgo = null;
   if (latestUpload?.publishedAt && statsThrough) {
-    try {
-      uploadDaysAgo = Math.floor((new Date(statsThrough).getTime() - new Date(latestUpload.publishedAt).getTime()) / (1000 * 60 * 60 * 24));
-      if (!Number.isFinite(uploadDaysAgo)) uploadDaysAgo = null;
-    } catch { uploadDaysAgo = null; }
+    uploadDaysAgo = daysBetweenISO(latestUpload.publishedAt, statsThrough);
   }
 
-  // Goals (subs + views + watch)
-  const nextSubGoal = getMilestone(Number(ch.subscribers || 0), "subs");
-  const subDiff = nextSubGoal - Number(ch.subscribers || 0);
-
-  const nextViewsGoal = getMilestone(Number(ch.totalViews || 0), "views");
-  const viewsDiff = nextViewsGoal - Number(ch.totalViews || 0);
-
-  const nextWatchGoal = getMilestone(Number(data.lifetime?.watchHours || 0), "watch");
-  const watchDiff = nextWatchGoal - Number(data.lifetime?.watchHours || 0);
-
-  // Thumb + retention (optional)
+  // CTR/Retention (optional)
   const thumb = hud.thumb28 || null;
   const ret = hud.retention28 || null;
-
-  // Traffic sources (optional)
   const trafficLast = hud.traffic?.last28 || null;
   const trafficPrev = hud.traffic?.prev28 || null;
-
-  // Subscribed status (optional)
   const subStatus = hud.subscribedStatus || null;
-
-  // Countries (optional)
   const countries = hud.countries || null;
 
-  // Top video (optional)
+  // Videos (available from your API output)
+  const latestVideo = hud.latestVideo || null;
   const top7 = hud.topVideo7d || null;
 
-  // Birthday / nostalgia
-  let birthdayLine = null;
-  if (ch.publishedAt) {
-    try {
-      const created = new Date(ch.publishedAt);
-      const now = new Date();
-      const ms = now.getTime() - created.getTime();
-      const days = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
-      const years = Math.floor(days / 365);
-      const months = Math.floor((days % 365) / 30);
-      const remDays = (days % 365) % 30;
-
-      birthdayLine =
-        `You created this channel on ${created.toISOString().slice(0, 10)}. That was about ${years} years, ${months} months, and ${remDays} days ago. Remember why you started — you have already come far.`;
-    } catch {}
+  // helper: push intel
+  function add(item) {
+    if (!item || !item.text) return;
+    out.push(item);
   }
 
-  // -------- AI-LIKE intel blocks (clear English) --------
+  // --- Priority: REAL channel signals first (so you actually SEE them) ---
 
-  // 1) Upload buffer warning
+  // Upload cadence
   if (uploadDaysAgo !== null && uploadDaysAgo > 14) {
-    intel.push({
+    add({
       key: "warn_upload_gap",
+      cat: "warning",
+      weight: 3.0,
+      cooldownMs: 10 * 60 * 1000,
       icon: HUD_ICONS.warn,
       tag: "Warning",
       type: "orange",
-      text: `Upload buffer looks empty. Your last upload was about ${uploadDaysAgo} days ago. A fresh video can help bring viewers back.`,
+      text: `Upload buffer looks empty. Your last upload was about ${uploadDaysAgo} days ago. A fresh video can help wake up both your viewers and the algorithm.`,
+      subline: latestUpload?.title ? `Last upload: "${latestUpload.title}"` : "",
     });
   } else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) {
-    intel.push({
+    add({
       key: "good_upload_recent",
+      cat: "good",
+      weight: 2.2,
+      cooldownMs: 5 * 60 * 1000,
       icon: HUD_ICONS.up,
-      tag: "Good News",
+      tag: "Good",
       type: "green",
-      text: `Nice pacing. You uploaded about ${uploadDaysAgo} days ago. Keeping a steady rhythm helps your audience remember you.`,
+      text: `Nice pacing. You uploaded about ${uploadDaysAgo} days ago. Consistency helps your audience remember you and return more often.`,
+      subline: latestUpload?.title ? `Latest upload: "${latestUpload.title}"` : "",
     });
   }
 
-  // 2) Weekly gained vs lost + churn%
+  // Weekly churn / gained vs lost
   if (weekG > 0 || weekL > 0) {
     const tone = (weekL > weekG) ? "red" : (weekNet >= 0 ? "green" : "orange");
     const icon = (weekL > weekG) ? HUD_ICONS.down : HUD_ICONS.up;
     const netWord = weekNet >= 0 ? `net +${fmt(weekNet)}` : `net -${fmt(Math.abs(weekNet))}`;
-    intel.push({
+    add({
       key: "subs_churn",
+      cat: "subs",
+      weight: 3.2,
+      cooldownMs: 2 * 60 * 1000,
       icon,
-      tag: "This Week",
+      tag: "Subs",
       type: tone,
-      text: `This week you gained ${fmt(weekG)} subscribers and lost ${fmt(weekL)}. That is ${netWord}. Your churn rate is about ${churnPct}% (lower is better).`,
+      text: `This week you gained ${fmt(weekG)} subscribers and lost ${fmt(weekL)}. That means ${netWord}. Churn is about ${churnPct}% (lower is better).`,
+      subline: `Gained ${fmt(weekG)} • Lost ${fmt(weekL)} • Net ${weekNet >= 0 ? "+" : "-"}${fmt(Math.abs(weekNet))}`,
     });
   }
 
-  // 3) Minutes per view
+  // Minutes per view
   if (weekViews > 0 && weekMin > 0) {
     const tone = minsPerView >= 1.2 ? "green" : (minsPerView >= 0.6 ? "yellow" : "orange");
-    intel.push({
+    add({
       key: "mins_per_view",
+      cat: "retention",
+      weight: 2.7,
+      cooldownMs: 2 * 60 * 1000,
       icon: HUD_ICONS.live,
       tag: "Retention",
       type: tone,
-      text: `Viewer time quality: you are getting about ${minsPerView.toFixed(2)} minutes watched per view this week. Try to push this up with a stronger intro and faster pacing.`,
+      text: `Viewer time quality: you are getting about ${minsPerView.toFixed(2)} minutes watched per view this week. Improving the first 10 seconds can push this higher.`,
+      subline: `Minutes watched: ${fmt(Math.round(weekMin))} • Views: ${fmt(weekViews)}`,
     });
   }
 
-  // 4) Subs per 1k views
+  // Subs per 1k views
   if (weekViews > 0) {
     const tone = subsPer1k >= 2 ? "green" : (subsPer1k >= 0.8 ? "yellow" : "orange");
     const sTxt = subsPer1k >= 0 ? subsPer1k.toFixed(2) : `-${Math.abs(subsPer1k).toFixed(2)}`;
-    intel.push({
+    add({
       key: "subs_per_1k",
-      icon: HUD_ICONS.rocket,
+      cat: "conversion",
+      weight: 2.6,
+      cooldownMs: 2 * 60 * 1000,
+      icon: HUD_ICONS.target,
       tag: "Conversion",
       type: tone,
-      text: `Subscriber conversion: you are getting about ${sTxt} net subscribers per 1,000 views this week. A clear call-to-action near the best moment can improve this.`,
+      text: `Subscriber conversion: you earned about ${sTxt} net subscribers per 1,000 views this week. A clear “subscribe if this helped” right after the best moment can lift it.`,
+      subline: `Net subs: ${weekNet >= 0 ? "+" : "-"}${fmt(Math.abs(weekNet))} • Views: ${fmt(weekViews)}`,
     });
   }
 
-  // 5) Usual-week vs this-week
+  // Usual week vs this week
   if (usualWeekViews > 0 && weekViews > 0) {
     const tone = weekVsUsualViewsPct >= 10 ? "green" : (weekVsUsualViewsPct <= -10 ? "orange" : "yellow");
     const sign = weekVsUsualViewsPct >= 0 ? "+" : "";
-    intel.push({
+    add({
       key: "usual_vs_week",
+      cat: "baseline",
+      weight: 2.4,
+      cooldownMs: 3 * 60 * 1000,
       icon: weekVsUsualViewsPct >= 0 ? HUD_ICONS.up : HUD_ICONS.down,
       tag: "Baseline",
       type: tone,
-      text: `Compared to your usual week, your views are ${sign}${weekVsUsualViewsPct}% this week. Usual week is around ${fmt(Math.round(usualWeekViews))} views.`,
+      text: `Compared to your usual week, your views are ${sign}${weekVsUsualViewsPct}% right now. Your usual week is about ${fmt(Math.round(usualWeekViews))} views.`,
+      subline: `This week: ${fmt(weekViews)} • Usual: ${fmt(Math.round(usualWeekViews))}`,
     });
   }
 
-  // 6) Momentum streaks
+  // Momentum streaks
   if (viewsUpStreak) {
-    intel.push({
+    add({
       key: "views_up_streak",
+      cat: "momentum",
+      weight: 2.2,
+      cooldownMs: 5 * 60 * 1000,
       icon: HUD_ICONS.up,
       tag: "Momentum",
       type: "blue",
-      text: `Momentum is building. Your last 3 blocks of 28 days show rising views each time. Keep the same topic style and packaging.`,
+      text: `Momentum is building. Your last 3 blocks of 28 days show views increasing each time. This is a great moment to repeat what is working.`,
     });
   } else if (viewsDownStreak) {
-    intel.push({
+    add({
       key: "views_down_streak",
+      cat: "momentum",
+      weight: 2.2,
+      cooldownMs: 5 * 60 * 1000,
       icon: HUD_ICONS.down,
       tag: "Momentum",
       type: "orange",
-      text: `Views are drifting down across the last 3 blocks of 28 days. A new series idea or stronger thumbnails could help.`,
+      text: `Views are slowly drifting down across the last 3 blocks of 28 days. A new series idea or stronger thumbnails could reverse it.`,
     });
   }
 
-  // 7) Stability / volatility
+  // Stability / volatility
   if (volatility >= 2.0) {
-    intel.push({
+    add({
       key: "volatility_high",
+      cat: "stability",
+      weight: 2.0,
+      cooldownMs: 6 * 60 * 1000,
       icon: HUD_ICONS.warn,
       tag: "Stability",
       type: "orange",
-      text: `Your views are very swingy lately. Your best 28-day block is about ${volatility.toFixed(1)}x bigger than your weakest. Try a repeatable format to stabilize growth.`,
+      text: `Your views are swingy lately. Your strongest 28-day block is about ${volatility.toFixed(1)}× larger than the weakest. A repeatable format can stabilize growth.`,
     });
   } else if (volatility > 0 && volatility <= 1.4) {
-    intel.push({
+    add({
       key: "volatility_low",
+      cat: "stability",
+      weight: 1.8,
+      cooldownMs: 6 * 60 * 1000,
       icon: HUD_ICONS.up,
       tag: "Stability",
       type: "green",
-      text: `Your views look stable across recent 28-day blocks. This is good for long-term growth and planning.`,
+      text: `Your views look stable across recent 28-day blocks. That is good for planning and long-term growth.`,
     });
   }
 
-  // 8) CTR warning / praise (if available)
+  // CTR & impressions
   if (thumb && Number.isFinite(thumb.ctr)) {
     const ctr = Number(thumb.ctr || 0);
     const tone = ctr < 2 ? "orange" : (ctr >= 8 ? "green" : "yellow");
     const icon = ctr < 2 ? HUD_ICONS.warn : HUD_ICONS.bulb;
+    const extra = ctr < 2
+      ? "That is low. Try brighter thumbnails, fewer words, and a clearer promise in the title."
+      : (ctr >= 8 ? "That is excellent. Your packaging is working." : "This is healthy. Keep improving little by little.");
 
-    let extra = "";
-    if (ctr < 2) extra = "That is low. Try brighter thumbnails, fewer words, and a clearer promise in the title.";
-    else if (ctr >= 8) extra = "That is excellent. Your packaging is working well.";
-
-    intel.push({
+    add({
       key: "ctr",
+      cat: "packaging",
+      weight: 2.1,
+      cooldownMs: 8 * 60 * 1000,
       icon,
       tag: "Packaging",
       type: tone,
@@ -948,57 +1021,67 @@ function buildIntel(data) {
     });
 
     if (thumb.impressions) {
-      intel.push({
+      add({
         key: "impressions",
+        cat: "reach",
+        weight: 1.6,
+        cooldownMs: 8 * 60 * 1000,
         icon: HUD_ICONS.live,
         tag: "Reach",
         type: "blue",
-        text: `In the last 28 days, your thumbnails were shown about ${fmt(thumb.impressions)} times. Better CTR turns these impressions into more views.`,
+        text: `In the last 28 days, your thumbnails were shown about ${fmt(thumb.impressions)} times. A higher CTR turns more of those impressions into views.`,
       });
     }
   }
 
-  // 9) Retention (if available)
+  // Retention (avg view % + duration)
   if (ret && Number.isFinite(ret.avgViewPercentage)) {
     const r = Number(ret.avgViewPercentage || 0);
     const tone = r < 35 ? "orange" : (r >= 50 ? "green" : "yellow");
-    const icon = r < 35 ? HUD_ICONS.warn : HUD_ICONS.up;
+    const tip = r < 35
+      ? "People may leave early. Tighten your intro and remove slow parts."
+      : (r >= 50 ? "That is strong retention. The algorithm usually likes this." : "This is decent. Small edits can push it higher.");
 
-    let tip = "";
-    if (r < 35) tip = "People may leave early. Tighten your first 10 seconds and remove slow parts.";
-    else if (r >= 50) tip = "That is strong. The algorithm usually likes this kind of retention.";
-
-    intel.push({
+    add({
       key: "retention",
-      icon,
+      cat: "retention",
+      weight: 2.0,
+      cooldownMs: 8 * 60 * 1000,
+      icon: r < 35 ? HUD_ICONS.warn : HUD_ICONS.up,
       tag: "Retention",
       type: tone,
       text: `Retention signal: your average view percentage is about ${r.toFixed(0)}%. ${tip}`,
     });
 
     if (Number.isFinite(ret.avgViewDurationSec)) {
-      intel.push({
+      add({
         key: "avd",
+        cat: "retention",
+        weight: 1.5,
+        cooldownMs: 8 * 60 * 1000,
         icon: HUD_ICONS.live,
         tag: "Watch Time",
         type: "blue",
-        text: `Average view duration is about ${secondsToMinSec(ret.avgViewDurationSec)}. Try to lift it a little each month.`,
+        text: `Average view duration is about ${secondsToMinSec(ret.avgViewDurationSec)}. If you can lift this over time, your channel usually grows faster.`,
       });
     }
   }
 
-  // 10) Search / suggested traffic insight (if available)
+  // Discovery sources
   if (Array.isArray(trafficLast) && trafficLast.length) {
     const total = trafficLast.reduce((a, x) => a + Number(x.value || 0), 0) || 1;
     const top = trafficLast[0];
     const topShare = Math.round((Number(top.value || 0) / total) * 100);
 
-    intel.push({
+    add({
       key: "top_source",
+      cat: "discovery",
+      weight: 1.7,
+      cooldownMs: 10 * 60 * 1000,
       icon: HUD_ICONS.bulb,
       tag: "Discovery",
       type: "blue",
-      text: `Your biggest traffic source in the last 28 days is ${trafficLabel(top.key)} (${topShare}% of tracked views). Double down on what brings that traffic.`,
+      text: `Your biggest discovery source in the last 28 days is ${trafficLabel(top.key)} (about ${topShare}% of tracked views). Make more content that fits this path.`,
     });
 
     const findVal = (arr, k) => Number((arr || []).find(x => x.key === k)?.value || 0);
@@ -1007,16 +1090,22 @@ function buildIntel(data) {
     if (sPrev > 0) {
       const p = Math.round(((sNow - sPrev) / sPrev) * 100);
       if (p >= 15) {
-        intel.push({
+        add({
           key: "seo_up",
+          cat: "discovery",
+          weight: 1.6,
+          cooldownMs: 10 * 60 * 1000,
           icon: HUD_ICONS.up,
           tag: "Search",
           type: "green",
           text: `SEO win: search views are up about +${p}% compared to the previous 28 days. Keep using clear keywords and searchable titles.`,
         });
       } else if (p <= -15) {
-        intel.push({
+        add({
           key: "seo_down",
+          cat: "discovery",
+          weight: 1.6,
+          cooldownMs: 10 * 60 * 1000,
           icon: HUD_ICONS.down,
           tag: "Search",
           type: "orange",
@@ -1026,7 +1115,7 @@ function buildIntel(data) {
     }
   }
 
-  // 11) Subscribed vs non-subscribed views (if available)
+  // Subscribed vs non-subscribed
   if (Array.isArray(subStatus) && subStatus.length) {
     const total = subStatus.reduce((a, x) => a + Number(x.value || 0), 0) || 1;
     const nonSub = subStatus.find(x => x.key === "UNSUBSCRIBED") || subStatus.find(x => x.key === "NOT_SUBSCRIBED");
@@ -1034,19 +1123,24 @@ function buildIntel(data) {
 
     const nonPct = nonSub ? Math.round((Number(nonSub.value || 0) / total) * 100) : null;
     if (nonPct !== null) {
-      const tone = nonPct >= 80 ? "yellow" : "blue";
-      intel.push({
+      add({
         key: "non_sub_share",
+        cat: "audience",
+        weight: 1.6,
+        cooldownMs: 10 * 60 * 1000,
         icon: HUD_ICONS.target,
         tag: "Audience",
-        type: tone,
-        text: `${nonPct}% of your views are from people who are not subscribed (last 28 days). A simple reminder after you deliver value can help.`,
+        type: nonPct >= 80 ? "yellow" : "blue",
+        text: `${nonPct}% of your views are from people who are not subscribed (last 28 days). A short reminder after you deliver value can help convert more viewers.`,
       });
     }
 
     if (sub && sub.value > 0) {
-      intel.push({
+      add({
         key: "sub_view_share",
+        cat: "audience",
+        weight: 1.2,
+        cooldownMs: 10 * 60 * 1000,
         icon: HUD_ICONS.live,
         tag: "Audience",
         type: "blue",
@@ -1055,179 +1149,302 @@ function buildIntel(data) {
     }
   }
 
-  // 12) Top country (if available)
+  // Top country
   if (Array.isArray(countries) && countries.length) {
     const top = countries[0];
     const nm = countryName(top.key);
-    intel.push({
+    add({
       key: "top_country",
+      cat: "global",
+      weight: 1.2,
+      cooldownMs: 15 * 60 * 1000,
       icon: HUD_ICONS.globe,
       tag: "Global",
       type: "purple",
-      text: `Global reach: your top country in the last 28 days is ${nm}. Consider using simple language and clear visuals for worldwide viewers.`,
+      text: `Global reach: your #1 country in the last 28 days is ${nm}. Clear visuals and simple language helps international viewers stay longer.`,
     });
   }
 
-  // 13) Top video this week (if available)
-  if (top7 && top7.title) {
-    intel.push({
-      key: "top_video_week",
+  // ====== VIDEO-SPECIFIC INSIGHTS (many, detailed, based on available API fields) ======
+  const pickVideoTitle = (t) => (t || "").replace(/\s+/g, " ").trim();
+
+  if (latestVideo && latestVideo.title) {
+    const vTitle = pickVideoTitle(latestVideo.title);
+    const vViews = Number(latestVideo.views || 0);
+    const vLikes = Number(latestVideo.likes || 0);
+    const vCom = Number(latestVideo.comments || 0);
+
+    const upDay = latestVideo.publishedAt ? new Date(latestVideo.publishedAt) : null;
+    const ageDays = (upDay && statsThrough) ? daysBetweenISO(latestVideo.publishedAt, statsThrough) : null;
+    const viewsPerDay = (ageDays && ageDays > 0) ? (vViews / ageDays) : null;
+
+    const likeRate = vViews > 0 ? (vLikes / vViews) * 100 : 0;
+    const comPer1k = vViews > 0 ? (vCom / vViews) * 1000 : 0;
+
+    // (1) Latest video basic
+    add({
+      key: "vid_latest_basic",
+      cat: "video",
+      weight: 2.8,
+      cooldownMs: 3 * 60 * 1000,
       icon: HUD_ICONS.rocket,
-      tag: "Top Video",
+      tag: "Video",
       type: "purple",
-      text: `Top performer this week: "${top7.title}" with ${fmt(top7.views)} views. Study why it worked and repeat the pattern.`,
+      text: `Latest upload check: "${vTitle}". It currently has ${fmt(vViews)} views, ${fmt(vLikes)} likes, and ${fmt(vCom)} comments.`,
+      subline: ageDays !== null ? `Uploaded ~${ageDays} day(s) before ${statsThrough}` : "",
     });
-  }
 
-  // 14) Viral check (48h approx)
-  const v48 = Number(hud.views48h || 0);
-  if (v48 > 0 && last28Views > 0) {
-    const normal48 = (last28Views / 28) * 2; // expected 2 days
-    const ratio = normal48 > 0 ? (v48 / normal48) : 0;
-    if (ratio >= 3) {
-      intel.push({
-        key: "viral_alert",
-        icon: HUD_ICONS.rocket,
-        tag: "Viral",
+    // (2) Latest: velocity
+    if (viewsPerDay !== null) {
+      const baselinePerDay = (weekViews > 0) ? (weekViews / 7) : 0;
+      const ratio = baselinePerDay > 0 ? (viewsPerDay / baselinePerDay) : 0;
+
+      add({
+        key: "vid_latest_velocity",
+        cat: "video",
+        weight: 2.4,
+        cooldownMs: 4 * 60 * 1000,
+        icon: ratio >= 1 ? HUD_ICONS.up : HUD_ICONS.down,
+        tag: "Video",
+        type: ratio >= 1.3 ? "blue" : (ratio >= 0.8 ? "yellow" : "orange"),
+        text: `Latest video speed: it is averaging about ${fmt(Math.round(viewsPerDay))} views per day. Compared to your weekly baseline, that is about ${ratio.toFixed(1)}×.`,
+        subline: `Baseline ≈ ${fmt(Math.round(baselinePerDay))} views/day`,
+      });
+    }
+
+    // (3) Latest: like rate
+    if (vViews > 0 && vLikes > 0) {
+      add({
+        key: "vid_latest_likerate",
+        cat: "video",
+        weight: 2.0,
+        cooldownMs: 6 * 60 * 1000,
+        icon: HUD_ICONS.up,
+        tag: "Video",
+        type: likeRate >= 5 ? "green" : (likeRate >= 2 ? "yellow" : "orange"),
+        text: `Viewer satisfaction clue: your latest video has a like rate of about ${likeRate.toFixed(2)}%. Higher like rate often means people enjoyed the content.`,
+        subline: `Likes ${fmt(vLikes)} / Views ${fmt(vViews)}`,
+      });
+    }
+
+    // (4) Latest: comment density
+    if (vViews > 0 && vCom >= 0) {
+      add({
+        key: "vid_latest_comments",
+        cat: "video",
+        weight: 1.9,
+        cooldownMs: 6 * 60 * 1000,
+        icon: HUD_ICONS.chat,
+        tag: "Video",
+        type: comPer1k >= 8 ? "green" : (comPer1k >= 3 ? "yellow" : "orange"),
+        text: `Conversation density: your latest video gets about ${comPer1k.toFixed(2)} comments per 1,000 views. More comments usually means stronger community energy.`,
+      });
+    }
+
+    // (5) Title structure hints
+    const words = vTitle.split(" ").filter(Boolean);
+    const hasNumber = /\d/.test(vTitle);
+    const isLong = vTitle.length >= 60;
+    add({
+      key: "vid_latest_title_hint",
+      cat: "video",
+      weight: 1.4,
+      cooldownMs: 8 * 60 * 1000,
+      icon: HUD_ICONS.bulb,
+      tag: "Video",
+      type: "yellow",
+      text: `Title scan: your latest title has ${words.length} words${hasNumber ? " and includes a number (numbers can help CTR)" : ""}${isLong ? ". It is long — shortening it can sometimes improve clicks." : "."}`,
+    });
+
+    // (6) Upload timing
+    if (upDay) {
+      const dow = upDay.toLocaleDateString(undefined, { weekday: "long" });
+      const hr = upDay.getHours();
+      add({
+        key: "vid_latest_timing",
+        cat: "video",
+        weight: 1.3,
+        cooldownMs: 10 * 60 * 1000,
+        icon: HUD_ICONS.live,
+        tag: "Video",
         type: "blue",
-        text: `Viral potential: your last ~48 hours views look about ${ratio.toFixed(1)}x higher than normal. Consider posting a follow-up while attention is hot.`,
+        text: `Upload timing note: your latest video was published on ${dow} around ${String(hr).padStart(2, "0")}:00 (local time). If you upload consistently, viewers learn when to return.`,
+      });
+    }
+
+    // (7) If many uploads recently, call it out
+    const recentCount = Array.isArray(recentUploads) ? recentUploads.filter(x => x && x.videoId).length : 0;
+    if (recentCount >= 3) {
+      add({
+        key: "vid_recent_cadence",
+        cat: "video",
+        weight: 1.2,
+        cooldownMs: 8 * 60 * 1000,
+        icon: HUD_ICONS.up,
+        tag: "Video",
+        type: "green",
+        text: `Upload cadence looks active. You have ${recentCount} recent uploads visible in the system. A steady cadence makes growth more predictable.`,
       });
     }
   }
 
-  // 15) Channel birthday / nostalgia (NOT spammy)
-  if (birthdayLine && (Math.random() < 0.18)) {
-    intel.push({
-      key: "birthday",
-      icon: HUD_ICONS.bulb,
-      tag: "Nostalgia",
+  // Top performer last 7 days
+  if (top7 && top7.title) {
+    add({
+      key: "top_video_week",
+      cat: "video",
+      weight: 2.2,
+      cooldownMs: 5 * 60 * 1000,
+      icon: HUD_ICONS.rocket,
+      tag: "Video",
       type: "purple",
-      text: birthdayLine,
+      text: `Top performer this week: "${top7.title}" with ${fmt(top7.views)} views. Study why it worked, then repeat the pattern in your next upload.`,
     });
   }
 
-  // 16) Goals (always useful)
+  // Viral-ish check from views48h
+  const v48 = Number(hud.views48h || 0);
+  if (v48 > 0 && last28Views > 0) {
+    const normal48 = (last28Views / 28) * 2;
+    const ratio = normal48 > 0 ? (v48 / normal48) : 0;
+    if (ratio >= 3) {
+      add({
+        key: "viral_alert",
+        cat: "momentum",
+        weight: 2.4,
+        cooldownMs: 10 * 60 * 1000,
+        icon: HUD_ICONS.rocket,
+        tag: "Momentum",
+        type: "blue",
+        text: `Viral potential: your last ~48 hours views are about ${ratio.toFixed(1)}× higher than normal. If you have a follow-up idea, this is a good time to publish it.`,
+      });
+    }
+  }
+
+  // Goals (simple)
+  const nextSubGoal = getMilestone(Number(ch.subscribers || 0), "subs");
+  const subDiff = nextSubGoal - Number(ch.subscribers || 0);
   if (subDiff > 0) {
-    intel.push({
+    add({
       key: "goal_subs",
+      cat: "goal",
+      weight: 1.4,
+      cooldownMs: 6 * 60 * 1000,
       icon: HUD_ICONS.target,
       tag: "Goal",
       type: "blue",
-      text: `Subscriber goal: you are only ${fmt(subDiff)} subscribers away from ${fmt(nextSubGoal)}. Keep one strong upload and one strong Short each week.`,
-    });
-  }
-  if (viewsDiff > 0) {
-    intel.push({
-      key: "goal_views",
-      icon: HUD_ICONS.target,
-      tag: "Goal",
-      type: "blue",
-      text: `Views goal: you are ${fmt(viewsDiff)} views away from ${fmt(nextViewsGoal)} total views. Improve CTR a little and you will reach it faster.`,
-    });
-  }
-  if (watchDiff > 0) {
-    intel.push({
-      key: "goal_watch",
-      icon: HUD_ICONS.target,
-      tag: "Goal",
-      type: "blue",
-      text: `Watch goal: you need about ${fmt1(watchDiff)} more watch hours to reach ${fmt(nextWatchGoal)}h. Longer videos + better retention helps a lot.`,
+      text: `Subscriber goal: you are ${fmt(subDiff)} subs away from ${fmt(nextSubGoal)}. One strong video plus one Short per week can close this gap faster.`,
     });
   }
 
-  // 17) Add one random “smart” tip + one fact + sometimes motivation/nostalgia
+  // Channel birthday (rare + cooldown)
+  if (ch.publishedAt) {
+    try {
+      const created = new Date(ch.publishedAt);
+      const now = new Date();
+      const days = Math.max(0, Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
+      const years = Math.floor(days / 365);
+      const months = Math.floor((days % 365) / 30);
+      const remDays = (days % 365) % 30;
+
+      add({
+        key: "birthday",
+        cat: "status",
+        weight: 0.25,
+        cooldownMs: HUD_CONFIG.cooldownMs.birthday,
+        icon: HUD_ICONS.bulb,
+        tag: "Nostalgia",
+        type: "purple",
+        text: `You created this channel on ${created.toISOString().slice(0, 10)}. That was about ${years} years, ${months} months, and ${remDays} days ago. Think why you started — it is already a real journey.`,
+      });
+    } catch {}
+  }
+
+  // Tips / trivia / motivation (lower weight, so they don’t drown real signals)
   const tip = pick(KB.tips);
-  if (tip) intel.push({ key: "tip", icon: HUD_ICONS.bulb, tag: "Tip", type: "yellow", text: tip });
+  if (tip) add({ key: "tip", cat: "tip", weight: 0.35, cooldownMs: HUD_CONFIG.cooldownMs.tip, icon: HUD_ICONS.bulb, tag: "Tip", type: "yellow", text: tip });
 
   const fact = pick(KB.facts);
-  if (fact) intel.push({ key: "fact", icon: HUD_ICONS.bulb, tag: "Trivia", type: "purple", text: fact });
+  if (fact) add({ key: "trivia", cat: "trivia", weight: 0.30, cooldownMs: HUD_CONFIG.cooldownMs.trivia, icon: HUD_ICONS.bulb, tag: "Trivia", type: "purple", text: fact });
 
-  if (Math.random() < 0.35) {
+  if (Math.random() < 0.30) {
     const mot = pick(KB.motivation);
-    if (mot) intel.push({ key: "mot", icon: HUD_ICONS.live, tag: "Motivation", type: "white", text: mot });
+    if (mot) add({ key: "motivation", cat: "motivation", weight: 0.22, cooldownMs: HUD_CONFIG.cooldownMs.motivation, icon: HUD_ICONS.live, tag: "Motivation", type: "white", text: mot });
   }
+
   if (Math.random() < 0.20) {
     const nos = pick(KB.nostalgia);
-    if (nos) intel.push({ key: "nos", icon: HUD_ICONS.live, tag: "Nostalgia", type: "purple", text: nos });
+    if (nos) add({ key: "nostalgia", cat: "status", weight: 0.18, cooldownMs: 8 * 60 * 1000, icon: HUD_ICONS.live, tag: "Nostalgia", type: "purple", text: nos });
   }
 
-  // 18) Sometimes show data freshness (NOT every refresh)
-  if (statsThrough && Math.random() < 0.12) {
-    intel.push({
+  // Data freshness (rare, never right after load)
+  if (statsThrough) {
+    add({
       key: "freshness",
+      cat: "status",
+      weight: 0.10,
+      cooldownMs: HUD_CONFIG.cooldownMs.freshness,
       icon: HUD_ICONS.live,
       tag: "Status",
       type: "blue",
-      text: `Stats in this HUD are calculated using analytics up to ${statsThrough}. Subscriber count and total views update live.`,
+      text: `HUD uses stable analytics up to ${statsThrough}. Subscriber count and total views update live.`,
     });
   }
 
-  // Remove empties, then shuffle lightly (but keep variety)
-  const out = intel.filter(x => x && x.text);
-  // small shuffle
-  out.sort(() => Math.random() - 0.5);
-  return out;
+  return out.filter(x => x && x.text);
 }
 
 let intelQueue = [];
-function updateHud(data) {
-  // Build fresh queue, but DO NOT force a reset message on refresh.
-  intelQueue = buildIntel(data);
 
-  if (!HUD_CONFIG.started) {
-    HUD_CONFIG.started = true;
+function eligible(item) {
+  if (!item) return false;
 
-    // ring init
-    initHudRing();
+  // avoid showing “status style” right after page load
+  const sinceBoot = Date.now() - HUD_CONFIG.bootAt;
+  if (sinceBoot < 9000 && (item.cat === "status" || item.key === "freshness" || item.key === "birthday")) return false;
 
-    // show first message after a short delay (avoids instant “boot spam” feeling)
-    setTimeout(() => {
-      showNextIntel();
-      HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
-    }, 900);
-  }
+  // cooldown per-key
+  const last = Number(HUD_CONFIG.shownAt[item.key] || 0);
+  const cd = Number(item.cooldownMs || 0);
+  if (cd > 0 && (Date.now() - last) < cd) return false;
+
+  // avoid repeating recent keys
+  if (HUD_CONFIG.recentKeys.includes(item.key)) return false;
+
+  // avoid immediate repeat
+  if (item.key && item.key === HUD_CONFIG.lastKey) return false;
+
+  return true;
 }
 
-function initHudRing() {
-  const rect = document.getElementById("hudRingRect");
-  if (!rect) return;
-  try {
-    const len = rect.getTotalLength();
-    HUD_CONFIG.ringLen = len;
-    rect.style.strokeDasharray = `${len}`;
-    rect.style.strokeDashoffset = `${len}`;
-  } catch {
-    HUD_CONFIG.ringLen = 0;
+function weightedPick(items) {
+  const list = items.filter(Boolean);
+  if (!list.length) return null;
+  const total = list.reduce((a, it) => a + (Number(it.weight || 1)), 0);
+  let r = Math.random() * total;
+  for (const it of list) {
+    r -= Number(it.weight || 1);
+    if (r <= 0) return it;
   }
-}
-
-function animateHudRing(colorHex) {
-  const rect = document.getElementById("hudRingRect");
-  if (!rect || !HUD_CONFIG.ringLen) return;
-
-  rect.style.stroke = colorHex;
-
-  // reset
-  rect.style.transition = "none";
-  rect.style.strokeDashoffset = `${HUD_CONFIG.ringLen}`;
-
-  // animate to full
-  requestAnimationFrame(() => {
-    rect.style.transition = `stroke-dashoffset ${HUD_CONFIG.interval}ms linear`;
-    rect.style.strokeDashoffset = "0";
-  });
+  return list[list.length - 1];
 }
 
 function pickNextItem() {
   if (!intelQueue.length) return null;
 
-  // avoid repeating the same key back-to-back
-  for (let i = 0; i < 6; i++) {
-    const item = intelQueue[Math.floor(Math.random() * intelQueue.length)];
-    if (!item) continue;
-    if (item.key && item.key === HUD_CONFIG.lastKey) continue;
-    return item;
-  }
+  // try strict eligibility first
+  let candidates = intelQueue.filter(eligible);
+  if (candidates.length) return weightedPick(candidates);
+
+  // relax: allow repeat but still keep cooldown
+  candidates = intelQueue.filter(it => {
+    const last = Number(HUD_CONFIG.shownAt[it.key] || 0);
+    const cd = Number(it.cooldownMs || 0);
+    return !(cd > 0 && (Date.now() - last) < cd);
+  });
+  if (candidates.length) return weightedPick(candidates);
+
+  // last resort
   return intelQueue[0];
 }
 
@@ -1237,22 +1454,29 @@ function showNextIntel() {
 
   HUD_CONFIG.lastKey = item.key || null;
 
+  // remember history (prevents spam across refreshes)
+  HUD_CONFIG.recentKeys.unshift(item.key);
+  HUD_CONFIG.recentKeys = HUD_CONFIG.recentKeys.filter(Boolean).slice(0, 6);
+  HUD_CONFIG.shownAt[item.key] = Date.now();
+  hudMemSave();
+
   const msgEl = document.getElementById("hudMessage");
   const tagEl = document.getElementById("hudTag");
   const iconEl = document.getElementById("hudIcon");
+  const subEl = document.getElementById("hudSubline");
+  const boxEl = document.getElementById("hudBox");
 
   if (!msgEl || !tagEl || !iconEl) return;
 
-  // Fade out a bit
   msgEl.style.opacity = "0.2";
 
   setTimeout(() => {
     msgEl.textContent = item.text;
     tagEl.textContent = item.tag;
-
     iconEl.innerHTML = item.icon || "⚡";
 
-    // Glitch in
+    if (subEl) subEl.textContent = item.subline || "";
+
     msgEl.classList.remove("hud-glitch");
     void msgEl.offsetWidth;
     msgEl.classList.add("hud-glitch");
@@ -1262,9 +1486,31 @@ function showNextIntel() {
     tagEl.style.color = c;
     tagEl.style.textShadow = `0 0 10px ${c}`;
 
-    // FULL border ring progress
+    if (boxEl) boxEl.style.setProperty("--hud-accent", c);
+
+    // FULL border ring progress (16s)
     animateHudRing(c);
   }, 220);
+}
+
+function updateHud(data) {
+  // Always rebuild queue (so refresh updates intelligence),
+  // but DO NOT reset messages or restart timer.
+  intelQueue = buildIntel(data);
+
+  if (!HUD_CONFIG.started) {
+    HUD_CONFIG.started = true;
+
+    if (HUD_CONFIG.timer) clearInterval(HUD_CONFIG.timer);
+
+    initHudRing();
+
+    // show first message after a delay (prevents instant “status spam” feeling)
+    setTimeout(() => {
+      showNextIntel();
+      HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
+    }, 1200);
+  }
 }
 
 (async function init() {
