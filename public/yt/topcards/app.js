@@ -12,6 +12,7 @@ const COLORS = {
   green: "#79c314",
   blue: "#487de7",
   purple: "#70369d",
+  white: "#ffffff"
 };
 
 const FEEDBACK = {
@@ -58,13 +59,6 @@ function safeSetHTML(id, html) {
 
 // --- LOGIC ---
 function tierArrow(tier) {
-  // MUST FOLLOW:
-  // red: ↓ ↓
-  // orange: ↓
-  // yellow: -
-  // green: ↑
-  // blue: ↑↑
-  // purple: ⟰
   if (tier === "red") return "↓↓";
   if (tier === "orange") return "↓";
   if (tier === "yellow") return "-";
@@ -528,6 +522,9 @@ function render(data, isFirst) {
       triggerGlowOnce("cardWatch");
     }, 30000);
 
+    // --- INTEGRATION: TRIGGER HUD UPDATE ---
+    updateHud(data);
+
     document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
     document.getElementById("toast").classList.add("show");
     setTimeout(() => document.getElementById("toast").classList.remove("show"), 2000);
@@ -562,42 +559,131 @@ document.querySelectorAll(".card").forEach(card => {
 });
 
 
-/* --- HOLO-STREAM HUD ENGINE --- */
+/* --- HOLO-STREAM HUD ENGINE (ADVANCED) --- */
 const HUD_CONFIG = {
-  interval: 8000, // 8 seconds per slide
+  interval: 8000,
   timer: null
 };
 
-// Placeholder Generator (We will expand this next)
+// White SVG Icons for HUD (fill="white")
+const HUD_ICONS = {
+  target: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-8c0 2.76 2.24 5 5 5s5-2.24 5-5-2.24-5-5-5-5 2.24-5 5z"/></svg>`,
+  rocket: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5zM7.5 13c0-3.32 2.68-7.5 4.5-7.5s4.5 4.18 4.5 7.5c0 2.5-1.5 4.38-1.5 4.38H9s-1.5-1.88-1.5-4.38z"/></svg>`,
+  chartUp: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
+  chartDown: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
+  bulb: `<svg viewBox="0 0 24 24" fill="white"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
+  strategy: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg>`,
+  live: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z M12 6c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>`
+};
+
+// Static Knowledge Base
+const YT_FACTS = [
+  "The first YouTube video was uploaded on April 23, 2005.",
+  "70% of YouTube watch time comes from mobile devices.",
+  "Thumbnails with expressive faces have a 15% higher CTR on average.",
+  "YouTube is the second largest search engine in the world.",
+  "Consistency is key: The algorithm favors regular upload schedules.",
+  "Community Posts can reach viewers who haven't subscribed yet.",
+  "Shorts views now count toward the Main Partner Program eligibility.",
+  "The first 30 seconds of a video determine its retention rate.",
+  "Adding subtitles can increase views by 12% on average.",
+  "62% of businesses use YouTube as a channel to post video content.",
+  "YouTube users stream 694,000 hours of video every single minute.",
+  "T-Series is the most subscribed channel, surpassing PewDiePie in 2019."
+];
+
+// Logic-based Tips
+const YT_TIPS = [
+  "Use end screens to drive traffic to your latest or most popular videos.",
+  "Reply to comments early to boost engagement signals in the first hour.",
+  "Use keyword-rich descriptions to help your video rank in search.",
+  "Group related videos into Playlists to increase session watch time.",
+  "Check your 'Audience' tab to see when your viewers are most active."
+];
+
 function generateIntel(data) {
   const intel = [];
   const ch = data.channel || {};
+  const w = data.weekly || {};
   
-  // 1. Basic Status
+  // 1. SYSTEM STATUS (Blue)
   intel.push({
-    icon: "📡",
-    tag: "LIVE_FEED",
+    icon: HUD_ICONS.live, tag: "LIVE_FEED", type: "blue",
     text: `System monitoring active for channel: ${ch.title || "Unknown"}`
   });
 
-  // 2. Sample Calculation (Just to show it works)
-  const views = ch.totalViews || 0;
-  if(views > 1000) {
+  // 2. MILESTONE MATH (Blue - Math Goal)
+  const subs = Number(ch.subscribers || 0);
+  const nextSubGoal = getMilestone(subs, "subs");
+  const subDiff = nextSubGoal - subs;
+  if (subDiff > 0) {
     intel.push({
-      icon: "📈",
-      tag: "VELOCITY",
-      text: `Channel has accumulated ${fmt(views)} total views lifetime.`
+      icon: HUD_ICONS.target, tag: "TARGET", type: "blue",
+      text: `Target Locked: Only ${fmt(subDiff)} subscribers away from ${fmt(nextSubGoal)}.`
     });
   }
 
-  // 3. Random Filler
+  // 3. VELOCITY (Green/Red - Performance)
+  const netSubs = Number(w.netSubs || 0);
+  if (netSubs > 0) {
+    const dailyAvg = (netSubs / 7).toFixed(1);
+    intel.push({
+      icon: HUD_ICONS.rocket, tag: "VELOCITY", type: "green",
+      text: `Current Trajectory: Gaining approx ${dailyAvg} subs per day this week.`
+    });
+  } else if (netSubs < 0) {
+    intel.push({
+      icon: HUD_ICONS.chartDown, tag: "ALERT", type: "red",
+      text: `Churn Detected: Net subscriber count is down by ${Math.abs(netSubs)} this week.`
+    });
+  }
+
+  // 4. WATCH TIME CONTEXT (Green)
+  const totalHours = Number(data.lifetime?.watchHours || 0);
+  if (totalHours > 24) {
+    const days = (totalHours / 24).toFixed(1);
+    intel.push({
+      icon: HUD_ICONS.chartUp, tag: "RETENTION", type: "green",
+      text: `Your content has been watched for ${days} continuous days in total.`
+    });
+  }
+
+  // 5. MOMENTUM (Green/Red - Performance)
+  const vCur = Number(w.views || 0);
+  const vPrev = Number(w.prevViews || 0);
+  if (vPrev > 0) {
+    const diff = vCur - vPrev;
+    const pct = Math.round((diff / vPrev) * 100);
+    if (pct > 5) {
+      intel.push({
+        icon: HUD_ICONS.chartUp, tag: "MOMENTUM", type: "green",
+        text: `Week-over-Week: Views are UP by ${pct}% compared to last week.`
+      });
+    } else if (pct < -5) {
+      intel.push({
+        icon: HUD_ICONS.chartDown, tag: "WARNING", type: "red",
+        text: `Week-over-Week: Views are down ${Math.abs(pct)}%. Consider checking your CTR.`
+      });
+    }
+  }
+
+  // 6. ACTIONABLE STRATEGY (Yellow)
+  const randomTip = YT_TIPS[Math.floor(Math.random() * YT_TIPS.length)];
   intel.push({
-    icon: "🧩",
-    tag: "TRIVIA",
-    text: "Did you know? The first YouTube video was uploaded in 2005."
+    icon: HUD_ICONS.strategy, tag: "STRATEGY", type: "yellow",
+    text: randomTip
   });
 
-  return intel;
+  // 7. TRIVIA (Purple)
+  const randomFact = YT_FACTS[Math.floor(Math.random() * YT_FACTS.length)];
+  intel.push({
+    icon: HUD_ICONS.bulb, tag: "INTEL", type: "purple",
+    text: randomFact
+  });
+
+  // Shuffle order slightly (keep System first)
+  const first = intel.shift();
+  return [first, ...intel.sort(() => Math.random() - 0.5)];
 }
 
 let intelQueue = [];
@@ -606,6 +692,7 @@ let intelIndex = 0;
 function updateHud(data) {
   // Generate fresh insights
   intelQueue = generateIntel(data);
+  intelIndex = 0;
   
   // If timer not running, start it
   if (!HUD_CONFIG.timer) {
@@ -637,7 +724,9 @@ function showNextIntel() {
     // 3. Update Content
     msgEl.textContent = item.text;
     tagEl.textContent = item.tag;
-    iconEl.textContent = item.icon;
+    
+    // Inject SVG Icon (White)
+    iconEl.innerHTML = item.icon;
 
     // 4. Glitch In
     msgEl.classList.remove("hud-glitch");
@@ -645,23 +734,26 @@ function showNextIntel() {
     msgEl.classList.add("hud-glitch");
     msgEl.style.opacity = "1";
 
-    // 5. Start Timer Bar
+    // 5. Dynamic Colors based on Insight Type
+    const c = COLORS[item.type] || COLORS.white;
+    tagEl.style.color = c;
+    tagEl.style.textShadow = `0 0 10px ${c}`;
+    
+    // Border color on left
+    boxEl.style.borderLeftColor = c;
+    
+    // Timer bar color
+    barEl.style.background = c;
+    barEl.style.boxShadow = `0 0 10px ${c}`;
+
+    // 6. Start Timer Bar
     requestAnimationFrame(() => {
       barEl.style.transition = `width ${HUD_CONFIG.interval}ms linear`;
       barEl.style.width = "100%";
     });
-
-    // 6. Dynamic Border Color (Match the tag or use generic)
-    // We reuse the global variable --c-tier usually set by cards
-    // Or you can set it specific to the insight type later.
     
   }, 200);
 }
-
-// *** CRITICAL INTEGRATION STEP ***
-// Modify the existing `render(data, isFirst)` function.
-// Add this single line at the very end of `render()`:
-// updateHud(data);
 
 
 (async function init() {
