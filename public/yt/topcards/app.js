@@ -15,10 +15,32 @@ const COLORS = {
 };
 
 const FEEDBACK = {
-  subs: { red: "Churn", orange: "Slow", yellow: "Stable", green: "Climbing", blue: "Surging", purple: "Viral" },
-  views: { red: "Low Reach", orange: "Needs Push", yellow: "Steady", green: "Rising", blue: "Trending", purple: "Explosive" },
-  watch: { red: "Dropping", orange: "Weak", yellow: "Consistent", green: "Engaging", blue: "Hooked", purple: "Binge" },
+  subs: {
+    red: "Audience Leakage",
+    orange: "Slow Conversion",
+    yellow: "Steady Growth",
+    green: "Strong Pull",
+    blue: "Rising Very Fast",
+    purple: "Exceptional Growth",
+  },
+  views: {
+    red: "Reach Dropping",
+    orange: "Low Reach",
+    yellow: "Stable Reach",
+    green: "Reach Rising",
+    blue: "Trending",
+    purple: "Gone Viral",
+  },
+  watch: {
+    red: "Poor Engagement",
+    orange: "Retention Problem",
+    yellow: "Consistent",
+    green: "Engagement Rising",
+    blue: "Viewers Hooked",
+    purple: "Outstanding Engagement",
+  },
 };
+
 
 // --- DOM HELPERS ---
 function safeSetText(id, text) {
