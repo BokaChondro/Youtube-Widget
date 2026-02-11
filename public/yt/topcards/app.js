@@ -74,7 +74,6 @@ async function fetchJSON(url) {
   return r.json();
 }
 
-// Sets color theme and triggers the "Pulse" animation
 function setCardTheme(cardId, tier) {
   const card = document.getElementById(cardId);
   if(!card) return;
@@ -84,12 +83,11 @@ function setCardTheme(cardId, tier) {
 function triggerBreathing(cardId) {
   const card = document.getElementById(cardId);
   if(!card) return;
-  // Remove reflow add to restart animation
+  // Restart Pulse Animation
   card.classList.remove('pulse-active');
-  void card.offsetWidth; // force reflow
+  void card.offsetWidth; // Force Reflow
   card.classList.add('pulse-active');
-  
-  // Stop breathing after 4 seconds (one full cycle is ~2s)
+  // Stop after 4s (2 cycles)
   setTimeout(() => card.classList.remove('pulse-active'), 4000);
 }
 
@@ -160,11 +158,10 @@ function renderPacing(elId, cur, prev, suffix="") {
 
   const left = `<div><span style="opacity:0.6; margin-right:4px;">Last 7D:</span><b>${fmt(c)}${suffix}</b> ${pctHtml}</div>`;
   const right = `<div><span style="opacity:0.4; margin-right:4px;">Prev:</span><span style="opacity:0.8">${fmt(p)}${suffix}</span></div>`;
-
   safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL (FAST START) ---
+// --- CASINO ROLL ---
 function ensureRoll(el) {
   if (el._rollWrap && el._rollCol) return;
   el.textContent = "";
@@ -184,7 +181,6 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   const decimals = opts.decimals ?? 0;
   const suffix = opts.suffix ?? "";
   
-  // IF FIRST LOAD: Force start from 0
   const start = isFirst ? 0 : Number(fromVal || 0);
   const end = Number(toVal || 0);
 
@@ -197,7 +193,6 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   
   const txt = (val) => (decimals ? fmt1(val/scale) : fmt(Math.round(val/scale))) + suffix;
 
-  // No animation if unchanged (and not first load)
   if (!isFirst && a === b) {
     col.style.transition = "none";
     col.style.transform = "translateY(0)";
@@ -210,10 +205,8 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   let html = "";
   let finalY = 0;
   
-  // On First Load with big numbers (0 -> 700k), we don't want 700k DOM elements.
-  // We want a simulated fast spin.
+  // Create Animation Strip
   if (isFirst || absDiff > 50) {
-    // Simulated Strip: 0 ... [Randoms] ... Target
     const mid1 = Math.round(a + diff * 0.33);
     const mid2 = Math.round(a + diff * 0.66);
     html = `
@@ -222,9 +215,8 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
       <span class="rollLine" style="filter:blur(3px)">${txt(mid2)}</span>
       <span class="rollLine">${txt(b)}</span>
     `;
-    finalY = -1.1 * 3; // Move 3 slots down
+    finalY = -1.1 * 3;
   } else {
-    // Small changes (Refresh): Show full strip
     const steps = [];
     const dir = diff > 0 ? 1 : -1;
     for (let i = 0; i <= absDiff; i++) {
@@ -237,11 +229,8 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   col.style.transition = "none";
   col.style.transform = "translateY(0)";
   col.innerHTML = html;
+  void col.offsetHeight; // Force Paint
 
-  // Force Paint
-  void col.offsetHeight; 
-
-  // Animate: Fast (800ms) on first load, Standard (1500ms) on refresh
   const dur = isFirst ? 800 : 1500;
   col.style.transition = `transform ${dur}ms cubic-bezier(0.15, 0.85, 0.35, 1)`;
   col.style.transform = `translateY(${finalY}em)`;
@@ -314,7 +303,6 @@ function render(data, isFirst) {
     safeSetText("subsNextPct", pSubs+"%");
     safeSetStyle("subsProgressFill", "width", pSubs+"%");
     
-    // Trigger Breathe on Load
     triggerBreathing("cardSubs");
 
     // 2. VIEWS
@@ -356,4 +344,58 @@ function render(data, isFirst) {
     triggerBreathing("cardWatch");
 
     // --- ANIMATIONS ---
-    animateCasinoRoll(document.getElementById("subsNow"), isFirst ?
+    animateCasinoRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subs, cur.subs, { isFirst });
+    if (!isFirst && cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs");
+
+    animateCasinoRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.views, cur.views, { isFirst });
+    if (!isFirst && cur.views > state.views) spawnFloatIcon("cardViews", "views");
+
+    animateCasinoRoll(document.getElementById("watchNow"), isFirst ? 0 : state.watch, cur.watch, { isFirst, decimals: cur.watch<100?1:0, suffix:"h" });
+    if (!isFirst && cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
+
+    // Halftime Breathing (30s)
+    clearTimeout(halfTimeTimer);
+    halfTimeTimer = setTimeout(() => {
+      triggerBreathing("cardSubs");
+      triggerBreathing("cardViews");
+      triggerBreathing("cardWatch");
+    }, 30000);
+
+    state = cur;
+    document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
+    document.getElementById("toast").classList.add("show");
+    setTimeout(() => document.getElementById("toast").classList.remove("show"), 2000);
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById("updated").textContent = "ERR: " + err.message;
+  }
+}
+
+async function load(isFirst) {
+  try {
+    const data = await fetchJSON("/api/yt-kpis");
+    if (data.error) throw new Error(data.error);
+    render(data, isFirst);
+  } catch (e) {
+    document.getElementById("updated").textContent = "FETCH ERROR: " + e.message;
+  }
+}
+
+// 3D Tilt
+document.querySelectorAll('.card').forEach(card => {
+  card.addEventListener('mousemove', (e) => {
+    const r = card.getBoundingClientRect();
+    const x = ((e.clientY - r.top) / r.height - 0.5) * -10;
+    const y = ((e.clientX - r.left) / r.width - 0.5) * 10;
+    card.style.transform = `perspective(1000px) rotateX(${x}deg) rotateY(${y}deg) scale(1.02)`;
+  });
+  card.addEventListener('mouseleave', () => {
+    card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`;
+  });
+});
+
+(async function init() {
+  await load(true);
+  setInterval(() => load(false), 60 * 1000);
+})();
