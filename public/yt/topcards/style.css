@@ -2,8 +2,8 @@
   --bg-dark: #191919;
   --card-bg: #000000;
 
-  --glass-border: rgba(255, 255, 255, 0.15);
-  --glass-highlight: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-highlight: rgba(255, 255, 255, 0.06);
 
   --c-red: #ff3344; --c-orange: #ff8800; --c-yellow: #ffd700;
   --c-green: #00ff99; --c-blue: #00ccff; --c-purple: #bb00ff;
@@ -36,27 +36,29 @@ body {
     radial-gradient(circle at top right, var(--c-tier) -80%, transparent 60%),
     var(--card-bg);
 
-  border: 1px solid var(--glass-border);
+  /* GLASS BORDER (force NO tier borders left/bottom) */
+  border: 1px solid var(--glass-border) !important;
+  border-left: 1px solid var(--glass-border) !important;
+  border-bottom: 1px solid var(--glass-border) !important;
+  border-image: none !important;
+
   border-radius: 20px;
   padding: 20px;
   overflow: hidden;
-  box-shadow: 0 4px 30px rgba(0,0,0,0.8);
+
+  box-shadow:
+    0 4px 30px rgba(0,0,0,0.8),
+    inset 0 0 0 1px rgba(255,255,255,0.06);
+
   transition: transform 0.1s ease-out, box-shadow 0.3s ease;
   transform-style: preserve-3d;
   --logo-url: none;
   opacity: 1;
-
-  /* REMOVE any tier border styling on left/bottom */
-  border-left-color: var(--glass-border) !important;
-  border-bottom-color: var(--glass-border) !important;
-  border-left-width: 1px !important;
-  border-bottom-width: 1px !important;
 }
 
 .card-enter {
   animation: cardFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
-
 @keyframes cardFadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
@@ -64,7 +66,10 @@ body {
 
 .card:hover {
   z-index: 10;
-  box-shadow: 0 20px 60px -10px rgba(0,0,0,0.95), 0 0 20px var(--glass-highlight);
+  box-shadow:
+    0 20px 60px -10px rgba(0,0,0,0.95),
+    0 0 20px var(--glass-highlight),
+    inset 0 0 0 1px rgba(255,255,255,0.07);
 }
 
 /* LOGO (background watermark) */
@@ -84,7 +89,6 @@ body {
   filter: grayscale(100%) contrast(1.2);
   z-index: 0;
   pointer-events: none;
-
   animation: logoBreath 10s ease-in-out infinite;
 }
 
@@ -97,7 +101,7 @@ body {
 /* --- HOLO GLARE --- */
 .glare {
   position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 60%, transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.03) 60%, transparent);
   transform: skewX(-25deg); pointer-events: none;
   z-index: 1;
   animation: glareSweep 6s infinite ease-in-out;
@@ -119,11 +123,15 @@ body {
 .left { display: flex; align-items: center; gap: 10px; }
 
 .iconBox {
-  width: 36px; height: 36px; background: rgba(255,255,255,0.08);
-  border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  color: #fff; transition: all 0.3s ease;
+  width: 36px; height: 36px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; /* default white */
+  transition: color 0.25s ease;
 }
-.icon { width: 20px; height: 20px; fill: currentColor; }
+
+.icon { width: 20px; height: 20px; fill: currentColor; } /* follows iconBox color */
 
 .titles { display: flex; flex-direction: column; }
 .title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95); }
@@ -131,98 +139,14 @@ body {
 
 .chip {
   display: flex; align-items: center; gap: 6px;
-  background: rgba(30,30,30,0.5); padding: 4px 10px; border-radius: 20px;
+  background: rgba(30,30,30,0.5);
+  padding: 4px 10px;
+  border-radius: 20px;
   border: 1px solid rgba(255,255,255,0.1);
 }
+
 .dot { width: 6px; height: 6px; border-radius: 50%; background: #555; box-shadow: 0 0 8px currentColor; }
 .chipText { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8); }
 
-/* --- SLOW GLOW (ONLY: iconBox, icon(svg), chip/comment box) --- */
-@keyframes slowGlowBox {
-  0%, 100% { box-shadow: 0 0 6px var(--c-tier); }
-  50%      { box-shadow: 0 0 16px var(--c-tier); }
-}
-@keyframes slowGlowIcon {
-  0%, 100% { filter: drop-shadow(0 0 3px var(--c-tier)); }
-  50%      { filter: drop-shadow(0 0 10px var(--c-tier)); }
-}
-
-.iconBox,
-.chip {
-  animation: slowGlowBox 6s ease-in-out infinite;
-}
-.icon {
-  animation: slowGlowIcon 6s ease-in-out infinite;
-}
-
-.midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 40px; }
-.bigNumber {
-  display: flex; align-items: baseline; gap: 4px; font-size: 28px; font-weight: 700;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.5); font-feature-settings: "tnum"; color: #fff;
-}
-.mainArrow { font-size: 20px; transform: translateY(-2px); }
-
-/* Sparkline stays tier-based only (no pulse/breath effects) */
-.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 4px var(--c-tier)); }
-.spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
-
-.milestoneBox { margin-bottom: 12px; }
-.milestoneText { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 4px; }
-.milestoneText b { color: #fff; }
-
-.progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
-
-/* Goal bar color is tier-based only */
-.progressFill {
-  height: 100%; width: 0%;
-  background: var(--c-tier);
-  box-shadow: 0 0 10px var(--c-tier);
-  border-radius: 2px;
-  transition: width 1s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.weekLine {
-  font-size: 12px; color: rgba(255,255,255,0.9); padding-bottom: 12px; margin-bottom: 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between;
-}
-
-.metaRow { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
-.metaItem { display: flex; flex-direction: column; gap: 2px; }
-.metaLabel { font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase; }
-.metaValue { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.9); font-feature-settings: "tnum"; }
-
-.vsNum.pos { color: var(--c-green); } .vsNum.neg { color: var(--c-red); } .vsNum.neu { color: #888; }
-.vsArrow.pos { color: var(--c-green); } .vsArrow.neg { color: var(--c-red); }
-
-.foot { margin-top: 15px; text-align: center; font-size: 10px; color: rgba(255,255,255,0.2); }
-
-.toast {
-  position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px);
-  background: rgba(0,255,153,0.15); border: 1px solid rgba(0,255,153,0.3);
-  color: #00ff99; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
-  opacity: 0; transition: all 0.3s ease; pointer-events: none; z-index: 100;
-}
-.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-
-/* Float icon animation (on increases) */
-.floatIcon {
-  position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff;
-  filter: drop-shadow(0 0 8px rgba(255,255,255,0.9)); pointer-events: none; z-index: 20;
-  transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards;
-}
-@keyframes floatSequence {
-  0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); }
-  20% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); }
-  80% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); }
-  100% { opacity: 0; transform: translate(-50%, -60px) scale(1); }
-}
-
-/* Casino roll infrastructure (used only on increases during refresh) */
-.rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
-.rollCol { display: flex; flex-direction: column; }
-.rollLine { height: 1.1em; line-height: 1.1em; display: block; }
-
-@media (max-width: 700px) {
-  .grid { grid-template-columns: 1fr; }
-  .card { margin-bottom: 10px; }
-}
+/* --- PULSE GLOW: ONLY iconBox + chip (once, 2s) ---
+   SVG icon does NOT glow; it just changes color via i
