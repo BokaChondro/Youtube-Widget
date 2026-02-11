@@ -40,756 +40,962 @@ const FEEDBACK = {
     yellow: "Consistent",
     green: "Engage Up",
     blue: "Hooked",
-    purple: "Outstanding",
-  },
+    purple: "Ultra Retained",
+  }
 };
 
-const REFRESH_VISIBLE_MS = 60_000;
-const REFRESH_HIDDEN_MS = 240_000;
+const GOALS = {
+  subs: [500, 1000, 2000, 3000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000],
+  views: [10000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000, 10000000, 25000000, 50000000, 100000000],
+  watch: [100, 500, 1000, 2000, 4000, 8000, 10000, 20000, 50000, 100000, 200000, 400000]
+};
 
-let prefersReducedMotion = false;
-let hudStartTimeout = null;
-let refreshTimerId = null;
-let inflightLoadPromise = null;
-let tiltCardRefs = [];
-
-// --- DOM HELPERS ---
-function safeSetText(id, text) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = text;
-}
-function safeSetStyle(id, prop, val) {
-  const el = document.getElementById(id);
-  if (el) el.style[prop] = val;
-}
-function safeSetHTML(id, html) {
-  const el = document.getElementById(id);
-  if (el) el.innerHTML = html;
+function pickNextGoal(curr, arr) {
+  for (const g of arr) if (g > curr) return g;
+  const last = arr[arr.length - 1] || 0;
+  return Math.ceil(curr / last) * last;
 }
 
-// --- LOGIC ---
-function tierArrow(tier) {
-  if (tier === "red") return "↓↓";
-  if (tier === "orange") return "↓";
-  if (tier === "yellow") return "-";
-  if (tier === "green") return "↑";
-  if (tier === "blue") return "↑↑";
-  return "⟰";
+function pctToGoal(curr, goal) {
+  if (!goal || goal <= 0) return 0;
+  return Math.max(0, Math.min(100, (curr / goal) * 100));
 }
 
-function tierFromBaseline(last28, median6m, absMin) {
-  const L = Number(last28 || 0);
-  const B = Number(median6m || 0);
-  if (B <= 0) return L > absMin ? "green" : "orange";
-
-  const ratio = L / B;
-  if (ratio < 0.7) return "red";
-  if (ratio < 0.9) return "orange";
-  if (ratio < 1.05) return "yellow";
-  if (ratio < 1.25) return "green";
-  if (ratio < 1.6) return "blue";
-  return "purple";
+function fmtDelta(n) {
+  const v = Number(n || 0);
+  const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+  return sign + fmt(Math.abs(v));
 }
 
-function getMilestone(val, type) {
-  const v = Number(val || 0);
-  if (v < 0) return 100;
-
-  if (type === "watch") {
-    if (v < 100) return 100;
-    if (v < 4000) return 4000;
-    if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
-    return Math.ceil((v + 1) / 5000) * 5000;
-  }
-
-  if (v < 1000) return Math.ceil((v + 1) / 100) * 100;
-  if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
-  if (v < 100000) return Math.ceil((v + 1) / 10000) * 10000;
-  return Math.ceil((v + 1) / 100000) * 100000;
+function classDelta(n) {
+  const v = Number(n || 0);
+  if (v > 0) return "pos";
+  if (v < 0) return "neg";
+  return "neu";
 }
 
-async function fetchJSON(url) {
-  const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
+function arrowForDelta(n) {
+  const v = Number(n || 0);
+  if (v > 0) return "▲";
+  if (v < 0) return "▼";
+  return "•";
 }
 
-// --- THEME + UI SETTERS ---
-function setCardTheme(cardId, tier) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  card.style.setProperty("--c-tier", COLORS[tier] || COLORS.yellow);
+function toHours(minutes) {
+  return Number(minutes || 0) / 60;
 }
 
-function setChip(dotId, chipTextId, tier, text) {
-  const dot = document.getElementById(dotId);
-  if (dot) {
-    dot.style.background = COLORS[tier];
-    dot.style.boxShadow = `0 0 10px ${COLORS[tier]}`;
-  }
-  safeSetText(chipTextId, text);
+function safeNum(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function setMainArrow(elId, tier) {
-  const el = document.getElementById(elId);
+function clamp(n, a, b) {
+  n = Number(n);
+  if (!Number.isFinite(n)) return a;
+  return Math.max(a, Math.min(b, n));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function mixHex(a, b, t) {
+  // a,b = "#rrggbb"
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ar = (pa >> 16) & 255, ag = (pa >> 8) & 255, ab = pa & 255;
+  const br = (pb >> 16) & 255, bg = (pb >> 8) & 255, bb = pb & 255;
+  const rr = Math.round(lerp(ar, br, t));
+  const rg = Math.round(lerp(ag, bg, t));
+  const rb = Math.round(lerp(ab, bb, t));
+  return "#" + ((1 << 24) + (rr << 16) + (rg << 8) + rb).toString(16).slice(1);
+}
+
+/* ===========================
+   Casino-style digit rolling
+   =========================== */
+
+// Slow roll (casino) when numbers change; works both up + down
+function setRollingNumber(el, prev, next, opts = {}) {
   if (!el) return;
-  el.textContent = tierArrow(tier);
-  el.style.color = "var(--c-tier)";
-  el.style.textShadow = "0 0 15px var(--c-tier)";
-}
+  prev = String(prev ?? "0");
+  next = String(next ?? "0");
 
-function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
-  const numEl = document.getElementById(elNumId);
-  const arrEl = document.getElementById(elArrowId);
-  if (!numEl || !arrEl) return;
+  const duration = clamp(opts.durationMs ?? 1100, 450, 2600);
+  const stagger = clamp(opts.staggerMs ?? 45, 0, 120);
+  const loops = clamp(opts.loops ?? 1, 0, 4);
+  const ease = opts.ease ?? "cubic-bezier(0.22, 1, 0.36, 1)";
 
-  const d = Number(delta || 0);
-  numEl.className = d > 0 ? "vsNum pos" : (d < 0 ? "vsNum neg" : "vsNum neu");
-  arrEl.className = d > 0 ? "vsArrow pos" : (d < 0 ? "vsArrow neg" : "vsArrow neu");
-  arrEl.textContent = d > 0 ? "↑" : (d < 0 ? "↓" : "–");
+  // Keep digits aligned (monospace-ish via tabular nums)
+  const maxLen = Math.max(prev.length, next.length);
+  prev = prev.padStart(maxLen, " ");
+  next = next.padStart(maxLen, " ");
 
-  const absTxt = decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)));
-  numEl.textContent = absTxt + suffix;
-}
-
-function hexToRgb(hex) {
-  const h = (hex || "").replace("#", "");
-  const full = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
-  const n = parseInt(full, 16);
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
-
-function rgbaFromHex(hex, a) {
-  const { r, g, b } = hexToRgb(hex);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-// --- SPARKLINE GRADIENT (tier -> white) ---
-function ensureSparkGradient(svgEl, gradId, tierHex) {
-  if (!svgEl) return null;
-
-  let defs = svgEl.querySelector("defs");
-  if (!defs) {
-    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-    svgEl.insertBefore(defs, svgEl.firstChild);
-  }
-
-  let grad = svgEl.querySelector(`#${gradId}`);
-  if (!grad) {
-    grad = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
-    grad.setAttribute("id", gradId);
-    grad.setAttribute("x1", "0");
-    grad.setAttribute("y1", "0");
-    grad.setAttribute("x2", "0");
-    grad.setAttribute("y2", "1");
-
-    const s0 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-    s0.setAttribute("offset", "0%");
-    grad.appendChild(s0);
-
-    const s1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-    s1.setAttribute("offset", "70%");
-    grad.appendChild(s1);
-
-    const s2 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-    s2.setAttribute("offset", "100%");
-    grad.appendChild(s2);
-
-    defs.appendChild(grad);
-  }
-
-  const stops = grad.querySelectorAll("stop");
-  if (stops[0]) stops[0].setAttribute("stop-color", rgbaFromHex(tierHex, 0.22));
-  if (stops[1]) stops[1].setAttribute("stop-color", "rgba(255,255,255,0.10)");
-  if (stops[2]) stops[2].setAttribute("stop-color", "rgba(255,255,255,0.02)");
-
-  return `url(#${gradId})`;
-}
-
-// --- SPARKLINE ---
-function setSpark(fillId, pathId, values, tier) {
-  const fillEl = document.getElementById(fillId);
-  const pathEl = document.getElementById(pathId);
-  if (!fillEl || !pathEl) return;
-
-  const vals = (values || []).map(Number);
-  if (vals.length < 2) return;
-
-  const w = 120, h = 40;
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = max - min || 1;
-
-  const pts = vals.map((v, i) => {
-    const x = (i / (vals.length - 1)) * w;
-    const y = h - ((v - min) / span) * h;
-    return { x, y };
-  });
-
-  let dLine = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i - 1];
-    const c = pts[i];
-    const cx = ((p.x + c.x) / 2).toFixed(1);
-    const cy = ((p.y + c.y) / 2).toFixed(1);
-    dLine += ` Q ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${cx} ${cy}`;
-  }
-  dLine += ` T ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
-
-  const dArea = `${dLine} L ${w} ${h} L 0 ${h} Z`;
-
-  pathEl.setAttribute("d", dLine);
-  pathEl.style.stroke = COLORS[tier];
-  pathEl.style.strokeWidth = "2.4";
-
-  fillEl.setAttribute("d", dArea);
-  const svgEl = fillEl.closest("svg");
-  const gradUrl = ensureSparkGradient(svgEl, `grad-${fillId}`, COLORS[tier]);
-  if (gradUrl) fillEl.style.fill = gradUrl;
-}
-
-function renderPacing(elId, cur, prev, suffix = "") {
-  const c = Number(cur || 0), p = Number(prev || 0);
-  const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
-
-  let pctHtml = "";
-  if (pct > 0) pctHtml = `<span style="color:var(--c-green); font-size:0.9em;">(+${pct}%)</span>`;
-  else if (pct < 0) pctHtml = `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>`;
-  else pctHtml = `<span style="color:#666; font-size:0.9em;">(—)</span>`;
-
-  const left = `<div><span style="opacity:0.6; margin-right:4px;">Last 7D:</span><b>${fmt(c)}${suffix}</b> ${pctHtml}</div>`;
-  const right = `<div><span style="opacity:0.4; margin-right:4px;">Prev:</span><span style="opacity:0.8">${fmt(p)}${suffix}</span></div>`;
-  safeSetHTML(elId, left + right);
-}
-
-// --- CASINO ROLL ---
-function ensureRoll(el) {
-  if (!el) return;
-  if (el._rollWrap && el._rollCol) return;
-
-  el.textContent = "";
+  // Build columns
   const wrap = document.createElement("span");
   wrap.className = "rollWrap";
-  const col = document.createElement("span");
-  col.className = "rollCol";
-  wrap.appendChild(col);
+
+  for (let i = 0; i < maxLen; i++) {
+    const a = prev[i];
+    const b = next[i];
+
+    const col = document.createElement("span");
+    col.className = "rollCol";
+
+    // If not a digit, just show final char without rolling
+    if (!/\d/.test(a) || !/\d/.test(b)) {
+      const line = document.createElement("span");
+      line.className = "rollLine";
+      line.textContent = b === " " ? "\u00A0" : b;
+      col.appendChild(line);
+      wrap.appendChild(col);
+      continue;
+    }
+
+    const from = Number(a);
+    const to = Number(b);
+
+    // Build a sequence to roll through (supports down-roll too)
+    // We do: [from ... (loops cycles) ... to]
+    const seq = [];
+    seq.push(from);
+
+    if (loops > 0) {
+      for (let l = 0; l < loops; l++) {
+        for (let d = 0; d <= 9; d++) seq.push(d);
+      }
+    }
+
+    // Ensure direction makes sense (up or down) by stepping
+    const step = to >= from ? 1 : -1;
+    let cur = from;
+    while (cur !== to) {
+      cur = (cur + step + 10) % 10;
+      seq.push(cur);
+    }
+
+    // Populate lines
+    for (const d of seq) {
+      const line = document.createElement("span");
+      line.className = "rollLine";
+      line.textContent = String(d);
+      col.appendChild(line);
+    }
+
+    // Animate by translating the column
+    const lineH = 1.1; // em (matches CSS)
+    const totalLines = seq.length;
+    const translateEm = (totalLines - 1) * lineH;
+
+    // Stagger each digit slightly
+    col.style.transition = `transform ${duration}ms ${ease}`;
+    col.style.transitionDelay = `${i * stagger}ms`;
+
+    // Initial position
+    col.style.transform = "translateY(0em)";
+    // Force layout
+    void col.offsetHeight;
+    // Animate to final
+    requestAnimationFrame(() => {
+      col.style.transform = `translateY(-${translateEm}em)`;
+    });
+
+    wrap.appendChild(col);
+  }
+
+  // Replace content
+  el.innerHTML = "";
   el.appendChild(wrap);
-  el._rollWrap = wrap;
-  el._rollCol = col;
 }
 
-function setRollInstant(el, text) {
-  if (!el) return;
-  ensureRoll(el);
-  const col = el._rollCol;
-  col.style.transition = "none";
-  col.style.transform = "translateY(0)";
-  col.innerHTML = `<span class="rollLine">${text}</span>`;
-}
+/* ===========================
+   Sparklines
+   =========================== */
 
-function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
-  if (!el) return;
-  const decimals = opts.decimals ?? 0;
-  const suffix = opts.suffix ?? "";
-  const duration = opts.duration ?? 1600;
+function buildSparkPath(values, width = 120, height = 40, pad = 3) {
+  values = (values || []).map(safeNum);
+  if (!values.length) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const step = (width - pad * 2) / (values.length - 1 || 1);
 
-  const start = Number(fromVal || 0);
-  const end = Number(toVal || 0);
-
-  ensureRoll(el);
-  const col = el._rollCol;
-
-  const scale = Math.pow(10, decimals);
-  const a = Math.round(start * scale);
-  const b = Math.round(end * scale);
-
-  const txt = (val) => {
-    const n = val / scale;
-    return (decimals ? fmt1(n) : fmt(Math.round(n))) + suffix;
-  };
-
-  if (a === b) {
-    setRollInstant(el, txt(b));
-    return;
+  let d = "";
+  for (let i = 0; i < values.length; i++) {
+    const x = pad + i * step;
+    const y = pad + (1 - (values[i] - min) / span) * (height - pad * 2);
+    d += (i === 0 ? "M" : "L") + x.toFixed(2) + " " + y.toFixed(2) + " ";
   }
-
-  const diff = b - a;
-  const absDiff = Math.abs(diff);
-  const MAX_STEPS = 28;
-  let steps = [];
-
-  if (absDiff <= MAX_STEPS) {
-    const dir = diff > 0 ? 1 : -1;
-    for (let i = 0; i <= absDiff; i++) steps.push(a + (i * dir));
-  } else {
-    steps = [a, a + Math.round(diff / 2), b];
-  }
-
-  col.style.transition = "none";
-  col.style.transform = "translateY(0)";
-  col.innerHTML = steps.map((v, i) => {
-    const blur = (steps.length === 3 && i === 1) ? ' style="filter:blur(2px)"' : "";
-    return `<span class="rollLine"${blur}>${txt(v)}</span>`;
-  }).join("");
-
-  void col.offsetHeight;
-
-  const lines = steps.length - 1;
-  const finalY = -1.1 * lines;
-
-  col.style.transition = `transform ${duration}ms cubic-bezier(0.18, 0.9, 0.2, 1)`;
-  col.style.transform = `translateY(${finalY}em)`;
+  return d.trim();
 }
 
-// --- SPEEDOMETER ---
-function animateSpeedometer(el, toVal, opts = {}) {
+function buildSparkFill(pathD, width = 120, height = 40) {
+  if (!pathD) return "";
+  return `${pathD} L ${width} ${height} L 0 ${height} Z`;
+}
+
+/* ===========================
+   Tier + color selection
+   =========================== */
+
+function tierColor(type, weekly, prev, avg6m, median6m) {
+  // Uses vs median + trend
+  const now = safeNum(weekly);
+  const before = safeNum(prev);
+  const base = safeNum(median6m || avg6m);
+
+  const delta = now - base;
+  const trend = now - before;
+
+  const rel = base ? delta / base : 0;
+  const tr = before ? trend / before : 0;
+
+  // Heuristics for tier
+  if (rel >= 0.6 && tr >= 0.2) return { tier: "purple", color: COLORS.purple };
+  if (rel >= 0.35 && tr >= 0.12) return { tier: "blue", color: COLORS.blue };
+  if (rel >= 0.12) return { tier: "green", color: COLORS.green };
+  if (rel >= -0.05) return { tier: "yellow", color: COLORS.yellow };
+  if (rel >= -0.2) return { tier: "orange", color: COLORS.orange };
+  return { tier: "red", color: COLORS.red };
+}
+
+/* ===========================
+   DOM helpers
+   =========================== */
+
+function setDot(el, color) {
   if (!el) return;
-
-  const decimals = opts.decimals ?? 0;
-  const suffix = opts.suffix ?? "";
-  const duration = opts.duration ?? 650;
-
-  const endVal = Number(toVal || 0);
-  if (el._spdRaf) cancelAnimationFrame(el._spdRaf);
-
-  const t0 = performance.now();
-  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-
-  const renderText = (v) => (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
-
-  const tick = (now) => {
-    const p = Math.min(1, (now - t0) / duration);
-    const v = endVal * easeOutCubic(p);
-    el.textContent = renderText(v);
-    if (p < 1) el._spdRaf = requestAnimationFrame(tick);
-  };
-
-  el._spdRaf = requestAnimationFrame(tick);
+  el.style.background = color;
+  el.style.color = color;
 }
 
-// --- FLOAT ICON ---
-const SVGS = {
-  subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
-  views: `<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
-  watch: `<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
-};
-
-function spawnFloatIcon(cardId, type) {
-  if (prefersReducedMotion) return;
+function setCardTier(cardId, color) {
   const card = document.getElementById(cardId);
   if (!card) return;
-  const el = document.createElement("div");
-  el.className = "floatIcon";
-  el.innerHTML = SVGS[type] || "";
-  card.appendChild(el);
-  setTimeout(() => el.remove(), 7000);
+  card.style.setProperty("--c-tier", color);
 }
 
-// --- GLOW ONCE ---
 function triggerGlowOnce(cardId) {
-  if (prefersReducedMotion) return;
   const card = document.getElementById(cardId);
   if (!card) return;
-
   card.classList.remove("glow-once");
   void card.offsetWidth;
   card.classList.add("glow-once");
-
-  setTimeout(() => card.classList.remove("glow-once"), 4000);
 }
 
-let glowTimer = null;
+function showToast() {
+  const t = document.getElementById("toast");
+  if (!t) return;
+  t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove("show"), 2200);
+}
 
-// --- MAIN RENDER ---
-let state = { subs: 0, views: 0, watch: 0 };
+/* ===========================
+   Floating +1 icons (SVG)
+   =========================== */
+
+const FLOAT_SVGS = {
+  subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
+  views: `<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
+  watch: `<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`
+};
+
+function spawnFloatIcon(cardId, type) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+
+  const icon = document.createElement("div");
+  icon.className = "floatIcon";
+  icon.innerHTML = FLOAT_SVGS[type] || "";
+  card.appendChild(icon);
+
+  setTimeout(() => {
+    icon.remove();
+  }, 5200);
+}
+
+/* ===========================
+   Fetch
+   =========================== */
+
+async function fetchJSON(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  return r.json();
+}
+
+/* ===========================
+   State
+   =========================== */
+
+const STATE = {
+  subsNow: 0,
+  viewsTotal: 0,
+  watchHours: 0
+};
+
+/* ===========================
+   Render
+   =========================== */
+
+function renderCard({
+  type, // "subs" | "views" | "watch"
+  cardId,
+  nowElId,
+  arrowElId,
+  dotId,
+  chipTextId,
+  sparkPathId,
+  sparkFillId,
+  weekElId,
+  last28ElId,
+  prev28ElId,
+  vsNumId,
+  vsArrowId,
+  nextGoalId,
+  nextPctId,
+  progressFillId,
+
+  nowValue,
+  weeklyValue,
+  prevWeeklyValue,
+  last28Value,
+  prev28Value,
+  median6m,
+  avg6m,
+
+  sparkValues,
+  unitSuffix = ""
+}) {
+  const nowEl = document.getElementById(nowElId);
+  const arrowEl = document.getElementById(arrowElId);
+  const dot = document.getElementById(dotId);
+  const chipText = document.getElementById(chipTextId);
+
+  const weekEl = document.getElementById(weekElId);
+  const last28El = document.getElementById(last28ElId);
+  const prev28El = document.getElementById(prev28ElId);
+  const vsNum = document.getElementById(vsNumId);
+  const vsArrow = document.getElementById(vsArrowId);
+
+  const nextGoalEl = document.getElementById(nextGoalId);
+  const nextPctEl = document.getElementById(nextPctId);
+  const progressFill = document.getElementById(progressFillId);
+
+  const { tier, color } = tierColor(type, weeklyValue, prevWeeklyValue, avg6m, median6m);
+
+  // Set global tier color for card effects
+  setCardTier(cardId, color);
+
+  // Chip + dot
+  setDot(dot, color);
+  chipText.textContent = FEEDBACK[type][tier] || "—";
+
+  // Main numbers: roll if changed
+  const prevNow = STATE[type + "Now"] ?? nowValue;
+  const changed = Number(prevNow) !== Number(nowValue);
+
+  if (changed) {
+    // slow casino roll
+    setRollingNumber(nowEl, fmt(prevNow), fmt(nowValue), {
+      durationMs: 1350,
+      staggerMs: 55,
+      loops: 1
+    });
+
+    // float icon when rising
+    if (Number(nowValue) > Number(prevNow)) {
+      spawnFloatIcon(cardId, type);
+    }
+
+    // glow breath
+    triggerGlowOnce(cardId);
+  } else {
+    // normal set
+    nowEl.textContent = fmt(nowValue) + unitSuffix;
+  }
+
+  // Arrow on main value (based on weekly trend vs prev week)
+  const trend = safeNum(weeklyValue) - safeNum(prevWeeklyValue);
+  arrowEl.textContent = arrowForDelta(trend);
+
+  // Week line
+  weekEl.textContent = `Last 7D: ${fmtDelta(weeklyValue)}${unitSuffix}`;
+
+  // 28D + prev
+  last28El.textContent = fmtDelta(last28Value) + unitSuffix;
+  prev28El.textContent = fmtDelta(prev28Value) + unitSuffix;
+
+  // vs 6M avg
+  const vs = safeNum(last28Value) - safeNum(avg6m);
+  vsNum.textContent = fmtDelta(vs) + unitSuffix;
+  vsNum.className = "vsNum " + classDelta(vs);
+  vsArrow.textContent = vs >= 0 ? " ↗" : " ↘";
+  vsArrow.className = "vsArrow " + classDelta(vs);
+
+  // Next goal + progress
+  const goal = pickNextGoal(nowValue, GOALS[type]);
+  nextGoalEl.textContent = fmt(goal) + unitSuffix;
+  const p = pctToGoal(nowValue, goal);
+  nextPctEl.textContent = fmt1(p) + "%";
+  progressFill.style.width = p.toFixed(1) + "%";
+
+  // Sparkline
+  const pathD = buildSparkPath(sparkValues);
+  const fillD = buildSparkFill(pathD);
+  const pEl = document.getElementById(sparkPathId);
+  const fEl = document.getElementById(sparkFillId);
+  if (pEl) {
+    pEl.setAttribute("d", pathD);
+    pEl.setAttribute("stroke", color);
+    pEl.setAttribute("stroke-width", "2");
+  }
+  if (fEl) fEl.setAttribute("d", fillD);
+
+  // Store
+  STATE[type + "Now"] = nowValue;
+}
 
 function render(data, isFirst) {
-  try {
-    const ch = data.channel || {};
-    if (ch.logo) {
-      const v = `url("${ch.logo}")`;
-      document.querySelectorAll(".card").forEach(c => c.style.setProperty("--logo-url", v));
-    }
+  // Update footer
+  document.getElementById("updated").textContent = `Updated: ${nowStamp()}`;
+  showToast();
 
-    const cur = {
-      subs: Number(ch.subscribers || 0),
-      views: Number(ch.totalViews || 0),
-      watch: Number(data.lifetime?.watchHours || 0),
-    };
+  const weekly = data.weekly || {};
+  const m28 = data.m28 || {};
+  const hist = data.history28d || [];
 
-    if (isFirst) {
-      document.querySelectorAll(".card").forEach((c, i) => {
-        c.style.animationDelay = `${i * 100}ms`;
-        c.classList.add("card-enter");
-      });
-    }
+  // History values for sparks
+  // use most recent -> oldest for nicer spark (reverse)
+  const sparkSubs = hist.map(h => safeNum(h.netSubs)).reverse().slice(-28);
+  const sparkViews = hist.map(h => safeNum(h.views)).reverse().slice(-28);
+  const sparkWatch = hist.map(h => safeNum(h.watchHours)).reverse().slice(-28);
 
-    const weekly = data.weekly || {};
-    const last28 = data.m28?.last28 || {};
-    const prev28 = data.m28?.prev28 || {};
-    const med6m = data.m28?.median6m || {};
-    const avg6m = data.m28?.avg6m || {};
-    const hist = data.history28d || [];
+  const subsNow = safeNum(data.channel?.subs);
+  const viewsTotal = safeNum(data.channel?.views);
+  const watchHoursLife = safeNum(data.lifetime?.watchHours);
 
-    // 1) SUBS
-    const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
-    setCardTheme("cardSubs", tSubs);
-    setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]);
-    setMainArrow("subsMainArrow", tSubs);
-    setSpark("subsSparkFill", "subsSparkPath", hist.map(x => x.netSubs), tSubs);
-    renderPacing("subsWeek", weekly.netSubs, weekly.prevNetSubs);
-    setVsRG("subsVsNum", "subsVsArrow", (last28.netSubs || 0) - (avg6m.netSubs || 0));
-    safeSetText("subsLast28", (Number(last28.netSubs) >= 0 ? "+" : "") + fmt(last28.netSubs));
-    safeSetText("subsPrev28", (Number(prev28.netSubs) >= 0 ? "+" : "") + fmt(prev28.netSubs));
+  // Render subs card
+  renderCard({
+    type: "subs",
+    cardId: "cardSubs",
+    nowElId: "subsNow",
+    arrowElId: "subsMainArrow",
+    dotId: "subsDot",
+    chipTextId: "subsChipText",
+    sparkPathId: "subsSparkPath",
+    sparkFillId: "subsSparkFill",
+    weekElId: "subsWeek",
+    last28ElId: "subsLast28",
+    prev28ElId: "subsPrev28",
+    vsNumId: "subsVsNum",
+    vsArrowId: "subsVsArrow",
+    nextGoalId: "subsNextGoal",
+    nextPctId: "subsNextPct",
+    progressFillId: "subsProgressFill",
+    nowValue: subsNow,
+    weeklyValue: safeNum(weekly.netSubs),
+    prevWeeklyValue: safeNum(weekly.prevNetSubs),
+    last28Value: safeNum(m28.last28?.netSubs),
+    prev28Value: safeNum(m28.prev28?.netSubs),
+    median6m: safeNum(m28.median6m?.netSubs),
+    avg6m: safeNum(m28.avg6m?.netSubs),
+    sparkValues: sparkSubs,
+    unitSuffix: ""
+  });
 
-    const gSubs = getMilestone(cur.subs, "subs");
-    const pSubs = Math.min(100, (cur.subs / gSubs) * 100).toFixed(1);
-    safeSetText("subsNextGoal", fmt(gSubs));
-    safeSetText("subsNextPct", pSubs + "%");
-    safeSetStyle("subsProgressFill", "width", pSubs + "%");
+  // Views card
+  renderCard({
+    type: "views",
+    cardId: "cardViews",
+    nowElId: "viewsTotal",
+    arrowElId: "viewsMainArrow",
+    dotId: "viewsDot",
+    chipTextId: "viewsChipText",
+    sparkPathId: "viewsSparkPath",
+    sparkFillId: "viewsSparkFill",
+    weekElId: "viewsWeek",
+    last28ElId: "viewsLast28",
+    prev28ElId: "viewsPrev28",
+    vsNumId: "viewsVsNum",
+    vsArrowId: "viewsVsArrow",
+    nextGoalId: "viewsNextGoal",
+    nextPctId: "viewsNextPct",
+    progressFillId: "viewsProgressFill",
+    nowValue: viewsTotal,
+    weeklyValue: safeNum(weekly.views),
+    prevWeeklyValue: safeNum(weekly.prevViews),
+    last28Value: safeNum(m28.last28?.views),
+    prev28Value: safeNum(m28.prev28?.views),
+    median6m: safeNum(m28.median6m?.views),
+    avg6m: safeNum(m28.avg6m?.views),
+    sparkValues: sparkViews,
+    unitSuffix: ""
+  });
 
-    // 2) VIEWS
-    const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
-    setCardTheme("cardViews", tViews);
-    setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]);
-    setMainArrow("viewsMainArrow", tViews);
-    setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x => x.views), tViews);
-    renderPacing("viewsWeek", weekly.views, weekly.prevViews);
-    setVsRG("viewsVsNum", "viewsVsArrow", (last28.views || 0) - (avg6m.views || 0));
-    safeSetText("viewsLast28", fmt(last28.views));
-    safeSetText("viewsPrev28", fmt(prev28.views));
+  // Watch hours card
+  renderCard({
+    type: "watch",
+    cardId: "cardWatch",
+    nowElId: "watchNow",
+    arrowElId: "watchMainArrow",
+    dotId: "watchDot",
+    chipTextId: "watchChipText",
+    sparkPathId: "watchSparkPath",
+    sparkFillId: "watchSparkFill",
+    weekElId: "watchWeek",
+    last28ElId: "watchLast28",
+    prev28ElId: "watchPrev28",
+    vsNumId: "watchVsNum",
+    vsArrowId: "watchVsArrow",
+    nextGoalId: "watchNextGoal",
+    nextPctId: "watchNextPct",
+    progressFillId: "watchProgressFill",
+    nowValue: watchHoursLife,
+    weeklyValue: safeNum(weekly.watchHours),
+    prevWeeklyValue: safeNum(weekly.prevWatchHours),
+    last28Value: safeNum(m28.last28?.watchHours),
+    prev28Value: safeNum(m28.prev28?.watchHours),
+    median6m: safeNum(m28.median6m?.watchHours),
+    avg6m: safeNum(m28.avg6m?.watchHours),
+    sparkValues: sparkWatch,
+    unitSuffix: ""
+  });
 
-    const gViews = getMilestone(cur.views, "views");
-    const pViews = Math.min(100, (cur.views / gViews) * 100).toFixed(1);
-    safeSetText("viewsNextGoal", fmt(gViews));
-    safeSetText("viewsNextPct", pViews + "%");
-    safeSetStyle("viewsProgressFill", "width", pViews + "%");
+  // Logo watermarks (SVG, white)
+  // You can swap these with your own PNG via CSS --logo-url.
+  const subsLogo = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z'/%3E%3C/svg%3E")`;
+  const viewsLogo = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z'/%3E%3C/svg%3E")`;
+  const watchLogo = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z'/%3E%3C/svg%3E")`;
 
-    // 3) WATCH
-    const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
-    setCardTheme("cardWatch", tWatch);
-    setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]);
-    setMainArrow("watchMainArrow", tWatch);
-    setSpark("watchSparkFill", "watchSparkPath", hist.map(x => x.watchHours), tWatch);
-    renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
-    setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (avg6m.watchHours || 0), 1, "h");
-    safeSetText("watchLast28", fmt(last28.watchHours) + "h");
-    safeSetText("watchPrev28", fmt(prev28.watchHours) + "h");
+  document.getElementById("cardSubs")?.style.setProperty("--logo-url", subsLogo);
+  document.getElementById("cardViews")?.style.setProperty("--logo-url", viewsLogo);
+  document.getElementById("cardWatch")?.style.setProperty("--logo-url", watchLogo);
 
-    const gWatch = getMilestone(cur.watch, "watch");
-    const pWatch = Math.min(100, (cur.watch / gWatch) * 100).toFixed(1);
-    safeSetText("watchNextGoal", fmt(gWatch));
-    safeSetText("watchNextPct", pWatch + "%");
-    safeSetStyle("watchProgressFill", "width", pWatch + "%");
+  // Enter animation only on first render
+  if (isFirst) {
+    ["cardSubs", "cardViews", "cardWatch"].forEach((id, i) => {
+      const c = document.getElementById(id);
+      if (!c) return;
+      c.classList.remove("card-enter");
+      void c.offsetWidth;
+      setTimeout(() => c.classList.add("card-enter"), i * 120);
+    });
+  }
 
-    // Counters (slow roll up OR down, every refresh if changed)
-    const subsEl = document.getElementById("subsNow");
-    if (isFirst) {
-      animateSpeedometer(subsEl, cur.subs, { duration: 650 });
-    } else if (Math.round(cur.subs) !== Math.round(state.subs)) {
-      animateCasinoRoll(subsEl, state.subs, cur.subs, { duration: 1800 });
-      if (cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs");
-    } else {
-      setRollInstant(subsEl, fmt(cur.subs));
-    }
+  // HUD
+  updateHud(data);
 
-    const viewsEl = document.getElementById("viewsTotal");
-    if (isFirst) {
-      animateSpeedometer(viewsEl, cur.views, { duration: 650 });
-    } else if (Math.round(cur.views) !== Math.round(state.views)) {
-      animateCasinoRoll(viewsEl, state.views, cur.views, { duration: 1800 });
-      if (cur.views > state.views) spawnFloatIcon("cardViews", "views");
-    } else {
-      setRollInstant(viewsEl, fmt(cur.views));
-    }
-
-    const watchEl = document.getElementById("watchNow");
-    const wDec = cur.watch < 100 ? 1 : 0;
-    const watchTxt = (n) => (wDec ? fmt1(n) : fmt(Math.round(n))) + "h";
-
-    const watchScale = wDec ? 10 : 1;
-    const aW = Math.round(state.watch * watchScale);
-    const bW = Math.round(cur.watch * watchScale);
-
-    if (isFirst) {
-      animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: wDec, suffix: "h" });
-    } else if (aW !== bW) {
-      animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h", duration: 1800 });
-      if (cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
-    } else {
-      setRollInstant(watchEl, watchTxt(cur.watch));
-    }
-
-    state = cur;
-
-    if (!isFirst) {
+  // Occasionally glow the cards (subtle life)
+  clearTimeout(render._glowTimer);
+  render._glowTimer = setTimeout(() => {
+    if (!document.hidden) {
       triggerGlowOnce("cardSubs");
       triggerGlowOnce("cardViews");
       triggerGlowOnce("cardWatch");
     }
 
     clearTimeout(glowTimer);
-    if (!document.hidden) {
-      glowTimer = setTimeout(() => {
-        triggerGlowOnce("cardSubs");
-        triggerGlowOnce("cardViews");
-        triggerGlowOnce("cardWatch");
-      }, 30000);
-    }
+    glowTimer = setTimeout(() => {
+      triggerGlowOnce("cardSubs");
+      triggerGlowOnce("cardViews");
+      triggerGlowOnce("cardWatch");
+    }, 30000);
+  }, 2000);
 
-    // HUD update
-    updateHud(data);
-
-    const updatedEl = document.getElementById("updated");
-    if (updatedEl) updatedEl.textContent = `SYSTEM ONLINE • ${nowStamp()}`;
-
-    const toastEl = document.getElementById("toast");
-    if (toastEl) {
-      toastEl.classList.add("show");
-      setTimeout(() => toastEl.classList.remove("show"), 2000);
-    }
-
-  } catch (err) {
-    console.error(err);
-    const updatedEl = document.getElementById("updated");
-    if (updatedEl) updatedEl.textContent = "ERR: " + err.message;
-  }
+  // Save last state (optional)
 }
 
-async function load(isFirst) {
+/* ===========================
+   HUD ENGINE (AI-style)
+   =========================== */
+
+const HUD_MEM_KEY = "yt_hud_mem_v2";
+function hudMemLoad() {
   try {
-    const data = await fetchJSON("/api/yt-kpis");
-    if (data.error) throw new Error(data.error);
-    render(data, isFirst);
-  } catch (e) {
-    const updatedEl = document.getElementById("updated");
-    if (updatedEl) updatedEl.textContent = "FETCH ERROR: " + e.message;
-  }
+    const raw = localStorage.getItem(HUD_MEM_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? obj : null;
+  } catch { return null; }
+}
+function hudMemSave() {
+  try {
+    const out = {
+      lastKey: HUD_CONFIG.lastKey,
+      recentKeys: HUD_CONFIG.recentKeys,
+      shownAt: HUD_CONFIG.shownAt
+    };
+    localStorage.setItem(HUD_MEM_KEY, JSON.stringify(out));
+  } catch {}
 }
 
-// ===========================
-//   HUD ENGINE (AI STYLE)
-// ===========================
+function clampInt(n, a, b) {
+  n = Math.floor(Number(n));
+  if (!Number.isFinite(n)) return a;
+  return Math.max(a, Math.min(b, n));
+}
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function uniq(arr) {
+  const s = new Set();
+  const out = [];
+  for (const x of arr) {
+    if (!x) continue;
+    if (s.has(x)) continue;
+    s.add(x);
+    out.push(x);
+  }
+  return out;
+}
+
+function sinceDays(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(+d)) return null;
+  const now = new Date();
+  return Math.floor((now - d) / (1000 * 60 * 60 * 24));
+}
+
+function formatDateShort(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(+d)) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatHms(sec) {
+  sec = Math.max(0, Math.floor(Number(sec || 0)));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return `${m}m ${s}s`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${h}h ${mm}m`;
+}
+
+function sumTop(list, n = 5) {
+  if (!Array.isArray(list) || !list.length) return 0;
+  return list.slice(0, n).reduce((a, x) => a + safeNum(x.value), 0);
+}
 
 const HUD_CONFIG = {
-  interval: 16000,
+  interval: 16000, // MUST be 16s
   timer: null,
+  bootTimeout: null,
+  pendingStart: false,
   started: false,
   bootAt: Date.now(),
   lastKey: null,
   recentKeys: [],
   shownAt: Object.create(null),
-  visibilityPaused: false,
+  // cooldowns to stop “status” spamming
   cooldownMs: {
-    freshness: 10 * 60 * 1000,
-    birthday: 15 * 60 * 1000,
-    status: 8 * 60 * 1000,
-    trivia: 60 * 1000,
-    tip: 60 * 1000,
-    motivation: 90 * 1000,
+    freshness: 10 * 60 * 1000,   // 10 min
+    birthday: 15 * 60 * 1000,    // 15 min
+    uploads: 12 * 60 * 1000,
+    retention: 12 * 60 * 1000,
+    traffic: 12 * 60 * 1000,
+    countries: 20 * 60 * 1000,
   }
 };
 
-// Force CSS var too (so even if old CSS loads, timing matches 16s)
-document.documentElement.style.setProperty("--hud-interval", "16s");
+// Restore memory
+(() => {
+  const mem = hudMemLoad();
+  if (!mem) return;
+  HUD_CONFIG.lastKey = mem.lastKey || null;
+  HUD_CONFIG.recentKeys = Array.isArray(mem.recentKeys) ? mem.recentKeys.slice(0, 6) : [];
+  HUD_CONFIG.shownAt = mem.shownAt && typeof mem.shownAt === "object" ? mem.shownAt : Object.create(null);
+})();
 
-// White SVG Icons
-const HUD_ICONS = {
-  live: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,
-  target: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>`,
-  rocket: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5z"/></svg>`,
-  warn: `<svg viewBox="0 0 24 24" fill="white"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
-  up: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
-  down: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
-  bulb: `<svg viewBox="0 0 24 24" fill="white"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
-  globe: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.93 9h-3.17a15.7 15.7 0 0 0-1.45-6A8.02 8.02 0 0 1 19.93 11zM12 4c.9 1.3 1.7 3.3 2.1 7H9.9C10.3 7.3 11.1 5.3 12 4zM4.07 13h3.17a15.7 15.7 0 0 0 1.45 6A8.02 8.02 0 0 1 4.07 13zm3.17-2H4.07A8.02 8.02 0 0 1 8.69 5a15.7 15.7 0 0 0-1.45 6zm2.66 2h4.2c-.4 3.7-1.2 5.7-2.1 7-.9-1.3-1.7-3.3-2.1-7zm6.86 6a15.7 15.7 0 0 0 1.45-6h3.17A8.02 8.02 0 0 1 15.31 19z"/></svg>`,
-  chat: `<svg viewBox="0 0 24 24" fill="white"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`,
-};
-
-function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-
-function secondsToMinSec(s) {
-  const n = Math.max(0, Math.floor(Number(s || 0)));
-  const m = Math.floor(n / 60);
-  const r = n % 60;
-  return `${m}m ${String(r).padStart(2, "0")}s`;
-}
-
-function daysBetweenISO(aIso, bIso) {
-  try {
-    const a = new Date(aIso);
-    const b = new Date(bIso);
-    return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
-  } catch { return null; }
-}
-
-function countryName(code) {
-  try {
-    if (!code) return "";
-    const dn = new Intl.DisplayNames([navigator.language || "en"], { type: "region" });
-    return dn.of(code) || code;
-  } catch {
-    return code || "";
+// Weighted random pick
+function weightedPick(items) {
+  const total = items.reduce((a, it) => a + (it.w || 1), 0);
+  let r = Math.random() * total;
+  for (const it of items) {
+    r -= (it.w || 1);
+    if (r <= 0) return it;
   }
+  return items[items.length - 1];
 }
 
-function trafficLabel(k) {
-  const map = {
-    YT_SEARCH: "YouTube Search",
-    SUGGESTED_VIDEO: "Suggested Videos",
-    BROWSE_FEATURES: "Browse Features",
-    EXTERNAL: "External",
-    PLAYLIST: "Playlists",
-    DIRECT_OR_UNKNOWN: "Direct / Unknown",
-    CHANNEL_PAGES: "Channel Pages",
-    NOTIFICATION: "Notifications",
-    END_SCREEN: "End Screens",
-    CARD: "Cards",
-    OTHER: "Other",
-  };
-  return map[k] || k;
+// Builds a list of intel cards (tag+message+icon), per refresh
+let intelQueue = [];
+
+function buildIntel(data) {
+  const q = [];
+  const hud = data.hud || {};
+  const weekly = data.weekly || {};
+  const m28 = data.m28 || {};
+  const channel = data.channel || {};
+
+  const weekSubs = safeNum(weekly.netSubs);
+  const prevWeekSubs = safeNum(weekly.prevNetSubs);
+  const weekViews = safeNum(weekly.views);
+  const prevWeekViews = safeNum(weekly.prevViews);
+  const weekWatch = safeNum(weekly.watchHours);
+  const prevWeekWatch = safeNum(weekly.prevWatchHours);
+
+  const v48 = safeNum(hud.views48h);
+
+  // ===== Core “systems” signals =====
+  q.push({
+    key: "weekly_subs",
+    type: "subs",
+    tag: "GROWTH",
+    icon: "🧬",
+    w: 1.1,
+    text: weekSubs >= 0
+      ? `Net +${fmt(weekSubs)} subs in the last 7 days. Keep the conversion loop tight.`
+      : `Net −${fmt(Math.abs(weekSubs))} subs in the last 7 days. Patch the leaks (hook/retention).`,
+    subline: `Prev 7D: ${fmtDelta(prevWeekSubs)}`
+  });
+
+  q.push({
+    key: "weekly_views",
+    type: "views",
+    tag: "REACH",
+    icon: "📡",
+    w: 1.1,
+    text: `Your last 7 days pulled ${fmt(weekViews)} views.`,
+    subline: `Prev 7D: ${fmt(prevWeekViews)}`
+  });
+
+  q.push({
+    key: "weekly_watch",
+    type: "watch",
+    tag: "RETENTION",
+    icon: "🧲",
+    w: 1.1,
+    text: `Last 7 days watch time: ${fmt1(weekWatch)} hours.`,
+    subline: `Prev 7D: ${fmt1(prevWeekWatch)} hours`
+  });
+
+  // ===== Velocity =====
+  q.push({
+    key: "velocity_48h",
+    type: "views",
+    tag: "VELOCITY",
+    icon: "⚡",
+    w: 1.0,
+    text: `In the last ~48 hours you got ${fmt(v48)} views.`,
+    subline: `Use this to detect “lift” early.`
+  });
+
+  // ===== Freshness / uploads =====
+  if (hud.uploads?.latest?.publishedAt) {
+    const days = sinceDays(hud.uploads.latest.publishedAt);
+    const t = hud.uploads.latest.title || "Latest upload";
+    q.push({
+      key: "freshness",
+      type: "views",
+      tag: "FRESHNESS",
+      icon: "🕒",
+      w: 1.0,
+      cooldownMs: HUD_CONFIG.cooldownMs.freshness,
+      text: days != null
+        ? `Latest upload was ${days} day(s) ago: “${t}”.`
+        : `Latest upload: “${t}”.`,
+      subline: `Published: ${formatDateShort(hud.uploads.latest.publishedAt)}`
+    });
+  }
+
+  // ===== Thumb / CTR =====
+  if (hud.thumb28?.impressions != null && hud.thumb28?.ctr != null) {
+    const imp = safeNum(hud.thumb28.impressions);
+    const ctr = safeNum(hud.thumb28.ctr);
+    q.push({
+      key: "thumbs",
+      type: "views",
+      tag: "THUMB CTR",
+      icon: "👁️",
+      w: 0.95,
+      cooldownMs: HUD_CONFIG.cooldownMs.traffic,
+      text: `Last 28D: ${fmt(imp)} impressions, CTR ${fmt1(ctr)}%.`,
+      subline: `Aim: CTR up without killing retention.`
+    });
+  }
+
+  // ===== Retention =====
+  if (hud.retention28?.avgViewDurationSec != null && hud.retention28?.avgViewPercentage != null) {
+    const avd = safeNum(hud.retention28.avgViewDurationSec);
+    const avp = safeNum(hud.retention28.avgViewPercentage);
+    q.push({
+      key: "retention",
+      type: "watch",
+      tag: "AVG RET",
+      icon: "⏱️",
+      w: 0.95,
+      cooldownMs: HUD_CONFIG.cooldownMs.retention,
+      text: `Last 28D average view duration: ${formatHms(avd)} (${fmt1(avp)}%).`,
+      subline: `If AVD drops, fix pacing + hook.`
+    });
+  }
+
+  // ===== Unique viewers =====
+  if (hud.uniqueViewers28 != null) {
+    q.push({
+      key: "uniq",
+      type: "views",
+      tag: "UNIQUE",
+      icon: "🧑‍🤝‍🧑",
+      w: 0.9,
+      text: `Estimated unique viewers (28D): ${fmt(hud.uniqueViewers28)}.`,
+      subline: `More uniques = bigger top funnel.`
+    });
+  }
+
+  // ===== Traffic sources =====
+  const traffic = hud.traffic?.last28;
+  if (Array.isArray(traffic) && traffic.length) {
+    const top = traffic[0];
+    q.push({
+      key: "traffic",
+      type: "views",
+      tag: "TRAFFIC",
+      icon: "🧭",
+      w: 0.9,
+      cooldownMs: HUD_CONFIG.cooldownMs.traffic,
+      text: `Top traffic source (28D): ${top.name} — ${fmt(top.value)} views.`,
+      subline: `Diversify sources to stabilize growth.`
+    });
+  }
+
+  // ===== Countries =====
+  const countries = hud.countries;
+  if (Array.isArray(countries) && countries.length) {
+    const top = countries[0];
+    q.push({
+      key: "countries",
+      type: "views",
+      tag: "COUNTRY",
+      icon: "🌍",
+      w: 0.85,
+      cooldownMs: HUD_CONFIG.cooldownMs.countries,
+      text: `Top country (28D): ${top.name} — ${fmt(top.value)} views.`,
+      subline: `Use timezones + titles to match region.`
+    });
+  }
+
+  // ===== Video intel (NEW: 7D analytics per recent video) =====
+  const vi = hud.videoIntel?.videos;
+  if (Array.isArray(vi) && vi.length) {
+    // Pick a random high-signal item, but avoid repeating the same video too often
+    const sorted = [...vi].sort((a, b) => safeNum(b.views7d) - safeNum(a.views7d));
+    const top5 = sorted.slice(0, 5);
+    const pickV = pick(top5.length ? top5 : sorted);
+
+    const title = pickV.title || "Recent video";
+    const v7 = safeNum(pickV.views7d);
+    const wh = safeNum(pickV.watchHours7d);
+    const ns = safeNum(pickV.netSubs7d);
+
+    q.push({
+      key: "video_intel_" + (pickV.videoId || ""),
+      type: "views",
+      tag: "VIDEO INTEL",
+      icon: "🎯",
+      w: 1.05,
+      text: `7D intel: “${title}” — ${fmt(v7)} views, ${fmt1(wh)}h watch, net ${fmtDelta(ns)} subs.`,
+      subline: `Published: ${formatDateShort(pickV.publishedAt)}`
+    });
+  }
+
+  // ===== Birthday / channel age =====
+  if (channel.publishedAt) {
+    const days = sinceDays(channel.publishedAt);
+    if (days != null) {
+      const years = Math.floor(days / 365);
+      const rem = days % 365;
+      q.push({
+        key: "birthday",
+        type: "subs",
+        tag: "CHANNEL AGE",
+        icon: "🎂",
+        w: 0.75,
+        cooldownMs: HUD_CONFIG.cooldownMs.birthday,
+        text: `Channel age: ~${years}y ${rem}d (since ${formatDateShort(channel.publishedAt)}).`,
+        subline: `Consistency compounds.`
+      });
+    }
+  }
+
+  // Fallback
+  q.push({
+    key: "fallback",
+    type: "views",
+    tag: "SYSTEM",
+    icon: "🧠",
+    w: 0.2,
+    text: "Analyzing signal… keep shipping. One upload can flip the curve.",
+    subline: ""
+  });
+
+  // Avoid repeating recent keys too aggressively
+  const recent = new Set(HUD_CONFIG.recentKeys || []);
+  return q.filter(it => !recent.has(it.key));
 }
 
-// --- required lists + extra (no duplicates) ---
-function uniqPush(arr, s) {
-  if (!s) return;
-  if (!arr.includes(s)) arr.push(s);
-}
-
-const KB = { facts: [], tips: [], motivation: [], nostalgia: [] };
-
-// (content unchanged; omitted for brevity in this comment-only section)
-
-// ... (Knowledge base population remains identical to your original file)
-
-// ====== HUD RING ======
 function initHudRing() {
   const rect = document.getElementById("hudRingRect");
   if (!rect) return;
-
-  rect.style.animation = "none";
-  rect.setAttribute("pathLength", "100");
   rect.style.strokeDasharray = "100";
   rect.style.strokeDashoffset = "100";
-  rect.style.strokeLinejoin = "round";
-  rect.style.strokeLinecap = "round";
+  rect.style.animation = "none"; // we drive via JS to match exact 16s
 }
 
-function stopHudRing(fillStatic = false) {
-  const rect = document.getElementById("hudRingRect");
-  if (!rect) return;
-  rect.style.transition = "none";
-  rect.style.strokeDashoffset = fillStatic ? "0" : "100";
-}
-
-function animateHudRing(colorHex) {
+function animateHudRing(color) {
   const rect = document.getElementById("hudRingRect");
   if (!rect) return;
 
-  rect.style.stroke = colorHex;
-
-  if (prefersReducedMotion) {
-    rect.style.transition = "none";
-    rect.style.strokeDashoffset = "0";
-    return;
-  }
-
-  if (document.hidden) {
-    rect.style.transition = "none";
-    rect.style.strokeDashoffset = "100";
-    return;
-  }
+  rect.style.stroke = color;
+  rect.style.filter = `drop-shadow(0 0 10px ${color})`;
 
   rect.style.transition = "none";
   rect.style.strokeDashoffset = "100";
+  void rect.getBoundingClientRect();
 
+  // Animate to full in exactly 16 seconds
+  rect.style.transition = `stroke-dashoffset ${HUD_CONFIG.interval}ms linear`;
   requestAnimationFrame(() => {
-    rect.style.transition = `stroke-dashoffset ${HUD_CONFIG.interval}ms linear`;
     rect.style.strokeDashoffset = "0";
   });
-}
-
-// ====== HUD MEMORY ======
-function hudMemLoad() {
-  try {
-    const rec = JSON.parse(localStorage.getItem("aihud_recentKeys") || "[]");
-    const shown = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}");
-    if (Array.isArray(rec)) HUD_CONFIG.recentKeys = rec.slice(0, 6);
-    if (shown && typeof shown === "object") HUD_CONFIG.shownAt = shown;
-  } catch {}
-}
-function hudMemSave() {
-  try {
-    localStorage.setItem("aihud_recentKeys", JSON.stringify(HUD_CONFIG.recentKeys.slice(0, 6)));
-    localStorage.setItem("aihud_shownAt", JSON.stringify(HUD_CONFIG.shownAt));
-  } catch {}
-}
-hudMemLoad();
-
-// buildIntel function (unchanged, full content retained from original)
-// For brevity, the full buildIntel function contents are identical to your source and are included here without modification.
-
-function buildIntel(data) {
-  // ... full original implementation ...
-  // (Due to length, this block remains exactly as in your provided file.)
-  // The full function body is unchanged and omitted here only in this explanatory comment.
-  return out.filter(x => x && x.text);
-}
-
-let intelQueue = [];
-
-function eligible(item) {
-  if (!item) return false;
-
-  const sinceBoot = Date.now() - HUD_CONFIG.bootAt;
-  if (sinceBoot < 9000 && (item.cat === "status" || item.key === "freshness" || item.key === "birthday")) return false;
-
-  const last = Number(HUD_CONFIG.shownAt[item.key] || 0);
-  const cd = Number(item.cooldownMs || 0);
-  if (cd > 0 && (Date.now() - last) < cd) return false;
-
-  if (HUD_CONFIG.recentKeys.includes(item.key)) return false;
-
-  if (item.key && item.key === HUD_CONFIG.lastKey) return false;
-
-  return true;
-}
-
-function weightedPick(items) {
-  const list = items.filter(Boolean);
-  if (!list.length) return null;
-  const total = list.reduce((a, it) => a + (Number(it.weight || 1)), 0);
-  let r = Math.random() * total;
-  for (const it of list) {
-    r -= Number(it.weight || 1);
-    if (r <= 0) return it;
-  }
-  return list[list.length - 1];
 }
 
 function pickNextItem() {
   if (!intelQueue.length) return null;
 
-  let candidates = intelQueue.filter(eligible);
-  if (candidates.length) return weightedPick(candidates);
+  // Prefer items with different keys, and respect cooldowns
+  let candidates = intelQueue.filter(it => it.key !== HUD_CONFIG.lastKey);
 
-  candidates = intelQueue.filter(it => {
+  // avoid spamming the same type too
+  if (!candidates.length) candidates = intelQueue;
+
+  // apply cooldown
+  candidates = candidates.filter(it => {
     const last = Number(HUD_CONFIG.shownAt[it.key] || 0);
     const cd = Number(it.cooldownMs || 0);
     return !(cd > 0 && (Date.now() - last) < cd);
   });
   if (candidates.length) return weightedPick(candidates);
 
+  // last resort
   return intelQueue[0];
 }
 
 function showNextIntel() {
-  if (document.hidden || prefersReducedMotion) return;
+  if (document.hidden) return;
   const item = pickNextItem();
   if (!item) return;
 
   HUD_CONFIG.lastKey = item.key || null;
 
+  // remember history (prevents spam across refreshes)
   HUD_CONFIG.recentKeys.unshift(item.key);
   HUD_CONFIG.recentKeys = HUD_CONFIG.recentKeys.filter(Boolean).slice(0, 6);
   HUD_CONFIG.shownAt[item.key] = Date.now();
@@ -806,6 +1012,7 @@ function showNextIntel() {
   msgEl.style.opacity = "0.2";
 
   setTimeout(() => {
+    if (document.hidden) return;
     msgEl.textContent = item.text;
     tagEl.textContent = item.tag;
     iconEl.innerHTML = item.icon || "⚡";
@@ -823,169 +1030,150 @@ function showNextIntel() {
 
     if (boxEl) boxEl.style.setProperty("--hud-accent", c);
 
+    // FULL border ring progress (16s)
     animateHudRing(c);
   }, 220);
 }
 
-function startHudLoop(immediate = false) {
-  if (prefersReducedMotion || document.hidden) return;
-  HUD_CONFIG.visibilityPaused = false;
+function pauseHudRotation() {
+  if (HUD_CONFIG.timer) { clearInterval(HUD_CONFIG.timer); HUD_CONFIG.timer = null; }
+  if (HUD_CONFIG.bootTimeout) { clearTimeout(HUD_CONFIG.bootTimeout); HUD_CONFIG.bootTimeout = null; }
+}
 
-  if (HUD_CONFIG.timer || hudStartTimeout) return;
+function startHudRotation() {
+  pauseHudRotation();
+  HUD_CONFIG.pendingStart = false;
 
-  initHudRing();
-
-  if (immediate) {
-    showNextIntel();
-    HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
-    return;
-  }
-
-  hudStartTimeout = setTimeout(() => {
-    hudStartTimeout = null;
+  // show first message after a delay (prevents instant “status spam” feeling)
+  HUD_CONFIG.bootTimeout = setTimeout(() => {
+    if (document.hidden) { HUD_CONFIG.pendingStart = true; return; }
     showNextIntel();
     HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
   }, 1200);
 }
 
-function pauseHudRotation() {
-  HUD_CONFIG.visibilityPaused = true;
-  if (HUD_CONFIG.timer) {
-    clearInterval(HUD_CONFIG.timer);
-    HUD_CONFIG.timer = null;
-  }
-  if (hudStartTimeout) {
-    clearTimeout(hudStartTimeout);
-    hudStartTimeout = null;
-  }
-  stopHudRing();
-}
+function resumeHudRotation() {
+  if (!HUD_CONFIG.started) return;
+  if (HUD_CONFIG.timer || HUD_CONFIG.bootTimeout) return;
 
-function resumeHudRotation(immediate = false) {
-  if (prefersReducedMotion || document.hidden) return;
-  startHudLoop(immediate);
+  if (HUD_CONFIG.pendingStart) {
+    startHudRotation();
+    return;
+  }
+
+  // quick resume
+  HUD_CONFIG.bootTimeout = setTimeout(() => {
+    if (document.hidden) return;
+    showNextIntel();
+    HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
+  }, 250);
 }
 
 function updateHud(data) {
+  // Always rebuild queue (so refresh updates intelligence),
+  // but DO NOT reset messages or restart timer.
   intelQueue = buildIntel(data);
 
   if (!HUD_CONFIG.started) {
     HUD_CONFIG.started = true;
-    HUD_CONFIG.bootAt = Date.now();
+    initHudRing();
+
+    if (!document.hidden) startHudRotation();
+    else HUD_CONFIG.pendingStart = true;
+  }
+}
+
+async function load(isFirst) {
+  try {
+    const data = await fetchJSON("/api/yt-kpis");
+    if (data.error) throw new Error(data.error);
+    render(data, isFirst);
+  } catch (e) {
+    document.getElementById("updated").textContent = "FETCH ERROR: " + e.message;
+  }
+}
+
+// 3D Tilt (throttled to ~60fps via requestAnimationFrame)
+const PREFERS_REDUCED_MOTION = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+function attachTilt(card) {
+  let raf = 0;
+  let lastX = 0, lastY = 0;
+  let hovering = false;
+
+  function apply() {
+    raf = 0;
+    if (!hovering || document.hidden) return;
+    card.style.transform = `perspective(1000px) rotateX(${lastX}deg) rotateY(${lastY}deg) scale(1.02)`;
   }
 
-  if (!document.hidden && !prefersReducedMotion) {
-    startHudLoop(false);
+  card.addEventListener("mousemove", (e) => {
+    if (PREFERS_REDUCED_MOTION || document.hidden) return;
+    hovering = true;
+    const r = card.getBoundingClientRect();
+    lastX = ((e.clientY - r.top) / r.height - 0.5) * -10;
+    lastY = ((e.clientX - r.left) / r.width - 0.5) * 10;
+    if (!raf) raf = requestAnimationFrame(apply);
+  }, { passive: true });
+
+  card.addEventListener("mouseleave", () => {
+    hovering = false;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`;
+  });
+}
+
+if (!PREFERS_REDUCED_MOTION) {
+  document.querySelectorAll(".card").forEach(attachTilt);
+}
+
+/* ===========================
+   VISIBILITY + AUTO REFRESH
+   =========================== */
+const REFRESH_VISIBLE_MS = 60 * 1000;
+const REFRESH_HIDDEN_MS = 4 * 60 * 1000; // 3–5 minutes while hidden
+
+let refreshTimer = null;
+
+function clearRefreshTimer() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
   }
 }
 
-// --- Motion + Visibility Helpers ---
-function resetTiltTransforms() {
-  tiltCardRefs.forEach(card => {
-    card.style.transform = "perspective(1000px) rotateX(0deg) rotateY(0deg) scale(1)";
-  });
-}
+function scheduleNextRefresh(delayMs) {
+  clearRefreshTimer();
+  const ms = Number(delayMs) || (document.hidden ? REFRESH_HIDDEN_MS : REFRESH_VISIBLE_MS);
 
-function setupCardTilt() {
-  tiltCardRefs = Array.from(document.querySelectorAll(".card"));
-  tiltCardRefs.forEach(card => {
-    const state = { rafId: null, pointer: null };
-
-    const applyTilt = () => {
-      state.rafId = null;
-      if (!state.pointer || prefersReducedMotion) return;
-      const rect = card.getBoundingClientRect();
-      const rotateX = ((state.pointer.y - rect.top) / rect.height - 0.5) * -10;
-      const rotateY = ((state.pointer.x - rect.left) / rect.width - 0.5) * 10;
-      card.style.transform = `perspective(1000px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale(1.02)`;
-    };
-
-    card.addEventListener("mousemove", (evt) => {
-      if (prefersReducedMotion) return;
-      state.pointer = { x: evt.clientX, y: evt.clientY };
-      if (state.rafId === null) {
-        state.rafId = requestAnimationFrame(applyTilt);
-      }
-    });
-
-    card.addEventListener("mouseleave", () => {
-      if (state.rafId !== null) {
-        cancelAnimationFrame(state.rafId);
-        state.rafId = null;
-      }
-      state.pointer = null;
-      card.style.transform = "perspective(1000px) rotateX(0deg) rotateY(0deg) scale(1)";
-    });
-  });
-}
-
-function getRefreshDelay() {
-  return document.hidden ? REFRESH_HIDDEN_MS : REFRESH_VISIBLE_MS;
-}
-
-function scheduleRefresh(delayOverride) {
-  clearTimeout(refreshTimerId);
-  const wait = typeof delayOverride === "number" ? delayOverride : getRefreshDelay();
-  refreshTimerId = setTimeout(async () => {
-    await runLoad(false);
-    scheduleRefresh();
-  }, wait);
-}
-
-async function runLoad(isFirst) {
-  if (inflightLoadPromise) return inflightLoadPromise;
-  inflightLoadPromise = (async () => {
-    await load(isFirst);
-  })().finally(() => {
-    inflightLoadPromise = null;
-  });
-  return inflightLoadPromise;
+  refreshTimer = setTimeout(async () => {
+    // While hidden we still refresh, but much slower.
+    await load(false);
+    scheduleNextRefresh();
+  }, ms);
 }
 
 function handleVisibilityChange() {
-  if (document.hidden) {
+  const hidden = document.hidden;
+
+  // CSS cheap-mode (pauses continuous animations / heavy effects)
+  document.documentElement.classList.toggle("is-hidden", hidden);
+
+  if (hidden) {
     pauseHudRotation();
+    scheduleNextRefresh(REFRESH_HIDDEN_MS);
   } else {
-    resumeHudRotation(true);
-    runLoad(false);
-  }
-  scheduleRefresh();
-}
-
-function initMotionPreferenceWatcher() {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-  const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-  prefersReducedMotion = query.matches;
-  if (prefersReducedMotion) {
-    resetTiltTransforms();
-    stopHudRing(true);
-  }
-  const handler = (event) => {
-    prefersReducedMotion = event.matches;
-    if (prefersReducedMotion) {
-      pauseHudRotation();
-      resetTiltTransforms();
-      stopHudRing(true);
-    } else if (!document.hidden) {
-      startHudLoop(true);
-    }
-  };
-  if (typeof query.addEventListener === "function") {
-    query.addEventListener("change", handler);
-  } else if (typeof query.addListener === "function") {
-    query.addListener(handler);
+    // Catch up immediately when you come back
+    load(false);
+    resumeHudRotation();
+    scheduleNextRefresh(REFRESH_VISIBLE_MS);
   }
 }
 
-// --- INIT ---
-(function init() {
-  setupCardTilt();
-  initMotionPreferenceWatcher();
-  document.addEventListener("visibilitychange", handleVisibilityChange);
+document.addEventListener("visibilitychange", handleVisibilityChange);
+document.documentElement.classList.toggle("is-hidden", document.hidden);
 
-  runLoad(true).then(() => {
-    scheduleRefresh();
-  }).catch(err => {
-    console.error("Init load failed", err);
-  });
+(async function init() {
+  await load(true);
+  scheduleNextRefresh();
 })();
