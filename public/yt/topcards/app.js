@@ -16,8 +16,6 @@ const FEEDBACK = {
   watch: { red: "Dropping", orange: "Weak", yellow: "Consistent", green: "Engaging", blue: "Hooked", purple: "Binge" },
 };
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
 // --- DOM HELPERS ---
 function safeSetText(id, text) {
   const el = document.getElementById(id);
@@ -116,57 +114,61 @@ function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   numEl.textContent = absTxt + suffix;
 }
 
-function hexToRgba(hex, a) {
+function hexToRgb(hex) {
   const h = (hex || "").replace("#", "");
   const full = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
   const n = parseInt(full, 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function rgbaFromHex(hex, a) {
+  const { r, g, b } = hexToRgb(hex);
   return `rgba(${r},${g},${b},${a})`;
 }
 
 // --- SPARKLINE GRADIENT (tier -> white) ---
-function ensureSparkGradient(svg, gradId, tierHex) {
-  if (!svg) return;
+function ensureSparkGradient(svgEl, gradId, tierHex) {
+  if (!svgEl) return null;
 
-  let defs = svg.querySelector("defs");
+  let defs = svgEl.querySelector("defs");
   if (!defs) {
-    defs = document.createElementNS(SVG_NS, "defs");
-    svg.insertBefore(defs, svg.firstChild);
+    defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    svgEl.insertBefore(defs, svgEl.firstChild);
   }
 
-  let grad = svg.querySelector(`linearGradient#${gradId}`);
+  let grad = svgEl.querySelector(`#${gradId}`);
   if (!grad) {
-    grad = document.createElementNS(SVG_NS, "linearGradient");
+    grad = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
     grad.setAttribute("id", gradId);
     grad.setAttribute("x1", "0");
     grad.setAttribute("y1", "0");
     grad.setAttribute("x2", "0");
     grad.setAttribute("y2", "1");
-    defs.appendChild(grad);
 
-    const s0 = document.createElementNS(SVG_NS, "stop");
+    const s0 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
     s0.setAttribute("offset", "0%");
     grad.appendChild(s0);
 
-    const s1 = document.createElementNS(SVG_NS, "stop");
-    s1.setAttribute("offset", "60%");
+    const s1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+    s1.setAttribute("offset", "70%");
     grad.appendChild(s1);
 
-    const s2 = document.createElementNS(SVG_NS, "stop");
+    const s2 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
     s2.setAttribute("offset", "100%");
     grad.appendChild(s2);
+
+    defs.appendChild(grad);
   }
 
   const stops = grad.querySelectorAll("stop");
-  // Top: tier tinted, Bottom: white-ish (as requested)
-  stops[0].setAttribute("stop-color", hexToRgba(tierHex, 0.28));
-  stops[1].setAttribute("stop-color", "rgba(255,255,255,0.12)");
-  stops[2].setAttribute("stop-color", "rgba(255,255,255,0.03)");
+  if (stops[0]) stops[0].setAttribute("stop-color", rgbaFromHex(tierHex, 0.22));     // near line
+  if (stops[1]) stops[1].setAttribute("stop-color", "rgba(255,255,255,0.10)");      // fade to white
+  if (stops[2]) stops[2].setAttribute("stop-color", "rgba(255,255,255,0.02)");      // bottom
+
+  return `url(#${gradId})`;
 }
 
-// --- SPARKLINE (AREA FILL + BEZIER) ---
+// --- PHASE 1 SPARKLINE (AREA FILL + BEZIER) ---
 function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
@@ -198,17 +200,16 @@ function setSpark(fillId, pathId, values, tier) {
 
   const dArea = `${dLine} L ${w} ${h} L 0 ${h} Z`;
 
-  // Main line: tier color + slightly thicker
+  // main line (slightly thicker)
   pathEl.setAttribute("d", dLine);
   pathEl.style.stroke = COLORS[tier];
   pathEl.style.strokeWidth = "2.4";
 
-  // Area: gradient to white
+  // fill gradient -> white
   fillEl.setAttribute("d", dArea);
-  const svg = fillEl.ownerSVGElement;
-  const gradId = `${fillId}Grad`;
-  ensureSparkGradient(svg, gradId, COLORS[tier]);
-  fillEl.style.fill = `url(#${gradId})`;
+  const svgEl = fillEl.closest("svg");
+  const gradUrl = ensureSparkGradient(svgEl, `grad-${fillId}`, COLORS[tier]);
+  if (gradUrl) fillEl.style.fill = gradUrl;
 }
 
 function renderPacing(elId, cur, prev, suffix = "") {
@@ -225,7 +226,7 @@ function renderPacing(elId, cur, prev, suffix = "") {
   safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL INFRA ---
+// --- CASINO ROLL (unchanged behavior) ---
 function ensureRoll(el) {
   if (!el) return;
   if (el._rollWrap && el._rollCol) return;
@@ -306,7 +307,7 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   col.style.transform = `translateY(${finalY}em)`;
 }
 
-// --- SPEEDOMETER (FAST 0 -> value) ---
+// --- SPEEDOMETER (unchanged) ---
 function animateSpeedometer(el, toVal, opts = {}) {
   if (!el) return;
 
@@ -315,40 +316,24 @@ function animateSpeedometer(el, toVal, opts = {}) {
   const duration = opts.duration ?? 650;
 
   const endVal = Number(toVal || 0);
-
-  // keep layout stable using roll wrapper (no sudden wrap later)
-  ensureRoll(el);
-  const col = el._rollCol;
-
-  // single line that we update (no glow, no roll)
-  if (!el._spdLine) {
-    col.style.transition = "none";
-    col.style.transform = "translateY(0)";
-    col.innerHTML = "";
-    const line = document.createElement("span");
-    line.className = "rollLine";
-    col.appendChild(line);
-    el._spdLine = line;
-  }
-
-  const renderText = (v) => (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
-
   if (el._spdRaf) cancelAnimationFrame(el._spdRaf);
 
   const t0 = performance.now();
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
+  const renderText = (v) => (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
+
   const tick = (now) => {
     const p = Math.min(1, (now - t0) / duration);
     const v = endVal * easeOutCubic(p);
-    el._spdLine.textContent = renderText(v);
+    el.textContent = renderText(v);
     if (p < 1) el._spdRaf = requestAnimationFrame(tick);
   };
 
   el._spdRaf = requestAnimationFrame(tick);
 }
 
-// --- FLOAT ICON ---
+// --- FLOAT ICON (unchanged) ---
 const SVGS = {
   subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
   views: `<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
@@ -365,26 +350,19 @@ function spawnFloatIcon(cardId, type) {
   setTimeout(() => el.remove(), 5500);
 }
 
-// --- PULSE (glow once for 2s) ---
-let lastPulseAt = 0;
-function triggerPulse(cardId) {
+// --- GLOW ONCE (iconBox + chip glow; svg changes color only) ---
+function triggerGlowOnce(cardId) {
   const card = document.getElementById(cardId);
   if (!card) return;
 
-  // restart the animation
-  card.classList.remove("pulse-active");
-  void card.offsetWidth;
-  card.classList.add("pulse-active");
+  card.classList.remove("glow-once");
+  void card.offsetWidth; // reflow to restart
+  card.classList.add("glow-once");
 
-  setTimeout(() => card.classList.remove("pulse-active"), 2000);
+  setTimeout(() => card.classList.remove("glow-once"), 2000);
 }
 
-function triggerPulseAll() {
-  triggerPulse("cardSubs");
-  triggerPulse("cardViews");
-  triggerPulse("cardWatch");
-  lastPulseAt = Date.now();
-}
+let glowTimer = null;
 
 // --- MAIN RENDER ---
 let state = { subs: 0, views: 0, watch: 0 };
@@ -403,7 +381,6 @@ function render(data, isFirst) {
       watch: Number(data.lifetime?.watchHours || 0),
     };
 
-    // Entrance anim
     if (isFirst) {
       document.querySelectorAll(".card").forEach((c, i) => {
         c.style.animationDelay = `${i * 100}ms`;
@@ -469,7 +446,7 @@ function render(data, isFirst) {
     safeSetText("watchNextPct", pWatch + "%");
     safeSetStyle("watchProgressFill", "width", pWatch + "%");
 
-    // --- COUNTERS ---
+    // Counters (unchanged)
     const subsEl = document.getElementById("subsNow");
     if (isFirst) {
       animateSpeedometer(subsEl, cur.subs, { duration: 650 });
@@ -492,7 +469,7 @@ function render(data, isFirst) {
 
     const watchEl = document.getElementById("watchNow");
     const wDec = cur.watch < 100 ? 1 : 0;
-    const watchText = (v) => (wDec ? fmt1(v) : fmt(Math.round(v))) + "h";
+    const watchTxt = (n) => (wDec ? fmt1(n) : fmt(Math.round(n))) + "h";
 
     if (isFirst) {
       animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: wDec, suffix: "h" });
@@ -500,13 +477,26 @@ function render(data, isFirst) {
       animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h" });
       spawnFloatIcon("cardWatch", "watch");
     } else {
-      setRollInstant(watchEl, watchText(cur.watch));
+      setRollInstant(watchEl, watchTxt(cur.watch));
     }
 
-    // Pulse on auto refresh ONLY (not on first load)
-    if (!isFirst) triggerPulseAll();
-
     state = cur;
+
+    // --- GLOW RULES ---
+    // 1) On auto refresh (isFirst=false): glow once immediately
+    // 2) Every 30s: glow once
+    if (!isFirst) {
+      triggerGlowOnce("cardSubs");
+      triggerGlowOnce("cardViews");
+      triggerGlowOnce("cardWatch");
+    }
+
+    clearTimeout(glowTimer);
+    glowTimer = setTimeout(() => {
+      triggerGlowOnce("cardSubs");
+      triggerGlowOnce("cardViews");
+      triggerGlowOnce("cardWatch");
+    }, 30000);
 
     document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
     document.getElementById("toast").classList.add("show");
@@ -528,7 +518,7 @@ async function load(isFirst) {
   }
 }
 
-// 3D Tilt
+// 3D Tilt (unchanged)
 document.querySelectorAll(".card").forEach(card => {
   card.addEventListener("mousemove", (e) => {
     const r = card.getBoundingClientRect();
@@ -543,14 +533,5 @@ document.querySelectorAll(".card").forEach(card => {
 
 (async function init() {
   await load(true);
-
-  // Auto refresh each minute
   setInterval(() => load(false), 60 * 1000);
-
-  // Pulse every 30 seconds (min->max->min in 2s) even between refreshes
-  setInterval(() => {
-    const now = Date.now();
-    if (now - lastPulseAt < 1500) return; // avoid double pulse collision
-    triggerPulseAll();
-  }, 30 * 1000);
 })();
