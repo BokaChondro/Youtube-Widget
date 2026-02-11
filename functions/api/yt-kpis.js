@@ -1,14 +1,20 @@
 // functions/api/yt-kpis.js
-// KPIs for top cards with baseline median (previous 6×28D).
-// Adds 55s edge-cache to reduce YouTube API calls for 1-min refresh.
+// Weekly KPIs + 6-month weekly average baseline.
+// Card needs:
+// - Subs: current, thisWeekNet, avg6mNet
+// - Views: total, thisWeekViews, avg6mViews
+// - Watch: lifetime totalHours, thisWeekHours, avg6mHours
+// Also returns: channel.logo (for background), spark history (last 8 weeks)
+//
+// Uses edge cache (~55s) so 1-min refresh doesn't hammer YouTube APIs.
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
+function shiftDays(dateObj, deltaDays) {
+  const d = new Date(dateObj);
+  d.setDate(d.getDate() + deltaDays);
   return d;
 }
 
@@ -20,14 +26,8 @@ function safeStartDateFromPublishedAt(publishedAt) {
   return iso < "2006-01-01" ? "2006-01-01" : iso;
 }
 
-function median(nums) {
-  const arr = (nums || [])
-    .map(Number)
-    .filter((x) => Number.isFinite(x))
-    .sort((a, b) => a - b);
-  if (arr.length === 0) return 0;
-  const mid = Math.floor(arr.length / 2);
-  return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+function round1(n) {
+  return Math.round(Number(n || 0) * 10) / 10;
 }
 
 async function getAccessToken(env) {
@@ -61,20 +61,30 @@ async function fetchChannelBasics(token) {
   const data = await r.json();
   const ch = data.items?.[0];
 
+  const thumbs = ch?.snippet?.thumbnails || {};
+  const logo =
+    thumbs.high?.url ||
+    thumbs.medium?.url ||
+    thumbs.default?.url ||
+    "";
+
   return {
     channelId: ch?.id || null,
     title: ch?.snippet?.title || "",
     publishedAt: ch?.snippet?.publishedAt || null,
+    logo,
     subscribers: Number(ch?.statistics?.subscriberCount || 0),
     totalViews: Number(ch?.statistics?.viewCount || 0),
   };
 }
 
-async function fetchAnalyticsRange(token, startDate, endDate) {
+async function fetchAnalyticsDaily(token, startDate, endDate) {
   const q = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   q.searchParams.set("ids", "channel==MINE");
   q.searchParams.set("startDate", startDate);
   q.searchParams.set("endDate", endDate);
+  q.searchParams.set("dimensions", "day");
+  q.searchParams.set("sort", "day");
   q.searchParams.set(
     "metrics",
     "views,estimatedMinutesWatched,subscribersGained,subscribersLost"
@@ -85,116 +95,156 @@ async function fetchAnalyticsRange(token, startDate, endDate) {
   });
 
   const data = await r.json();
-  const row = data.rows?.[0] || [0, 0, 0, 0];
-
-  const views = Number(row[0] || 0);
-  const minutes = Number(row[1] || 0);
-  const gained = Number(row[2] || 0);
-  const lost = Number(row[3] || 0);
-
-  return {
-    views,
-    watchHours: Math.round((minutes / 60) * 10) / 10,
-    netSubs: gained - lost,
-  };
-}
-
-function build28dWindows() {
-  const periods = [];
-  for (let i = 0; i < 7; i++) {
-    const end = daysAgo(28 * i);
-    const start = daysAgo(28 * (i + 1));
-    periods.push({
-      idx: i,
-      startDate: isoDate(start),
-      endDate: isoDate(end),
+  const rows = data.rows || [];
+  // columns: day, views, minutes, gained, lost
+  const map = new Map();
+  for (const row of rows) {
+    const day = row[0];
+    map.set(day, {
+      views: Number(row[1] || 0),
+      minutes: Number(row[2] || 0),
+      gained: Number(row[3] || 0),
+      lost: Number(row[4] || 0),
     });
   }
-  return periods; // [last28, prev1, ... prev6]
+  return map;
+}
+
+async function fetchLifetimeWatchHours(token, publishedAt, endIso) {
+  const startIso = safeStartDateFromPublishedAt(publishedAt);
+
+  const q = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
+  q.searchParams.set("ids", "channel==MINE");
+  q.searchParams.set("startDate", startIso);
+  q.searchParams.set("endDate", endIso);
+  q.searchParams.set("metrics", "estimatedMinutesWatched");
+
+  const r = await fetch(q.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const data = await r.json();
+  const minutes = Number(data.rows?.[0]?.[0] || 0);
+  return { startIso, totalHours: round1(minutes / 60) };
+}
+
+function buildWeeklyTotals(dailyMap, endDateObj, weekCount) {
+  // week 0: last 7 days ending on endDateObj (inclusive)
+  // week 1: the 7 days before that, etc.
+  const weeks = [];
+  for (let w = 0; w < weekCount; w++) {
+    const weekEnd = shiftDays(endDateObj, -7 * w);
+    const weekStart = shiftDays(weekEnd, -6);
+
+    let views = 0;
+    let minutes = 0;
+    let gained = 0;
+    let lost = 0;
+
+    for (let i = 0; i < 7; i++) {
+      const d = shiftDays(weekStart, i);
+      const key = isoDate(d);
+      const m = dailyMap.get(key);
+      if (m) {
+        views += m.views;
+        minutes += m.minutes;
+        gained += m.gained;
+        lost += m.lost;
+      }
+    }
+
+    weeks.push({
+      idx: w,
+      startDate: isoDate(weekStart),
+      endDate: isoDate(weekEnd),
+      views,
+      watchHours: round1(minutes / 60),
+      netSubs: gained - lost,
+    });
+  }
+  return weeks; // [week0, week1, ...]
+}
+
+function avg(nums) {
+  const arr = (nums || []).map(Number).filter((x) => Number.isFinite(x));
+  if (!arr.length) return 0;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 async function computeKPIs(env) {
   const token = await getAccessToken(env);
-
   const ch = await fetchChannelBasics(token);
-  const periods = build28dWindows();
 
-  const periodResults = await Promise.all(
-    periods.map((p) =>
-      fetchAnalyticsRange(token, p.startDate, p.endDate).then((m) => ({
-        ...p,
-        metrics: m,
-      }))
-    )
-  );
+  // Define "this week" as last 7 FULL days ending yesterday (avoids partial today data)
+  const end = shiftDays(new Date(), -1);
+  const endIso = isoDate(end);
 
-  const last = periodResults.find((x) => x.idx === 0);
-  const prev1 = periodResults.find((x) => x.idx === 1);
+  // We need 27 weeks (this week + previous 26 weeks) => 189 days
+  const start = shiftDays(end, -(189 - 1));
+  const startIso = isoDate(start);
 
-  const prev6 = periodResults
-    .filter((x) => x.idx >= 1 && x.idx <= 6)
-    .sort((a, b) => b.idx - a.idx); // prev6..prev1
+  const dailyMap = await fetchAnalyticsDaily(token, startIso, endIso);
 
-  const baselineNetSubs = median(prev6.map((p) => p.metrics.netSubs));
-  const baselineViews = median(prev6.map((p) => p.metrics.views));
-  const baselineWatch = median(prev6.map((p) => p.metrics.watchHours));
+  // weeks[0] = this week, weeks[1] = previous week ... weeks[26]
+  const weeks = buildWeeklyTotals(dailyMap, end, 27);
 
-  // History for sparklines: oldest->newest = prev6..prev1..last
-  const history = [...prev6.reverse(), last].map((p) => ({
-    startDate: p.startDate,
-    endDate: p.endDate,
-    netSubs: p.metrics.netSubs,
-    views: p.metrics.views,
-    watchHours: p.metrics.watchHours,
-  }));
+  const thisWeek = weeks[0];
+  const prevWeek = weeks[1];
 
-  const endIso = isoDate(new Date());
+  // 6M avg = average of previous 26 weeks (exclude this week)
+  const baselineWeeks = weeks.slice(1, 27); // 26 weeks
 
-  // Lifetime watch hours
-  const lifetimeStart = safeStartDateFromPublishedAt(ch.publishedAt);
-  const lifetime = await fetchAnalyticsRange(token, lifetimeStart, endIso);
+  const avgSubs = avg(baselineWeeks.map((w) => w.netSubs));
+  const avgViews = avg(baselineWeeks.map((w) => w.views));
+  const avgWatch = avg(baselineWeeks.map((w) => w.watchHours));
+
+  // Spark history: last 8 weeks (week7..week0) oldest->newest
+  const spark = weeks.slice(0, 8).reverse(); // week7..week0
+
+  const life = await fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
 
   return {
     channel: ch,
-    windows: {
-      last28: { startDate: last.startDate, endDate: last.endDate },
-      prev28: { startDate: prev1.startDate, endDate: prev1.endDate },
-      baseline: {
-        type: "median",
-        periods: 6,
-        note: "Median of previous 6×28D periods (excludes last28).",
-      },
-      lifetime: { startDate: lifetimeStart, endDate: endIso },
-    },
-    history,
+    week: { startDate: thisWeek.startDate, endDate: thisWeek.endDate },
+    baseline6m: { weeks: 26, type: "avg" },
+
     subs: {
       current: ch.subscribers,
-      last28Net: last.metrics.netSubs,
-      prev28Net: prev1.metrics.netSubs,
-      baselineMedian: baselineNetSubs,
+      thisWeekNet: thisWeek.netSubs,
+      prevWeekNet: prevWeek.netSubs,
+      avg6mNet: avgSubs,
     },
+
     views: {
       total: ch.totalViews,
-      last28: last.metrics.views,
-      prev28: prev1.metrics.views,
-      baselineMedian: baselineViews,
+      thisWeek: thisWeek.views,
+      prevWeek: prevWeek.views,
+      avg6m: avgViews,
     },
+
     watch: {
-      totalHours: lifetime.watchHours,
-      last28Hours: last.metrics.watchHours,
-      prev28Hours: prev1.metrics.watchHours,
-      baselineMedian: baselineWatch,
+      lifetimeStart: life.startIso,
+      totalHours: life.totalHours,
+      thisWeekHours: thisWeek.watchHours,
+      prevWeekHours: prevWeek.watchHours,
+      avg6mHours: avgWatch,
     },
+
+    // 8-week spark points (oldest->newest)
+    spark: spark.map((w) => ({
+      startDate: w.startDate,
+      endDate: w.endDate,
+      netSubs: w.netSubs,
+      views: w.views,
+      watchHours: w.watchHours,
+    })),
   };
 }
 
 export async function onRequest(context) {
   try {
-    // Edge cache key (same URL always)
     const cache = caches.default;
-    const cacheKey = new Request(new URL(context.request.url).toString(), {
-      method: "GET",
-    });
+    const cacheKey = new Request(new URL(context.request.url).toString(), { method: "GET" });
 
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
@@ -202,9 +252,7 @@ export async function onRequest(context) {
     const data = await computeKPIs(context.env);
 
     const res = Response.json(data, {
-      headers: {
-        "Cache-Control": "public, max-age=55",
-      },
+      headers: { "Cache-Control": "public, max-age=55" },
     });
 
     context.waitUntil(cache.put(cacheKey, res.clone()));
