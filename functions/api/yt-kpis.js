@@ -101,8 +101,8 @@ async function fetchAnalyticsRange(token, startDate, endDate) {
   };
 }
 
+// NEW: Daily metrics for last 7 days (one API call)
 async function fetchAnalyticsDaily(token, startDate, endDate) {
-  // Returns day-by-day rows for the same metrics (AI HUD can find "best day", trend, etc.)
   const q = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   q.searchParams.set("ids", "channel==MINE");
   q.searchParams.set("startDate", startDate);
@@ -115,7 +115,7 @@ async function fetchAnalyticsDaily(token, startDate, endDate) {
   const data = await r.json();
 
   const rows = data.rows || [];
-  // rows: [ day, views, minutes, gained, lost ]
+  // row = [YYYY-MM-DD, views, minutes, gained, lost]
   return rows.map((row) => {
     const day = String(row[0] || "");
     const views = Number(row[1] || 0);
@@ -165,25 +165,20 @@ async function computeKPIs(env) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
 
-  // Analytics data often lags; we use yesterday as the safe "closed" day.
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
 
   const weekStart = isoDate(shiftDays(end, -6));
   const weekEnd = endIso;
+
   const weekly = await fetchAnalyticsRange(token, weekStart, weekEnd);
 
   const prevWeekStart = isoDate(shiftDays(end, -13));
   const prevWeekEnd = isoDate(shiftDays(end, -7));
   const prevWeekly = await fetchAnalyticsRange(token, prevWeekStart, prevWeekEnd);
 
-  // Daily trend for HUD (best day, last 3 vs first 4, etc.)
-  let daily7d = [];
-  try {
-    daily7d = await fetchAnalyticsDaily(token, weekStart, weekEnd);
-  } catch (e) {
-    daily7d = [];
-  }
+  // NEW: Daily 7d series (for better signals)
+  const daily7d = await fetchAnalyticsDaily(token, weekStart, weekEnd);
 
   const windows = build28dWindows(end);
 
@@ -208,22 +203,26 @@ async function computeKPIs(env) {
   const avgViews = avg(prev6.map((w) => w.metrics.views));
   const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
 
-  const history28d = [...winResults].sort((a,b)=>b.idx-a.idx).map((w)=>({
-    startDate: w.startDate,
-    endDate: w.endDate,
-    netSubs: w.metrics.netSubs,
-    subsGained: w.metrics.subsGained,
-    subsLost: w.metrics.subsLost,
-    views: w.metrics.views,
-    watchHours: w.metrics.watchHours,
-  }));
+  // Keep chronological order for sparklines (oldest -> newest)
+  const history28d = [...winResults]
+    .sort((a,b)=>b.idx-a.idx)
+    .map((w)=>({
+      startDate: w.startDate,
+      endDate: w.endDate,
+      netSubs: w.metrics.netSubs,
+      subsGained: w.metrics.subsGained,
+      subsLost: w.metrics.subsLost,
+      views: w.metrics.views,
+      watchHours: w.metrics.watchHours,
+    }));
 
   const life = await fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
 
   return {
     meta: {
       analyticsEndDate: endIso,
-      generatedAtIso: new Date().toISOString(),
+      weekStart,
+      weekEnd,
     },
     channel: ch,
     weekly: {
@@ -241,7 +240,6 @@ async function computeKPIs(env) {
       prevViews: prevWeekly.views,
       prevWatchHours: prevWeekly.watchHours
     },
-    daily7d,
     m28: {
       last28: {
         netSubs: last28.metrics.netSubs,
@@ -271,6 +269,7 @@ async function computeKPIs(env) {
     lifetime: {
       watchHours: life.totalHours,
     },
+    daily7d,
     history28d,
   };
 }
@@ -283,11 +282,9 @@ export async function onRequest(context) {
     if (cached) return cached;
 
     const data = await computeKPIs(context.env);
-
     const res = Response.json(data, {
       headers: { "Cache-Control": "public, max-age=55" },
     });
-
     context.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
   } catch (e) {
