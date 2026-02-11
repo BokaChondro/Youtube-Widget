@@ -1,8 +1,4 @@
 // functions/api/yt-kpis.js
-// Weekly is for "This week" vs "Last week" (Velocity).
-// Monthly focus (28D windows) for: Last28 / Prev28 / vs Last 6M Avg / Feedback / Sparkline.
-// Uses edge cache (~55s).
-
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
@@ -103,7 +99,6 @@ async function fetchAnalyticsRange(token, startDate, endDate) {
 }
 
 function build28dWindows(endDateObj) {
-  // 7 windows: idx0=last28 ... idx6=prev6
   const windows = [];
   for (let i = 0; i < 7; i++) {
     const end_i = shiftDays(endDateObj, -28 * i);
@@ -114,7 +109,7 @@ function build28dWindows(endDateObj) {
       endDate: isoDate(end_i),
     });
   }
-  return windows; // newest-first
+  return windows;
 }
 
 async function fetchLifetimeWatchHours(token, publishedAt, endIso) {
@@ -135,22 +130,17 @@ async function computeKPIs(env) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
 
-  // Use yesterday as end date
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
 
-  // 1. Current Week (last 7 days)
   const weekStart = isoDate(shiftDays(end, -6));
   const weekEnd = endIso;
   const weekly = await fetchAnalyticsRange(token, weekStart, weekEnd);
 
-  // 2. Previous Week (for Velocity calculation)
-  // The 7 days before the current week
   const prevWeekStart = isoDate(shiftDays(end, -13));
   const prevWeekEnd = isoDate(shiftDays(end, -7));
   const prevWeekly = await fetchAnalyticsRange(token, prevWeekStart, prevWeekEnd);
 
-  // 3. Monthly 28D windows (7 points for sparkline/trends)
   const windows = build28dWindows(end);
 
   const winResults = await Promise.all(
@@ -174,7 +164,6 @@ async function computeKPIs(env) {
   const avgViews = avg(prev6.map((w) => w.metrics.views));
   const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
 
-  // Sparkline history: oldest -> newest
   const history28d = [...winResults].sort((a,b)=>b.idx-a.idx).map((w)=>({
     startDate: w.startDate,
     endDate: w.endDate,
@@ -193,23 +182,17 @@ async function computeKPIs(env) {
       netSubs: weekly.netSubs,
       views: weekly.views,
       watchHours: weekly.watchHours,
-      // Velocity data
       prevNetSubs: prevWeekly.netSubs,
       prevViews: prevWeekly.views,
       prevWatchHours: prevWeekly.watchHours
     },
-
     m28: {
       last28: {
-        startDate: last28.startDate,
-        endDate: last28.endDate,
         netSubs: last28.metrics.netSubs,
         views: last28.metrics.views,
         watchHours: last28.metrics.watchHours,
       },
       prev28: {
-        startDate: prev28.startDate,
-        endDate: prev28.endDate,
         netSubs: prev28.metrics.netSubs,
         views: prev28.metrics.views,
         watchHours: prev28.metrics.watchHours,
@@ -225,13 +208,9 @@ async function computeKPIs(env) {
         watchHours: medianWatch,
       },
     },
-
     lifetime: {
-      startDate: life.startIso,
-      endDate: endIso,
       watchHours: life.totalHours,
     },
-
     history28d,
   };
 }
@@ -240,16 +219,12 @@ export async function onRequest(context) {
   try {
     const cache = caches.default;
     const cacheKey = new Request(new URL(context.request.url).toString(), { method: "GET" });
-
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
-
     const data = await computeKPIs(context.env);
-
     const res = Response.json(data, {
       headers: { "Cache-Control": "public, max-age=55" },
     });
-
     context.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
   } catch (e) {
