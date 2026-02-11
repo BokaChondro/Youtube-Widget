@@ -87,6 +87,7 @@ body {
   filter: grayscale(100%) contrast(1.2);
   z-index: 0;
   pointer-events: none;
+
   animation: logoBreath 10s ease-in-out infinite;
 }
 
@@ -106,6 +107,7 @@ body {
 }
 @keyframes glareSweep { 0%, 40% { left: -100%; } 100% { left: 200%; } }
 
+/* AURORA (tier-based) */
 .card::after {
   content: ""; position: absolute; top: -60px; right: -60px; width: 180px; height: 180px;
   background: radial-gradient(circle, var(--c-tier) 0%, transparent 70%);
@@ -138,18 +140,17 @@ body {
 .dot { width: 6px; height: 6px; border-radius: 50%; background: #555; box-shadow: 0 0 8px currentColor; }
 .chipText { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8); }
 
+/* --- BREATHING --- */
 @keyframes glowOnceBox {
   0%   { box-shadow: 0 0 0 rgba(0,0,0,0); color: #fff; }
   50%  { box-shadow: 0 0 18px var(--c-tier); color: var(--c-tier); }
   100% { box-shadow: 0 0 0 rgba(0,0,0,0); color: #fff; }
 }
-
 @keyframes glowOnceChip {
   0%   { box-shadow: 0 0 0 rgba(0,0,0,0); }
   50%  { box-shadow: 0 0 18px var(--c-tier); }
   100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
 }
-
 .card.glow-once .iconBox { animation: glowOnceBox 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
 .card.glow-once .chip    { animation: glowOnceChip 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
 
@@ -220,55 +221,47 @@ body {
   .card { margin-bottom: 10px; }
 }
 
-/* -----------------------------
-   HUD (AI STYLE)
------------------------------- */
+/* --- HUD --- */
 .hud-box {
   position: relative;
   margin-top: 20px;
   width: 100%;
   background: rgba(10, 10, 10, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   padding: 14px 20px;
   overflow: hidden;
   backdrop-filter: blur(20px);
   box-shadow: 0 10px 30px -10px rgba(0,0,0,0.8);
-  display: flex;
-  flex-direction: column;
+  display: flex; flex-direction: column;
 }
 
-/* SVG ring overlay (THIS is the real full border loop) */
+/* FULL border progress ring (rounded rectangle stroke) */
 .hud-ring {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: 0;
   pointer-events: none;
+  z-index: 3;
+  opacity: 0.95;
 }
-
-.hud-ring-track {
+.hud-ring rect {
   fill: none;
-  stroke: rgba(255,255,255,0.10);
-  stroke-width: 1.3;
-}
-
-.hud-ring-prog {
-  fill: none;
-  stroke: rgba(255,255,255,0.20);
-  stroke-width: 1.6;
+  stroke: var(--c-tier);
+  stroke-width: 2;
   stroke-linecap: round;
-
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100; /* 100 -> 0 in JS */
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--c-tier) 60%, transparent));
 }
 
-/* scanline */
+/* Moving scanline (inside) */
 .hud-scanline {
   position: absolute; top: 0; left: -50%; width: 20%; height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
   transform: skewX(-20deg);
-  pointer-events: none; z-index: 1;
+  pointer-events: none;
+  z-index: 1;
   animation: hudScan 6s infinite ease-in-out;
 }
 @keyframes hudScan {
@@ -276,8 +269,10 @@ body {
   100% { left: 150%; }
 }
 
+/* Layout */
 .hud-content {
-  display: flex; align-items: center; gap: 16px; position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 16px;
+  position: relative; z-index: 2;
 }
 
 .hud-icon-box {
@@ -295,37 +290,28 @@ body {
 .hud-meta {
   display: flex; gap: 8px; align-items: center;
   font-size: 10px; letter-spacing: 1px; font-weight: 700;
-  font-family: Consolas, monospace; opacity: 0.55;
+  font-family: Consolas, monospace; opacity: 0.6;
 }
-
-.hud-tag { color: rgba(255,255,255,0.9); text-shadow: 0 0 6px rgba(255,255,255,0.2); }
+.hud-tag {
+  color: var(--c-tier);
+  text-shadow: 0 0 8px var(--c-tier);
+  transition: color 0.3s, text-shadow 0.3s;
+}
 
 .hud-text-mask { overflow: hidden; }
 
 .hud-message {
   font-size: 13px; color: rgba(255, 255, 255, 0.95);
-  font-weight: 500; line-height: 1.35;
-  white-space: normal;
+  font-weight: 500; line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
-
-  /* allow more text than before */
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  min-height: 3.9em;
 }
 
-/* subtle cursor */
-.hud-message::after {
-  content: "▌";
-  margin-left: 6px;
-  opacity: 0.6;
-  animation: hudCursor 1s steps(2, end) infinite;
-}
-@keyframes hudCursor { 0%, 49% { opacity: 0.6; } 50%, 100% { opacity: 0.15; } }
-
+/* Glitch pop */
 .hud-glitch {
   animation: glitchAnim 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  color: #fff;
 }
 @keyframes glitchAnim {
   0% { transform: translate(0); opacity: 0; text-shadow: 0 0 0 transparent; }
@@ -335,10 +321,7 @@ body {
   100% { transform: translate(0); opacity: 1; }
 }
 
-/* hide the old bottom bar so you don't think it's the ring */
-.hud-timer { display: none; }
-
 @media (max-width: 600px) {
-  .hud-message { font-size: 12px; }
+  .hud-message { white-space: normal; font-size: 12px; }
   .hud-box { margin-top: 15px; padding: 12px; }
 }
