@@ -3,7 +3,6 @@
   --text:#ffffff;
 
   --border: rgba(255,255,255,.10);
-  --glass: rgba(255,255,255,.04);
 
   --yt:#ff0033;
 
@@ -33,7 +32,7 @@ body{
   width:100%;
   padding:14px;
   position:relative;
-  background: var(--bg); /* ✅ nothing outside cards */
+  background: var(--bg);
 }
 
 /* toast */
@@ -71,14 +70,14 @@ body{
   padding:16px;
   overflow:hidden;
 
-  /* ✅ glass */
-  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025));
+  /* glass */
+  background: linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.022));
   border:1px solid var(--border);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
 
   box-shadow:
-    0 10px 30px rgba(0,0,0,.25),
-    inset 0 1px 0 rgba(255,255,255,.06);
+    0 12px 34px rgba(0,0,0,.30),
+    inset 0 1px 0 rgba(255,255,255,.07);
 
   animation: popIn .55s ease both;
 }
@@ -96,7 +95,7 @@ body{
   border-color: rgba(255,255,255,.18);
 }
 
-/* ✅ gradient INSIDE the card only */
+/* gradient INSIDE card only */
 .card::before{
   content:"";
   position:absolute;
@@ -109,25 +108,34 @@ body{
   pointer-events:none;
 }
 
-/* ✅ channel logo inside each card (more visible + contain + not zoomed) */
+/* channel logo background (blended / no square edges) */
 .card::after{
   content:"";
   position:absolute;
   inset:0;
   z-index:1;
+
   background-image: var(--logo-url);
   background-repeat:no-repeat;
   background-position:center;
   background-size: contain;
-  opacity:.12;              /* ✅ slightly more visible */
-  filter: grayscale(100%) contrast(115%);
-  transform: scale(1);
-  animation: logoBeat 3.6s ease-in-out infinite;
+
+  /* make square edges disappear */
+  -webkit-mask-image: radial-gradient(circle at center, rgba(0,0,0,1) 52%, rgba(0,0,0,0) 78%);
+  mask-image: radial-gradient(circle at center, rgba(0,0,0,1) 52%, rgba(0,0,0,0) 78%);
+
+  opacity:.14;
+  filter: grayscale(100%) contrast(118%);
+  transform: scale(0.94);
+  animation: logoBeat 3.2s ease-in-out infinite;
   pointer-events:none;
 }
+
+/* more lively zoom range */
 @keyframes logoBeat{
-  0%,100%{ transform: scale(1); opacity:.11; }
-  50%{ transform: scale(1.05); opacity:.14; }
+  0%   { transform: scale(0.92); opacity:.12; }
+  50%  { transform: scale(1.16); opacity:.17; }
+  100% { transform: scale(0.92); opacity:.12; }
 }
 
 .cardTop{
@@ -318,4 +326,31 @@ body{
   text-align:center;
   font-size:12px;
   color: rgba(255,255,255,.55);
+}
+
+/* floating icon animation (on increase) */
+.floatIcon{
+  position:absolute;
+  left:50%;
+  bottom:18%;
+  transform: translateX(-50%) translateY(10px) scale(.96);
+  z-index:3;
+  opacity:0;
+  color: rgba(255,255,255,.95);
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,.35));
+  pointer-events:none;
+  animation: floatUp 950ms ease-out forwards;
+}
+
+.floatIcon svg{
+  width:34px;
+  height:34px;
+  fill: currentColor;
+  opacity:.95;
+}
+
+@keyframes floatUp{
+  0%   { opacity:0; transform: translateX(-50%) translateY(12px) scale(.94); }
+  18%  { opacity:.85; }
+  100% { opacity:0; transform: translateX(-50%) translateY(-86px) scale(1.06); }
 }
