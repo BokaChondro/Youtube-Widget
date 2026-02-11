@@ -16,28 +16,28 @@ const COLORS = {
 
 const FEEDBACK = {
   subs: {
-    red: "Audience Leakage",
-    orange: "Slow Conversion",
+    red: "Audience Leak",
+    orange: "Slow Convert",
     yellow: "Steady Growth",
     green: "Strong Pull",
-    blue: "Rising Very Fast",
-    purple: "Exceptional Growth",
+    blue: "Rising Fast",
+    purple: "Exceptional",
   },
   views: {
-    red: "Reach Dropping",
+    red: "Reach Down",
     orange: "Low Reach",
     yellow: "Stable Reach",
-    green: "Reach Rising",
+    green: "Reach Up",
     blue: "Trending",
-    purple: "Gone Viral",
+    purple: "Viral",
   },
   watch: {
-    red: "Poor Engagement",
-    orange: "Retention Problem",
+    red: "Poor Engage",
+    orange: "Retention Issue",
     yellow: "Consistent",
-    green: "Engagement Rising",
-    blue: "Viewers Hooked",
-    purple: "Outstanding Engagement",
+    green: "Engage Up",
+    blue: "Hooked",
+    purple: "Outstanding",
   },
 };
 
