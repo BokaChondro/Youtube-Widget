@@ -53,7 +53,6 @@ function tierArrow(tier) {
   return "⟰⟰";
 }
 
-// Monthly tiering: Last28 vs Median(prev6×28D) (stable)
 function tierFromBaseline(last28, median6m, absMin, minPct) {
   const L = Number(last28 || 0);
   const B = Number(median6m || 0);
@@ -105,7 +104,6 @@ function setMainArrow(elId, tier) {
   el.style.textShadow = `0 0 14px ${color}55`;
 }
 
-// vs 6M avg is red/green only (no +/- sign, arrows only)
 function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   const numEl = document.getElementById(elNumId);
   const arrEl = document.getElementById(elArrowId);
@@ -181,18 +179,9 @@ function setLogo(url) {
 
 /* Floating icons (white SVG) */
 const ICON_SVG = {
-  subs: `
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/>
-    </svg>`,
-  views: `
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
-    </svg>`,
-  watch: `
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/>
-    </svg>`,
+  subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
+  views:`<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
+  watch:`<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
 };
 
 function spawnFloatIcon(cardId, type) {
@@ -206,45 +195,103 @@ function spawnFloatIcon(cardId, type) {
 }
 
 /**
- * Casino/rolling animation using setInterval:
- * - First load: fast (0 -> target)
- * - Refresh: slower (prev -> next)
+ * ✅ Real casino roll:
+ * - If change is small (like 742 → 743), we build a vertical list and slide it slowly.
+ * - If change is big, we fall back to fast stepping.
  */
-function animateRoll(el, from, to, opts = {}) {
+function ensureRoll(el) {
+  if (el._rollWrap && el._rollCol) return;
+
+  el.textContent = "";
+  const wrap = document.createElement("span");
+  wrap.className = "rollWrap";
+  const col = document.createElement("span");
+  col.className = "rollCol";
+  wrap.appendChild(col);
+  el.appendChild(wrap);
+
+  el._rollWrap = wrap;
+  el._rollCol = col;
+}
+
+function formatValue(v, decimals, suffix) {
+  const num = Number(v || 0);
+  const t = decimals ? fmt1(num) : fmt(Math.round(num));
+  return t + (suffix || "");
+}
+
+function animateCasinoRoll(el, from, to, opts = {}) {
   const isFirst = !!opts.isFirst;
   const decimals = opts.decimals ?? 0;
   const suffix = opts.suffix ?? "";
 
-  // stop any previous roll on this element
+  // stop previous transitions
+  ensureRoll(el);
+  const wrap = el._rollWrap;
+  const col = el._rollCol;
+
+  const scale = Math.pow(10, decimals);
+  const a = Math.round(Number(from || 0) * scale);
+  const b = Math.round(Number(to || 0) * scale);
+  const dir = b >= a ? 1 : -1;
+  const diff = Math.abs(b - a);
+
+  // If no change, just show target
+  if (diff === 0) {
+    col.style.transition = "none";
+    col.style.transform = "translateY(0px)";
+    col.innerHTML = `<span class="rollLine">${formatValue(b/scale, decimals, suffix)}</span>`;
+    return;
+  }
+
+  // ✅ slow, visible roll for small diffs (even 1)
+  const maxLines = isFirst ? 18 : 26; // keep DOM small
+  if (!isFirst && diff <= maxLines) {
+    const lines = [];
+    for (let i = 0; i <= diff; i++) {
+      const v = (a + dir * i) / scale;
+      lines.push(`<span class="rollLine">${formatValue(v, decimals, suffix)}</span>`);
+    }
+    col.innerHTML = lines.join("");
+    col.style.transition = "none";
+    col.style.transform = "translateY(0px)";
+
+    const h = wrap.getBoundingClientRect().height || 38;
+    const targetY = -h * diff;
+
+    // Slow on auto refresh
+    const dur = 1400;
+    requestAnimationFrame(() => {
+      col.style.transition = `transform ${dur}ms cubic-bezier(.18,.90,.18,1)`;
+      col.style.transform = `translateY(${targetY}px)`;
+    });
+
+    clearTimeout(el._rollCleanup);
+    el._rollCleanup = setTimeout(() => {
+      col.style.transition = "none";
+      col.style.transform = "translateY(0px)";
+      col.innerHTML = `<span class="rollLine">${formatValue(b/scale, decimals, suffix)}</span>`;
+    }, dur + 60);
+
+    return;
+  }
+
+  // Fast stepped roll (first load or big diffs)
   if (el._rollTimer) {
     clearInterval(el._rollTimer);
     el._rollTimer = null;
   }
 
-  const scale = Math.pow(10, decimals);
-  let cur = Math.round(Number(from || 0) * scale);
-  const target = Math.round(Number(to || 0) * scale);
+  let cur = a;
+  const target = b;
 
-  const dir = target >= cur ? 1 : -1;
-  const diff = Math.abs(target - cur);
-
-  const format = (vInt) => {
-    const v = vInt / scale;
-    return (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
-  };
-
-  // if no change, just render it
-  if (diff === 0) {
-    el.textContent = format(target);
-    return;
-  }
-
-  // tuning
-  const intervalMs = isFirst ? 9 : 22;          // refresh is slower
-  const maxTicks = isFirst ? 110 : 160;         // more ticks on refresh for slow roll
+  const intervalMs = isFirst ? 7 : 20;
+  const maxTicks = isFirst ? 120 : 170;
   const step = Math.max(1, Math.ceil(diff / maxTicks));
 
-  el.textContent = format(cur);
+  col.style.transition = "none";
+  col.style.transform = "translateY(0px)";
+  col.innerHTML = `<span class="rollLine">${formatValue(cur/scale, decimals, suffix)}</span>`;
 
   el._rollTimer = setInterval(() => {
     if (cur === target) {
@@ -255,7 +302,7 @@ function animateRoll(el, from, to, opts = {}) {
     cur += dir * step;
     if (dir > 0 && cur > target) cur = target;
     if (dir < 0 && cur < target) cur = target;
-    el.textContent = format(cur);
+    col.innerHTML = `<span class="rollLine">${formatValue(cur/scale, decimals, suffix)}</span>`;
   }, intervalMs);
 }
 
@@ -287,12 +334,12 @@ function render(data, isFirst) {
   const viewsTotal = Number(data.channel?.totalViews || 0);
   const watchTotal = Number(data.lifetime?.watchHours || 0);
 
-  // if totals increased on refresh, spawn floating icon
+  // floating icons only when increased
   if (!isFirst && subsNow > state.subsNow) spawnFloatIcon("cardSubs", "subs");
   if (!isFirst && viewsTotal > state.viewsTotal) spawnFloatIcon("cardViews", "views");
   if (!isFirst && watchTotal > state.watchTotal) spawnFloatIcon("cardWatch", "watch");
 
-  // SUBS tier from monthly baseline (stable)
+  // SUBS tier from monthly baseline
   const subsTier = tierFromBaseline(last28.netSubs, med6m.netSubs, 30, 0.10);
   setChip("subsDot", "subsChipText", subsTier, FEEDBACK.subs[subsTier]);
   setMainArrow("subsMainArrow", subsTier);
@@ -303,8 +350,8 @@ function render(data, isFirst) {
   document.getElementById("subsPrev28").textContent = `${Number(prev28.netSubs||0) >= 0 ? "+" : ""}${fmt(prev28.netSubs)}`;
   setVsRG("subsVsNum", "subsVsArrow", Number(last28.netSubs||0) - Number(avg6m.netSubs||0), 0, "");
 
-  // roll totals
-  animateRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subsNow, subsNow, { isFirst });
+  // ✅ casino roll (auto refresh will be slow even for +1)
+  animateCasinoRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subsNow, subsNow, { isFirst });
 
   // VIEWS
   const viewsTier = tierFromBaseline(last28.views, med6m.views, 25000, 0.10);
@@ -317,7 +364,7 @@ function render(data, isFirst) {
   document.getElementById("viewsPrev28").textContent = fmt(prev28.views);
   setVsRG("viewsVsNum", "viewsVsArrow", Number(last28.views||0) - Number(avg6m.views||0), 0, "");
 
-  animateRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.viewsTotal, viewsTotal, { isFirst });
+  animateCasinoRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.viewsTotal, viewsTotal, { isFirst });
 
   // WATCH
   const watchTier = tierFromBaseline(last28.watchHours, med6m.watchHours, 50, 0.10);
@@ -330,14 +377,14 @@ function render(data, isFirst) {
   document.getElementById("watchPrev28").textContent = `${fmt(prev28.watchHours)}h`;
   setVsRG("watchVsNum", "watchVsArrow", Number(last28.watchHours||0) - Number(avg6m.watchHours||0), 1, "h");
 
-  animateRoll(
+  animateCasinoRoll(
     document.getElementById("watchNow"),
     isFirst ? 0 : state.watchTotal,
     watchTotal,
     { isFirst, decimals: watchTotal < 100 ? 1 : 0, suffix: "h" }
   );
 
-  // update state AFTER starting rolls
+  // update state AFTER starting animations
   state.subsNow = subsNow;
   state.viewsTotal = viewsTotal;
   state.watchTotal = watchTotal;
