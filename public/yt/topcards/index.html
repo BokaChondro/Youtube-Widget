@@ -4,7 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>YouTube Top Cards</title>
-  <link rel="stylesheet" href="./style.css?v=hud_sci_fi_v2" />
+  
+  <!-- JetBrains Mono for the tech look -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="./style.css?v=hud_v3_neon" />
 </head>
 <body>
   <div class="wrap">
@@ -98,18 +104,30 @@
 
     <!-- === SCI-FI HUD === -->
     <div class="hud-box" id="hudBox">
-      <!-- Full SVG Ring with Glow -->
-      <svg class="hud-ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <rect id="hudRingRect" x="1" y="1" width="98" height="98" rx="12" ry="12" vector-effect="non-scaling-stroke"></rect>
+      <!-- Running Neon Border (Rect) -->
+      <svg class="hud-border-svg" preserveAspectRatio="none">
+        <rect id="hudBorder" x="1" y="1" width="100%" height="100%" rx="12" ry="12"></rect>
       </svg>
-      <div class="hud-grid-bg"></div>
-      <div class="hud-scanline"></div>
+
       <div class="hud-content">
-        <div class="hud-icon-box"><span id="hudIcon" class="hud-icon">⚡</span></div>
-        <div class="hud-data">
-          <div class="hud-meta"><span class="hud-label">AI_INTEL //</span><span class="hud-tag" id="hudTag">STANDBY</span></div>
-          <div class="hud-text-mask"><div class="hud-message" id="hudMessage">Establishing secure connection...</div></div>
-          <div class="hud-subline" id="hudSubline"></div>
+        <!-- Dedicated Icon -->
+        <div class="hud-icon-box" id="hudIconBox">
+          <span id="hudIcon" class="hud-icon">⚡</span>
+        </div>
+
+        <div class="hud-text-area">
+          <!-- Header Line -->
+          <div class="hud-header">
+            <span class="hud-sys">SYSTEM_FEEDBACK //</span>
+            <div class="hud-chip" id="hudChip">
+              <span id="hudTag">STANDBY</span>
+            </div>
+          </div>
+          
+          <!-- Main Message (No subline) -->
+          <div class="hud-message-mask">
+            <div class="hud-message" id="hudMessage">ESTABLISHING SECURE DATALINK...</div>
+          </div>
         </div>
       </div>
     </div>
@@ -117,6 +135,7 @@
 
     <div class="foot" id="updated">System Initializing...</div>
   </div>
-  <script src="./app.js?v=hud_sci_fi_v2"></script>
+
+  <script src="./app.js?v=hud_v3_neon"></script>
 </body>
 </html>
