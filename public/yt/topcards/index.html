@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouTube Top Cards</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <!-- Background heartbeat pulse -->
+    <div class="ytPulse" aria-hidden="true"></div>
+
+    <!-- Micro notification -->
+    <div class="toast" id="toast">Updated ✓</div>
+
+    <div class="grid">
+
+      <!-- CARD 1 -->
+      <div class="card" id="cardSubs">
+        <div class="cardTop">
+          <div class="left">
+            <div class="iconBox redGlow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="icon">
+                <path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/>
+              </svg>
+            </div>
+            <div class="titles">
+              <div class="title">Subscribers</div>
+              <div class="subtitle" id="subsDates">—</div>
+            </div>
+          </div>
+
+          <div class="chip" id="subsChip">
+            <span class="dot" id="subsDot"></span>
+            <span class="chipText" id="subsChipText">—</span>
+          </div>
+        </div>
+
+        <div class="midRow">
+          <div class="bigNumber" id="subsNow">—</div>
+          <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+            <path id="subsSparkPath" d="" />
+          </svg>
+        </div>
+
+        <div class="baselineLine" id="subsBase">—</div>
+
+        <div class="metaRow">
+          <div class="metaItem">
+            <div class="metaLabel">Last 28D</div>
+            <div class="metaValue" id="subsLast">—</div>
+          </div>
+          <div class="metaItem">
+            <div class="metaLabel">Prev 28D</div>
+            <div class="metaValue" id="subsPrev">—</div>
+          </div>
+          <div class="metaItem">
+            <div class="metaLabel">Delta</div>
+            <div class="metaValue" id="subsDelta">—</div>
+          </div>
+        </div>
+
+        <div class="shine"></div>
+      </div>
+
+      <!-- CARD 2 -->
+      <div class="card" id="cardViews">
+        <div class="cardTop">
+          <div class="left">
+            <div class="iconBox redGlow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="icon">
+                <path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
+              </svg>
+            </div>
+            <div class="titles">
+              <div class="title">Total Views</div>
+              <div class="subtitle" id="viewsDates">—</div>
+            </div>
+          </div>
+
+          <div class="chip" id="viewsChip">
+            <span class="dot" id="viewsDot"></span>
+            <span class="chipText" id="viewsChipText">—</span>
+          </div>
+        </div>
+
+        <div class="midRow">
+          <div class="bigNumber" id="viewsTotal">—</div>
+          <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+            <path id="viewsSparkPath" d="" />
+          </svg>
+        </div>
+
+        <div class="baselineLine" id="viewsBase">—</div>
+
+        <div class="metaRow">
+          <div class="metaItem">
+            <div class="metaLabel">Last 28D</div>
+            <div class="metaValue" id="viewsLast">—</div>
+          </div>
+          <div class="metaItem">
+            <div class="metaLabel">Prev 28D</div>
+            <div class="metaValue" id="viewsPrev">—</div>
+          </div>
+          <div class="metaItem">
+            <div class="metaLabel">Delta</div>
+            <div class="metaValue" id="viewsDelta">—</div>
+          </div>
+        </div>
+
+        <div class="shine"></div>
+      </div>
+
+      <!-- CARD 3 -->
+      <div class="card" id="cardWatch">
+        <div class="cardTop">
+          <div class="left">
+            <div class="iconBox redGlow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" class="icon">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 11h5v-2h-4V7h-2v6Z"/>
+              </svg>
+            </div>
+            <div class="titles">
+              <div class="title">Watch Hours</div>
+              <div class="subtitle" id="watchDates">—</div>
+            </div>
+          </div>
+
+          <div class="chip" id="watchChip">
+            <span class="dot" id="watchDot"></span>
+            <span class="chipText" id="watchChipText">—</span>
+          </div>
+        </div>
+
+        <div class="midRow">
+          <div class="bigNumber" id="watchNow">—</div>
+          <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+            <path id="watchSparkPath" d="" />
+          </svg>
+        </div>
+
+        <div class="baselineLine" id="watchBase">—</div>
+
+        <div class="metaRow">
+          <div class="metaItem">
+            <div class="metaLabel">Last 28D</div>
+            <div class="metaValue" id="watchLast">—</div>
+          </div>
+          <div class="metaItem">
+            <div class="metaLabel">Prev 28D</div>
+            <div class="metaValue" id="watchPrev">—</div>
+          </div>
+          <div class="metaItem">
+            <div class="metaLabel">Delta</div>
+            <div class="metaValue" id="watchDelta">—</div>
+          </div>
+        </div>
+
+        <div class="shine"></div>
+      </div>
+
+    </div>
+
+    <div class="foot" id="updated">—</div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
