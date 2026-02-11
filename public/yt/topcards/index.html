@@ -8,10 +8,7 @@
 </head>
 <body>
   <div class="wrap">
-    <!-- Background heartbeat pulse -->
     <div class="ytPulse" aria-hidden="true"></div>
-
-    <!-- Micro notification -->
     <div class="toast" id="toast">Updated ✓</div>
 
     <div class="grid">
@@ -27,37 +24,43 @@
             </div>
             <div class="titles">
               <div class="title">Subscribers</div>
-              <div class="subtitle" id="subsDates">—</div>
+              <div class="subtitle">Current</div>
             </div>
           </div>
 
-          <div class="chip" id="subsChip">
+          <div class="chip">
             <span class="dot" id="subsDot"></span>
             <span class="chipText" id="subsChipText">—</span>
           </div>
         </div>
 
         <div class="midRow">
-          <div class="bigNumber" id="subsNow">—</div>
+          <div class="bigNumber">
+            <span id="subsNow">—</span>
+            <span class="mainArrow" id="subsMainArrow">—</span>
+          </div>
           <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
             <path id="subsSparkPath" d="" />
           </svg>
         </div>
 
-        <div class="baselineLine" id="subsBase">—</div>
+        <div class="weekLine" id="subsWeek">This week: —</div>
 
         <div class="metaRow">
           <div class="metaItem">
             <div class="metaLabel">Last 28D</div>
-            <div class="metaValue" id="subsLast">—</div>
+            <div class="metaValue" id="subsLast28">—</div>
           </div>
           <div class="metaItem">
             <div class="metaLabel">Prev 28D</div>
-            <div class="metaValue" id="subsPrev">—</div>
+            <div class="metaValue" id="subsPrev28">—</div>
           </div>
           <div class="metaItem">
-            <div class="metaLabel">Delta</div>
-            <div class="metaValue" id="subsDelta">—</div>
+            <div class="metaLabel">vs. Last 6M Avg</div>
+            <div class="metaValue">
+              <span class="vsNum" id="subsVsNum">—</span>
+              <span class="vsArrow" id="subsVsArrow">—</span>
+            </div>
           </div>
         </div>
 
@@ -75,37 +78,43 @@
             </div>
             <div class="titles">
               <div class="title">Total Views</div>
-              <div class="subtitle" id="viewsDates">—</div>
+              <div class="subtitle">Lifetime</div>
             </div>
           </div>
 
-          <div class="chip" id="viewsChip">
+          <div class="chip">
             <span class="dot" id="viewsDot"></span>
             <span class="chipText" id="viewsChipText">—</span>
           </div>
         </div>
 
         <div class="midRow">
-          <div class="bigNumber" id="viewsTotal">—</div>
+          <div class="bigNumber">
+            <span id="viewsTotal">—</span>
+            <span class="mainArrow" id="viewsMainArrow">—</span>
+          </div>
           <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
             <path id="viewsSparkPath" d="" />
           </svg>
         </div>
 
-        <div class="baselineLine" id="viewsBase">—</div>
+        <div class="weekLine" id="viewsWeek">This week: —</div>
 
         <div class="metaRow">
           <div class="metaItem">
             <div class="metaLabel">Last 28D</div>
-            <div class="metaValue" id="viewsLast">—</div>
+            <div class="metaValue" id="viewsLast28">—</div>
           </div>
           <div class="metaItem">
             <div class="metaLabel">Prev 28D</div>
-            <div class="metaValue" id="viewsPrev">—</div>
+            <div class="metaValue" id="viewsPrev28">—</div>
           </div>
           <div class="metaItem">
-            <div class="metaLabel">Delta</div>
-            <div class="metaValue" id="viewsDelta">—</div>
+            <div class="metaLabel">vs. Last 6M Avg</div>
+            <div class="metaValue">
+              <span class="vsNum" id="viewsVsNum">—</span>
+              <span class="vsArrow" id="viewsVsArrow">—</span>
+            </div>
           </div>
         </div>
 
@@ -117,43 +126,47 @@
         <div class="cardTop">
           <div class="left">
             <div class="iconBox redGlow" aria-hidden="true">
-              <svg viewBox="0 0 24 24" class="icon">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 11h5v-2h-4V7h-2v6Z"/>
-              </svg>
+              <div class="emojiIcon">🎥</div>
             </div>
             <div class="titles">
               <div class="title">Watch Hours</div>
-              <div class="subtitle" id="watchDates">—</div>
+              <div class="subtitle">Lifetime</div>
             </div>
           </div>
 
-          <div class="chip" id="watchChip">
+          <div class="chip">
             <span class="dot" id="watchDot"></span>
             <span class="chipText" id="watchChipText">—</span>
           </div>
         </div>
 
         <div class="midRow">
-          <div class="bigNumber" id="watchNow">—</div>
+          <div class="bigNumber">
+            <span id="watchNow">—</span>
+            <span class="mainArrow" id="watchMainArrow">—</span>
+          </div>
           <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
             <path id="watchSparkPath" d="" />
           </svg>
         </div>
 
-        <div class="baselineLine" id="watchBase">—</div>
+        <div class="weekLine" id="watchWeek">This week: —</div>
 
         <div class="metaRow">
           <div class="metaItem">
             <div class="metaLabel">Last 28D</div>
-            <div class="metaValue" id="watchLast">—</div>
+            <div class="metaValue" id="watchLast28">—</div>
           </div>
           <div class="metaItem">
             <div class="metaLabel">Prev 28D</div>
-            <div class="metaValue" id="watchPrev">—</div>
+            <div class="metaValue" id="watchPrev28">—</div>
           </div>
           <div class="metaItem">
-            <div class="metaLabel">Delta</div>
-            <div class="metaValue" id="watchDelta">—</div>
+            <div class="metaLabel">vs. Last 6M Avg</div>
+            <div class="metaValue">
+              <span class="vsNum" id="watchVsNum">—</span>
+              <span class="vsArrow" id="watchVsArrow">—</span>
+            </div>
           </div>
         </div>
 
