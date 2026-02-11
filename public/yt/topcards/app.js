@@ -7,20 +7,16 @@ function fmt(n) { return NF_INT.format(Number(n || 0)); }
 function fmt1(n) { return NF_1.format(Number(n || 0)); }
 function nowStamp() { return new Date().toLocaleTimeString(); }
 
+// STRICT COLOR PALETTE
 const COLORS = {
-  red: "#e81416",
-  orange: "#ffa500",
-  yellow: "#faeb36",
-  green: "#79c314",
-  blue: "#487de7",
-  purple: "#bb00ff",
-  white: "#ffffff"
-};
-
-const FEEDBACK = {
-  subs: { red: "Audience Leak", orange: "Slow Convert", yellow: "Steady Growth", green: "Strong Pull", blue: "Rising Fast", purple: "Exceptional" },
-  views: { red: "Reach Down", orange: "Low Reach", yellow: "Stable Reach", green: "Reach Up", blue: "Trending", purple: "Viral" },
-  watch: { red: "Poor Engage", orange: "Retention Issue", yellow: "Consistent", green: "Engage Up", blue: "Hooked", purple: "Outstanding" }
+  green:  "#00FF00", // Good/Rising
+  red:    "#fe0000", // Warning/Bad
+  blue:   "#0073FF", // Neutral/Channel Facts
+  yellow: "#fdfe02", // Tips
+  purple: "#ab20fd", // Motivation/Nostalgia
+  pink:   "#FF85EF", // Trivia/Fun
+  orange: "#FF9500", // Fallback
+  white:  "#ffffff"
 };
 
 // --- DOM HELPERS ---
@@ -233,7 +229,7 @@ function render(data, isFirst) {
 
   const weekly = data.weekly || {}, last28 = data.m28?.last28 || {}, prev28 = data.m28?.prev28 || {}, med6m = data.m28?.median6m || {}, hist = data.history28d || [];
 
-  // SUBS
+  // TOP 3 CARDS LOGIC (UNCHANGED)
   const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
   setCardTheme("cardSubs", tSubs); setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]); setMainArrow("subsMainArrow", tSubs);
   setSpark("subsSparkFill", "subsSparkPath", hist.map(x => x.netSubs), tSubs);
@@ -243,7 +239,6 @@ function render(data, isFirst) {
   const gSubs = getMilestone(cur.subs, "subs"), pSubs = Math.min(100, (cur.subs / gSubs) * 100).toFixed(1);
   safeSetText("subsNextGoal", fmt(gSubs)); safeSetText("subsNextPct", pSubs + "%"); safeSetStyle("subsProgressFill", "width", pSubs + "%");
 
-  // VIEWS
   const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
   setCardTheme("cardViews", tViews); setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]); setMainArrow("viewsMainArrow", tViews);
   setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x => x.views), tViews);
@@ -253,7 +248,6 @@ function render(data, isFirst) {
   const gViews = getMilestone(cur.views, "views"), pViews = Math.min(100, (cur.views / gViews) * 100).toFixed(1);
   safeSetText("viewsNextGoal", fmt(gViews)); safeSetText("viewsNextPct", pViews + "%"); safeSetStyle("viewsProgressFill", "width", pViews + "%");
 
-  // WATCH
   const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
   setCardTheme("cardWatch", tWatch); setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]); setMainArrow("watchMainArrow", tWatch);
   setSpark("watchSparkFill", "watchSparkPath", hist.map(x => x.watchHours), tWatch);
@@ -263,7 +257,6 @@ function render(data, isFirst) {
   const gWatch = getMilestone(cur.watch, "watch"), pWatch = Math.min(100, (cur.watch / gWatch) * 100).toFixed(1);
   safeSetText("watchNextGoal", fmt(gWatch)); safeSetText("watchNextPct", pWatch + "%"); safeSetStyle("watchProgressFill", "width", pWatch + "%");
 
-  // ANIMATIONS
   const subsEl = document.getElementById("subsNow"), viewsEl = document.getElementById("viewsTotal"), watchEl = document.getElementById("watchNow");
   if (isFirst) {
     animateSpeedometer(subsEl, cur.subs, { duration: 650 }); animateSpeedometer(viewsEl, cur.views, { duration: 650 }); animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: cur.watch < 100 ? 1 : 0, suffix: "h" });
@@ -295,7 +288,7 @@ document.querySelectorAll(".card").forEach(card => {
 });
 
 /* ===========================
-   HUD ENGINE (SCI-FI)
+   HUD ENGINE (SCI-FI V3)
    =========================== */
 
 const HUD_CONFIG = {
@@ -304,7 +297,6 @@ const HUD_CONFIG = {
   lastKey: null, recentKeys: [], shownAt: JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"),
   cooldownMs: { freshness: 600000, birthday: 900000, status: 480000, trivia: 60000, tip: 60000, motivation: 90000 }
 };
-document.documentElement.style.setProperty("--hud-interval", "16s");
 
 const HUD_ICONS = {
   live: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,
@@ -344,86 +336,111 @@ function secondsToMinSec(s) { const n = Math.floor(Number(s||0)); return `${Math
 function pick(arr) { return arr && arr.length ? arr[Math.floor(Math.random() * arr.length)] : null; }
 function uniqPush(arr, s) { if (!arr.includes(s)) arr.push(s); }
 
-function initHudRing() {
-  const rect = document.getElementById("hudRingRect"); if (!rect) return;
-  rect.style.animation = "none"; rect.setAttribute("pathLength", "100");
-  rect.style.strokeDasharray = "100"; rect.style.strokeDashoffset = "100";
-}
-function animateHudRing(colorHex) {
-  const rect = document.getElementById("hudRingRect"); if (!rect) return;
-  rect.style.stroke = colorHex; rect.style.transition = "none"; rect.style.strokeDashoffset = "100";
-  requestAnimationFrame(() => { rect.style.transition = `stroke-dashoffset ${HUD_CONFIG.interval}ms linear`; rect.style.strokeDashoffset = "0"; });
+function initHudBorder() {
+  const rect = document.getElementById("hudBorder"); if (!rect) return;
+  const len = rect.getTotalLength();
+  rect.style.strokeDasharray = `100 ${len}`; // "Snake" effect: 100px line, rest gap
+  // Animation handled in CSS, but we set dynamic color here
 }
 
 function buildIntel(data) {
   const out = []; const ch = data.channel || {}, w = data.weekly || {}, m28 = data.m28 || {}, hud = data.hud || {}, hist = data.history28d || [];
   const weekViews = Number(w.views || 0), weekG = Number(w.subscribersGained || 0), weekL = Number(w.subscribersLost || 0), weekNet = Number(w.netSubs || 0);
   const churnPct = weekG > 0 ? Math.round((weekL / weekG) * 100) : (weekL > 0 ? 100 : 0);
-  const minsPerView = weekViews > 0 ? (Number(w.minutesWatched||0) / weekViews) : 0;
   const subsPer1k = weekViews > 0 ? (weekNet / weekViews) * 1000 : 0;
   
-  // REAL SIGNALS
+  // REAL SIGNALS (Prioritized)
+  // Upload Gap (Red/Orange)
   const uploadDaysAgo = (hud.uploads?.latest?.publishedAt && hud.statsThrough) ? daysBetweenISO(hud.uploads.latest.publishedAt, hud.statsThrough) : null;
-  if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ key: "warn_gap", cat: "warning", weight: 3, icon: HUD_ICONS.warn, tag: "Warning", type: "orange", text: `Upload buffer empty. Last upload was ${uploadDaysAgo} days ago.` });
-  
-  if (weekG > 0 || weekL > 0) out.push({ key: "churn", cat: "subs", weight: 3.2, icon: weekL>weekG?HUD_ICONS.down:HUD_ICONS.up, tag: "Subs", type: weekL>weekG?"red":(weekNet>=0?"green":"orange"), text: `Gained ${fmt(weekG)}, Lost ${fmt(weekL)}. Net: ${weekNet}. Churn: ${churnPct}%.` });
+  if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ key: "warn_gap", cat: "warning", weight: 3, icon: HUD_ICONS.warn, tag: "WARNING", type: "red", text: `UPLOAD BUFFER EMPTY. LAST UPLOAD WAS ${uploadDaysAgo} DAYS AGO.` });
+  else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) out.push({ key: "good_gap", cat: "good", weight: 2, icon: HUD_ICONS.up, tag: "RISING", type: "green", text: `CONSISTENCY DETECTED. LAST UPLOAD ${uploadDaysAgo} DAYS AGO.` });
 
-  if (weekViews > 0) out.push({ key: "conv", cat: "conversion", weight: 2.6, icon: HUD_ICONS.target, tag: "Conversion", type: subsPer1k>=2?"green":"yellow", text: `You earned ${subsPer1k.toFixed(2)} net subs per 1k views this week.` });
+  // Churn (Red/Green)
+  if (weekG > 0 || weekL > 0) out.push({ key: "churn", cat: "subs", weight: 3.2, icon: weekL>weekG?HUD_ICONS.down:HUD_ICONS.up, tag: weekL>weekG?"DROPPING":"GROWTH", type: weekL>weekG?"red":"green", text: `NET SUBS: ${weekNet}. GAINED ${weekG}, LOST ${weekL}.` });
 
-  // CTR
+  // Conversion (Yellow/Green)
+  if (weekViews > 0) out.push({ key: "conv", cat: "conversion", weight: 2.6, icon: HUD_ICONS.target, tag: "CONVERSION", type: subsPer1k>=2?"green":"yellow", text: `CONVERSION RATE: ${subsPer1k.toFixed(2)} NET SUBS PER 1K VIEWS.` });
+
+  // CTR (Red/Green/Orange)
   const thumb = hud.thumb28;
   if (thumb && thumb.ctr) {
     const ctr = thumb.ctr;
-    out.push({ key: "ctr", cat: "packaging", weight: 2.1, icon: ctr<2?HUD_ICONS.warn:HUD_ICONS.bulb, tag: "Packaging", type: ctr<2?"orange":(ctr>8?"green":"yellow"), text: `Avg CTR (28d) is ${ctr.toFixed(1)}%. ${ctr<2?"Try brighter thumbs.":"Healthy."}` });
+    out.push({ key: "ctr", cat: "packaging", weight: 2.1, icon: ctr<2?HUD_ICONS.warn:HUD_ICONS.bulb, tag: ctr<2?"WARNING":"PACKAGING", type: ctr<2?"red":(ctr>8?"green":"yellow"), text: `AVG CTR IS ${ctr.toFixed(1)}%. ${ctr<2?"OPTIMIZE THUMBNAILS.":"HEALTHY METRIC."}` });
   }
 
-  // Retention
+  // Retention (Red/Green)
   const ret = hud.retention28;
   if (ret && ret.avgViewPercentage) {
     const r = ret.avgViewPercentage;
-    out.push({ key: "ret", cat: "retention", weight: 2, icon: r<35?HUD_ICONS.warn:HUD_ICONS.up, tag: "Retention", type: r<35?"orange":(r>50?"green":"yellow"), text: `Avg View % is ${r.toFixed(0)}%. ${r<35?"Tighten intros.":"Strong."}` });
+    out.push({ key: "ret", cat: "retention", weight: 2, icon: r<35?HUD_ICONS.warn:HUD_ICONS.up, tag: r<35?"WARNING":"RETENTION", type: r<35?"red":"green", text: `AVG VIEW PERCENTAGE IS ${r.toFixed(0)}%. ${r<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}` });
   }
 
-  // LATEST VIDEO
+  // Latest Video (Purple)
   const lv = hud.latestVideo;
   if (lv && lv.title) {
     const vViews = Number(lv.views||0), vLikes = Number(lv.likes||0);
-    const likeRate = vViews > 0 ? (vLikes/vViews)*100 : 0;
-    out.push({ key: "lv_stat", cat: "video", weight: 2.8, icon: HUD_ICONS.rocket, tag: "Video", type: "purple", text: `Latest: "${lv.title}" has ${fmt(vViews)} views & ${fmt(vLikes)} likes.` });
-    if (vViews>0) out.push({ key: "lv_rate", cat: "video", weight: 2, icon: HUD_ICONS.up, tag: "Video", type: likeRate>4?"green":"yellow", text: `Latest video like rate is ${likeRate.toFixed(1)}%.` });
+    out.push({ key: "lv_stat", cat: "video", weight: 2.8, icon: HUD_ICONS.rocket, tag: "LATEST", type: "purple", text: `LATEST UPLOAD: "${lv.title.toUpperCase()}" — ${fmt(vViews)} VIEWS.` });
   }
 
-  // GENERIC
+  // Generic (Blue/Pink/Orange)
   const nextSub = getMilestone(Number(ch.subscribers||0), "subs");
-  if (nextSub > Number(ch.subscribers||0)) out.push({ key: "goal", cat: "goal", weight: 1.4, icon: HUD_ICONS.target, tag: "Goal", type: "blue", text: `${fmt(nextSub - Number(ch.subscribers))} subs to reach ${fmt(nextSub)}.` });
+  if (nextSub > Number(ch.subscribers||0)) out.push({ key: "goal", cat: "goal", weight: 1.4, icon: HUD_ICONS.target, tag: "MILESTONE", type: "blue", text: `${fmt(nextSub - Number(ch.subscribers))} SUBS REMAINING TO REACH ${fmt(nextSub)}.` });
 
-  const tip = pick(KB.tips); if (tip) out.push({ key: "tip", cat: "tip", weight: 0.4, icon: HUD_ICONS.bulb, tag: "Tip", type: "yellow", text: tip });
-  const fact = pick(KB.facts); if (fact) out.push({ key: "fact", cat: "trivia", weight: 0.3, icon: HUD_ICONS.bulb, tag: "Fact", type: "purple", text: fact });
+  const tip = pick(KB.tips); if (tip) out.push({ key: "tip", cat: "tip", weight: 0.4, icon: HUD_ICONS.bulb, tag: "TIP", type: "yellow", text: tip.toUpperCase() });
+  const fact = pick(KB.facts); if (fact) out.push({ key: "fact", cat: "trivia", weight: 0.3, icon: HUD_ICONS.bulb, tag: "FACT", type: "pink", text: fact.toUpperCase() });
+  const mot = pick(KB.motivation); if (mot) out.push({ key: "mot", cat: "motivation", weight: 0.2, icon: HUD_ICONS.live, tag: "INSIGHT", type: "purple", text: mot.toUpperCase() });
 
   return out;
 }
 
+let intelQueue = [];
+
 function showNextIntel() {
   const item = intelQueue.length ? intelQueue[Math.floor(Math.random() * intelQueue.length)] : null;
   if (!item) return;
-  const msg = document.getElementById("hudMessage"), tag = document.getElementById("hudTag"), icon = document.getElementById("hudIcon"), box = document.getElementById("hudBox");
+
+  const msg = document.getElementById("hudMessage");
+  const tag = document.getElementById("hudTag");
+  const icon = document.getElementById("hudIcon");
+  const box = document.getElementById("hudBox");
+  const border = document.getElementById("hudBorder");
+  const chip = document.getElementById("hudChip");
+
+  // Glitch Out
   if (msg) {
-    msg.style.opacity = "0.2";
+    msg.classList.remove("glitch-in");
+    msg.style.opacity = "0"; // instant hide before update
+    
     setTimeout(() => {
-      msg.textContent = item.text; tag.textContent = item.tag; icon.innerHTML = item.icon || "⚡";
-      const c = COLORS[item.type] || COLORS.white; tag.style.color = c; tag.style.textShadow = `0 0 10px ${c}`;
-      if (box) box.style.setProperty("--hud-accent", c);
-      msg.classList.remove("hud-glitch"); void msg.offsetWidth; msg.classList.add("hud-glitch"); msg.style.opacity = "1";
-      animateHudRing(c);
-    }, 220);
+      // Update Content
+      msg.textContent = item.text;
+      tag.textContent = item.tag;
+      icon.innerHTML = item.icon || "⚡";
+
+      const c = COLORS[item.type] || COLORS.orange;
+      
+      // Update Colors
+      box.style.setProperty("--hud-accent", c);
+      tag.style.color = c;
+      tag.style.textShadow = `0 0 10px ${c}`;
+      border.style.stroke = c;
+      border.style.filter = `drop-shadow(0 0 8px ${c})`;
+      
+      // Glitch In
+      msg.style.opacity = "1";
+      msg.classList.add("glitch-in");
+      
+    }, 200);
   }
 }
 
 function updateHud(data) {
   intelQueue = buildIntel(data);
   if (!HUD_CONFIG.started) {
-    HUD_CONFIG.started = true; initHudRing();
-    setTimeout(() => { showNextIntel(); HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval); }, 1200);
+    HUD_CONFIG.started = true;
+    initHudBorder();
+    showNextIntel();
+    HUD_CONFIG.timer = setInterval(showNextIntel, 16000);
   }
 }
 
