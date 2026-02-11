@@ -1,9 +1,9 @@
 :root {
   /* Sci-Fi HUD Palette */
-  --bg-dark: #050505;
-  --glass-bg: rgba(20, 20, 20, 0.65);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-highlight: rgba(255, 255, 255, 0.03);
+  --bg-dark: #191919;
+  --glass-bg: rgba(25, 25, 25, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.05);
 
   /* Neon Tiers */
   --c-red: #ff3344;
@@ -22,27 +22,14 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background-color: var(--bg-dark);
+  background-color: var(--bg-dark); /* Pure Notion Dark */
   color: #fff;
   font-family: var(--font-main);
-  overflow: hidden; /* No scrollbars for widget */
+  overflow: hidden; 
   height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-/* Background Ambient Animation */
-.ambient-light {
-  position: absolute;
-  top: -50%; left: -50%; width: 200%; height: 200%;
-  background: radial-gradient(circle at 50% 50%, #1a1a1a 0%, #000 70%);
-  z-index: -1;
-  animation: pulseBg 10s ease-in-out infinite alternate;
-}
-@keyframes pulseBg {
-  0% { transform: scale(1); opacity: 0.5; }
-  100% { transform: scale(1.1); opacity: 0.8; }
 }
 
 .wrap {
@@ -55,23 +42,23 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  perspective: 1000px; /* Essential for 3D tilt */
+  perspective: 1000px;
 }
 
 /* --- CARD DESIGN --- */
 .card {
   position: relative;
   background: var(--glass-bg);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 20px;
   overflow: hidden;
-  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.6);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
   transition: transform 0.1s ease-out, box-shadow 0.3s ease;
   transform-style: preserve-3d;
-  /* Logo Mask Variable */
+  /* Logo Variable */
   --logo-url: none;
 }
 
@@ -81,34 +68,37 @@ body {
   box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), 0 0 20px var(--glass-highlight);
 }
 
-/* Background Logo Fade */
+/* Background Logo - More Visible & Pulsing */
 .card::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -20px; /* Slight bleed for zoom */
   background-image: var(--logo-url);
   background-size: cover;
   background-position: center;
-  opacity: 0.06;
-  filter: grayscale(100%) contrast(1.2);
+  opacity: 0.20; /* Increased Visibility */
+  filter: grayscale(100%) contrast(1.4);
   z-index: 0;
-  mask-image: radial-gradient(circle at center, black 20%, transparent 80%);
-  -webkit-mask-image: radial-gradient(circle at center, black 20%, transparent 80%);
-  transition: transform 8s ease-in-out;
+  mask-image: radial-gradient(circle at center, black 10%, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at center, black 10%, transparent 80%);
+  animation: logoPulse 8s ease-in-out infinite;
 }
-.card:hover::before {
-  transform: scale(1.15);
+
+@keyframes logoPulse {
+  0% { transform: scale(1); opacity: 0.15; }
+  50% { transform: scale(1.15); opacity: 0.25; }
+  100% { transform: scale(1); opacity: 0.15; }
 }
 
 /* Inner Glow Blob */
 .card::after {
   content: "";
   position: absolute;
-  top: -50px; right: -50px;
-  width: 150px; height: 150px;
+  top: -60px; right: -60px;
+  width: 180px; height: 180px;
   background: radial-gradient(circle, var(--c-tier) 0%, transparent 70%);
-  opacity: 0.15;
-  filter: blur(40px);
+  opacity: 0.2;
+  filter: blur(50px);
   z-index: 0;
   pointer-events: none;
 }
@@ -140,7 +130,6 @@ body {
 }
 .icon { width: 20px; height: 20px; fill: currentColor; }
 
-/* Breathing Animation for Icon when Fresh */
 .fresh .iconBox {
   animation: breath 2s infinite;
   color: var(--c-tier);
@@ -217,7 +206,7 @@ body {
 .progressFill {
   height: 100%;
   width: 0%;
-  background: var(--c-tier);
+  background: var(--c-tier); /* Uses Card Color */
   box-shadow: 0 0 10px var(--c-tier);
   border-radius: 2px;
   transition: width 1s cubic-bezier(0.22, 1, 0.36, 1);
@@ -284,26 +273,44 @@ body {
 }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
-/* Floating Icons */
+/* 
+   FLOATING ICON:
+   Pop from bottom (1s), Stay (3s), Fade Up (1s) = 5s total
+*/
 .floatIcon {
   position: absolute;
   bottom: 50%; left: 50%;
-  width: 24px; height: 24px;
+  width: 28px; height: 28px;
   fill: #fff;
-  filter: drop-shadow(0 0 5px rgba(255,255,255,0.8));
+  filter: drop-shadow(0 0 8px rgba(255,255,255,0.9));
   pointer-events: none;
   z-index: 20;
-  animation: floatUp 1.5s ease-out forwards;
+  transform: translate(-50%, 0);
+  animation: floatSequence 5s ease-in-out forwards;
 }
-@keyframes floatUp {
-  0% { transform: translate(-50%, 0) scale(0.5); opacity: 0; }
-  20% { opacity: 1; transform: translate(-50%, -20px) scale(1.2); }
-  100% { opacity: 0; transform: translate(-50%, -80px) scale(1); }
+
+@keyframes floatSequence {
+  0% { 
+    opacity: 0; 
+    transform: translate(-50%, 20px) scale(0.5); 
+  }
+  20% { 
+    opacity: 1; 
+    transform: translate(-50%, -10px) scale(1.2); 
+  }
+  80% { 
+    opacity: 1; 
+    transform: translate(-50%, -10px) scale(1.2); /* Stay in center */
+  }
+  100% { 
+    opacity: 0; 
+    transform: translate(-50%, -60px) scale(1); 
+  }
 }
 
 /* Casino Roll Styles */
 .rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
-.rollCol { display: flex; flex-direction: column; }
+.rollCol { display: flex; flex-direction: column; transition: transform 1s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .rollLine { height: 1.1em; line-height: 1.1em; display: block; }
 
 /* Mobile */
