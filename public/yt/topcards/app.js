@@ -62,7 +62,7 @@ function getMilestone(val, type) {
     if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
     return Math.ceil((v + 1) / 5000) * 5000;
   }
-  if (v < 1000) return Math.ceil((v + 1) / 100) * 100; // 0-1000
+  if (v < 1000) return Math.ceil((v + 1) / 100) * 100; 
   if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
   if (v < 100000) return Math.ceil((v + 1) / 10000) * 10000;
   return Math.ceil((v + 1) / 100000) * 100000;
@@ -74,10 +74,23 @@ async function fetchJSON(url) {
   return r.json();
 }
 
+// Sets color theme and triggers the "Pulse" animation
 function setCardTheme(cardId, tier) {
   const card = document.getElementById(cardId);
   if(!card) return;
   card.style.setProperty('--c-tier', COLORS[tier] || COLORS.yellow);
+}
+
+function triggerBreathing(cardId) {
+  const card = document.getElementById(cardId);
+  if(!card) return;
+  // Remove reflow add to restart animation
+  card.classList.remove('pulse-active');
+  void card.offsetWidth; // force reflow
+  card.classList.add('pulse-active');
+  
+  // Stop breathing after 4 seconds (one full cycle is ~2s)
+  setTimeout(() => card.classList.remove('pulse-active'), 4000);
 }
 
 function setChip(dotId, chipTextId, tier, text) {
@@ -136,7 +149,6 @@ function setSpark(fillId, pathId, values, tier) {
   fillEl.setAttribute("d", `${d} L ${w} ${h} L 0 ${h} Z`);
 }
 
-// --- NEW LAYOUT: Last 7D | Prev 7D ---
 function renderPacing(elId, cur, prev, suffix="") {
   const c = Number(cur||0), p = Number(prev||0);
   const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
@@ -146,15 +158,13 @@ function renderPacing(elId, cur, prev, suffix="") {
   else if(pct < 0) pctHtml = `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>`;
   else pctHtml = `<span style="color:#666; font-size:0.9em;">(—)</span>`;
 
-  // Left side: Last 7D + Pct
   const left = `<div><span style="opacity:0.6; margin-right:4px;">Last 7D:</span><b>${fmt(c)}${suffix}</b> ${pctHtml}</div>`;
-  // Right side: Prev 7D
   const right = `<div><span style="opacity:0.4; margin-right:4px;">Prev:</span><span style="opacity:0.8">${fmt(p)}${suffix}</span></div>`;
 
   safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL (FIXED) ---
+// --- CASINO ROLL (FAST START) ---
 function ensureRoll(el) {
   if (el._rollWrap && el._rollCol) return;
   el.textContent = "";
@@ -174,7 +184,7 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   const decimals = opts.decimals ?? 0;
   const suffix = opts.suffix ?? "";
   
-  // 1. Force Start from 0 if First Load
+  // IF FIRST LOAD: Force start from 0
   const start = isFirst ? 0 : Number(fromVal || 0);
   const end = Number(toVal || 0);
 
@@ -187,7 +197,7 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   
   const txt = (val) => (decimals ? fmt1(val/scale) : fmt(Math.round(val/scale))) + suffix;
 
-  // 2. If NO CHANGE and NOT FIRST LOAD, stop animation instantly
+  // No animation if unchanged (and not first load)
   if (!isFirst && a === b) {
     col.style.transition = "none";
     col.style.transform = "translateY(0)";
@@ -195,29 +205,33 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
     return;
   }
 
-  // 3. Build Strip
   const diff = b - a; 
   const absDiff = Math.abs(diff);
   let html = "";
   let finalY = 0;
   
-  // Show detailed sliding for small changes (or initial 0->small num)
-  if (absDiff <= 30) {
+  // On First Load with big numbers (0 -> 700k), we don't want 700k DOM elements.
+  // We want a simulated fast spin.
+  if (isFirst || absDiff > 50) {
+    // Simulated Strip: 0 ... [Randoms] ... Target
+    const mid1 = Math.round(a + diff * 0.33);
+    const mid2 = Math.round(a + diff * 0.66);
+    html = `
+      <span class="rollLine">${txt(a)}</span>
+      <span class="rollLine" style="filter:blur(3px)">${txt(mid1)}</span>
+      <span class="rollLine" style="filter:blur(3px)">${txt(mid2)}</span>
+      <span class="rollLine">${txt(b)}</span>
+    `;
+    finalY = -1.1 * 3; // Move 3 slots down
+  } else {
+    // Small changes (Refresh): Show full strip
     const steps = [];
     const dir = diff > 0 ? 1 : -1;
     for (let i = 0; i <= absDiff; i++) {
       steps.push(a + (i * dir));
     }
     html = steps.map(v => `<span class="rollLine">${txt(v)}</span>`).join("");
-    finalY = -1.1 * absDiff; 
-  } else {
-    // Big jump: Start -> Blur -> End
-    html = `
-      <span class="rollLine">${txt(a)}</span>
-      <span class="rollLine" style="filter:blur(2px)">${txt(a + Math.round(diff/2))}</span>
-      <span class="rollLine">${txt(b)}</span>
-    `;
-    finalY = -1.1 * 2; 
+    finalY = -1.1 * absDiff;
   }
 
   col.style.transition = "none";
@@ -227,10 +241,9 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   // Force Paint
   void col.offsetHeight; 
 
-  // Animate
-  // First load = Fast (1.5s), Refresh = Slower (2s) if changing
-  const dur = isFirst ? 1500 : 2000;
-  col.style.transition = `transform ${dur}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+  // Animate: Fast (800ms) on first load, Standard (1500ms) on refresh
+  const dur = isFirst ? 800 : 1500;
+  col.style.transition = `transform ${dur}ms cubic-bezier(0.15, 0.85, 0.35, 1)`;
   col.style.transform = `translateY(${finalY}em)`;
 }
 
@@ -253,6 +266,7 @@ function spawnFloatIcon(cardId, type) {
 
 // --- MAIN RENDER ---
 let state = { subs: 0, views: 0, watch: 0 };
+let halfTimeTimer = null;
 
 function render(data, isFirst) {
   try {
@@ -268,10 +282,10 @@ function render(data, isFirst) {
       watch: Number(data.lifetime?.watchHours || 0)
     };
     
-    // Trigger entrance animations only on first load
+    // Entrance Anim
     if (isFirst) {
       document.querySelectorAll('.card').forEach((c, i) => {
-        c.style.animationDelay = `${i * 150}ms`;
+        c.style.animationDelay = `${i * 100}ms`;
         c.classList.add('card-enter');
       });
     }
@@ -299,6 +313,9 @@ function render(data, isFirst) {
     safeSetText("subsNextGoal", fmt(gSubs));
     safeSetText("subsNextPct", pSubs+"%");
     safeSetStyle("subsProgressFill", "width", pSubs+"%");
+    
+    // Trigger Breathe on Load
+    triggerBreathing("cardSubs");
 
     // 2. VIEWS
     const tViews = tierFromBaseline(last28.views, med6m.views, 25000, 0.1);
@@ -317,6 +334,8 @@ function render(data, isFirst) {
     safeSetText("viewsNextPct", pViews+"%");
     safeSetStyle("viewsProgressFill", "width", pViews+"%");
 
+    triggerBreathing("cardViews");
+
     // 3. WATCH
     const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50, 0.1);
     setCardTheme("cardWatch", tWatch);
@@ -334,53 +353,7 @@ function render(data, isFirst) {
     safeSetText("watchNextPct", pWatch+"%");
     safeSetStyle("watchProgressFill", "width", pWatch+"%");
 
+    triggerBreathing("cardWatch");
+
     // --- ANIMATIONS ---
-    // On First Load: Always roll 0 -> X.
-    // On Refresh: Only roll if X != Y.
-    animateCasinoRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subs, cur.subs, { isFirst });
-    if (!isFirst && cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs");
-
-    animateCasinoRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.views, cur.views, { isFirst });
-    if (!isFirst && cur.views > state.views) spawnFloatIcon("cardViews", "views");
-
-    animateCasinoRoll(document.getElementById("watchNow"), isFirst ? 0 : state.watch, cur.watch, { isFirst, decimals: cur.watch<100?1:0, suffix:"h" });
-    if (!isFirst && cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
-
-    state = cur;
-    document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
-    document.getElementById("toast").classList.add("show");
-    setTimeout(() => document.getElementById("toast").classList.remove("show"), 2000);
-
-  } catch (err) {
-    console.error(err);
-    document.getElementById("updated").textContent = "ERR: " + err.message;
-  }
-}
-
-async function load(isFirst) {
-  try {
-    const data = await fetchJSON("/api/yt-kpis");
-    if (data.error) throw new Error(data.error);
-    render(data, isFirst);
-  } catch (e) {
-    document.getElementById("updated").textContent = "FETCH ERROR: " + e.message;
-  }
-}
-
-// 3D Tilt
-document.querySelectorAll('.card').forEach(card => {
-  card.addEventListener('mousemove', (e) => {
-    const r = card.getBoundingClientRect();
-    const x = ((e.clientY - r.top) / r.height - 0.5) * -10;
-    const y = ((e.clientX - r.left) / r.width - 0.5) * 10;
-    card.style.transform = `perspective(1000px) rotateX(${x}deg) rotateY(${y}deg) scale(1.02)`;
-  });
-  card.addEventListener('mouseleave', () => {
-    card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`;
-  });
-});
-
-(async function init() {
-  await load(true);
-  setInterval(() => load(false), 60 * 1000);
-})();
+    animateCasinoRoll(document.getElementById("subsNow"), isFirst ?
