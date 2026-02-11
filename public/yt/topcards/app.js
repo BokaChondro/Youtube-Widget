@@ -561,6 +561,109 @@ document.querySelectorAll(".card").forEach(card => {
   });
 });
 
+
+/* --- HOLO-STREAM HUD ENGINE --- */
+const HUD_CONFIG = {
+  interval: 8000, // 8 seconds per slide
+  timer: null
+};
+
+// Placeholder Generator (We will expand this next)
+function generateIntel(data) {
+  const intel = [];
+  const ch = data.channel || {};
+  
+  // 1. Basic Status
+  intel.push({
+    icon: "📡",
+    tag: "LIVE_FEED",
+    text: `System monitoring active for channel: ${ch.title || "Unknown"}`
+  });
+
+  // 2. Sample Calculation (Just to show it works)
+  const views = ch.totalViews || 0;
+  if(views > 1000) {
+    intel.push({
+      icon: "📈",
+      tag: "VELOCITY",
+      text: `Channel has accumulated ${fmt(views)} total views lifetime.`
+    });
+  }
+
+  // 3. Random Filler
+  intel.push({
+    icon: "🧩",
+    tag: "TRIVIA",
+    text: "Did you know? The first YouTube video was uploaded in 2005."
+  });
+
+  return intel;
+}
+
+let intelQueue = [];
+let intelIndex = 0;
+
+function updateHud(data) {
+  // Generate fresh insights
+  intelQueue = generateIntel(data);
+  
+  // If timer not running, start it
+  if (!HUD_CONFIG.timer) {
+    showNextIntel();
+    HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
+  }
+}
+
+function showNextIntel() {
+  if (intelQueue.length === 0) return;
+
+  const item = intelQueue[intelIndex];
+  intelIndex = (intelIndex + 1) % intelQueue.length;
+
+  const msgEl = document.getElementById("hudMessage");
+  const tagEl = document.getElementById("hudTag");
+  const iconEl = document.getElementById("hudIcon");
+  const barEl = document.getElementById("hudTimerFill");
+  const boxEl = document.getElementById("hudBox");
+
+  // 1. Reset Bar
+  barEl.style.transition = "none";
+  barEl.style.width = "0%";
+
+  // 2. Glitch Out (Text Fade)
+  msgEl.style.opacity = "0.2";
+  
+  setTimeout(() => {
+    // 3. Update Content
+    msgEl.textContent = item.text;
+    tagEl.textContent = item.tag;
+    iconEl.textContent = item.icon;
+
+    // 4. Glitch In
+    msgEl.classList.remove("hud-glitch");
+    void msgEl.offsetWidth; // trigger reflow
+    msgEl.classList.add("hud-glitch");
+    msgEl.style.opacity = "1";
+
+    // 5. Start Timer Bar
+    requestAnimationFrame(() => {
+      barEl.style.transition = `width ${HUD_CONFIG.interval}ms linear`;
+      barEl.style.width = "100%";
+    });
+
+    // 6. Dynamic Border Color (Match the tag or use generic)
+    // We reuse the global variable --c-tier usually set by cards
+    // Or you can set it specific to the insight type later.
+    
+  }, 200);
+}
+
+// *** CRITICAL INTEGRATION STEP ***
+// Modify the existing `render(data, isFirst)` function.
+// Add this single line at the very end of `render()`:
+// updateHud(data);
+
+
 (async function init() {
   await load(true);
   setInterval(() => load(false), 60 * 1000);
