@@ -87,7 +87,6 @@ body {
   filter: grayscale(100%) contrast(1.2);
   z-index: 0;
   pointer-events: none;
-
   animation: logoBreath 10s ease-in-out infinite;
 }
 
@@ -140,6 +139,7 @@ body {
 .dot { width: 6px; height: 6px; border-radius: 50%; background: #555; box-shadow: 0 0 8px currentColor; }
 .chipText { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8); }
 
+/* --- BREATHING --- */
 @keyframes glowOnceBox {
   0%   { box-shadow: 0 0 0 rgba(0,0,0,0); color: #fff; }
   50%  { box-shadow: 0 0 18px var(--c-tier); color: var(--c-tier); }
@@ -222,23 +222,71 @@ body {
   .card { margin-bottom: 10px; }
 }
 
-/* --- HOLO-STREAM HUD --- */
+/* -----------------------------
+   HUD FULL-CIRCLE BORDER TIMER
+------------------------------ */
+
+/* Register numeric progress var (Chrome/Edge support) */
+@property --hud-p {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
 .hud-box {
   position: relative;
   margin-top: 20px;
   width: 100%;
+
+  --hud-p: 0;
+  --hud-color: rgba(255,255,255,0.18);
+  --hud-dur: 16000ms;
+
   background: rgba(10, 10, 10, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 2px solid rgba(255,255,255,0.08);
   border-radius: 12px;
   padding: 14px 20px;
   overflow: hidden;
   backdrop-filter: blur(20px);
   box-shadow: 0 10px 30px -10px rgba(0,0,0,0.8);
-  display: flex; flex-direction: column;
-  transition: border-color 0.5s ease;
+  display: flex;
+  flex-direction: column;
+
+  /* important: animate numeric var */
+  transition: --hud-p var(--hud-dur) linear;
 }
 
+/* no-transition helper for clean reset */
+.hud-box.hud-no-trans {
+  transition: none !important;
+}
+
+/* Full ring border progress (fills around the whole box) */
+.hud-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 0;
+
+  background: conic-gradient(
+    from -90deg,
+    var(--hud-color) 0turn,
+    var(--hud-color) calc(var(--hud-p) * 1turn),
+    rgba(255,255,255,0.10) calc(var(--hud-p) * 1turn),
+    rgba(255,255,255,0.10) 1turn
+  );
+
+  /* show only border ring */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* scanline */
 .hud-scanline {
   position: absolute; top: 0; left: -50%; width: 20%; height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
@@ -262,7 +310,6 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
 }
-
 .hud-icon svg { width: 18px; height: 18px; display: block; }
 
 .hud-data { display: flex; flex-direction: column; gap: 2px; flex: 1; }
@@ -273,28 +320,25 @@ body {
   font-family: Consolas, monospace; opacity: 0.5;
 }
 
-.hud-tag { color: var(--c-tier); text-shadow: 0 0 8px var(--c-tier); transition: color 0.3s; }
+.hud-tag { color: rgba(255,255,255,0.9); text-shadow: 0 0 6px rgba(255,255,255,0.2); transition: color 0.3s; }
 
 .hud-text-mask { overflow: hidden; }
 
-/* ✅ UPDATED: more readable text (2 lines max) */
 .hud-message {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.95);
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: 13px; color: rgba(255, 255, 255, 0.95);
+  font-weight: 500; line-height: 1.35;
 
-  white-space: normal;                 /* allow wrap */
+  white-space: normal;
   overflow: hidden;
 
-  display: -webkit-box;                /* clamp to 2 lines */
+  display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 
-  min-height: 2.7em;                   /* keeps height stable (2 lines) */
+  min-height: 2.7em;
 }
 
-/* AI cursor */
+/* cursor */
 .hud-message::after {
   content: "▌";
   margin-left: 6px;
@@ -316,14 +360,16 @@ body {
   100% { transform: translate(0); opacity: 1; }
 }
 
+/* Keep timer bar (optional, still synced) */
 .hud-timer {
   position: absolute; bottom: 0; left: 0; width: 100%; height: 2px;
   background: rgba(255,255,255,0.05);
+  z-index: 2;
 }
 .hud-timer-fill {
   height: 100%; width: 0%;
-  background: var(--c-tier);
-  box-shadow: 0 0 10px var(--c-tier);
+  background: rgba(255,255,255,0.18);
+  box-shadow: 0 0 10px rgba(255,255,255,0.18);
   transition: width linear;
 }
 
