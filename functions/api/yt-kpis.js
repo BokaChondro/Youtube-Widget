@@ -72,7 +72,6 @@ async function fetchChannelBasics(token) {
     logo,
     subscribers: Number(ch?.statistics?.subscriberCount || 0),
     totalViews: Number(ch?.statistics?.viewCount || 0),
-    videoCount: Number(ch?.statistics?.videoCount || 0),
   };
 }
 
@@ -101,7 +100,6 @@ async function fetchAnalyticsRange(token, startDate, endDate) {
   };
 }
 
-// NEW: Daily metrics for last 7 days (one API call)
 async function fetchAnalyticsDaily(token, startDate, endDate) {
   const q = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   q.searchParams.set("ids", "channel==MINE");
@@ -115,7 +113,6 @@ async function fetchAnalyticsDaily(token, startDate, endDate) {
   const data = await r.json();
 
   const rows = data.rows || [];
-  // row = [YYYY-MM-DD, views, minutes, gained, lost]
   return rows.map((row) => {
     const day = String(row[0] || "");
     const views = Number(row[1] || 0);
@@ -170,14 +167,12 @@ async function computeKPIs(env) {
 
   const weekStart = isoDate(shiftDays(end, -6));
   const weekEnd = endIso;
-
   const weekly = await fetchAnalyticsRange(token, weekStart, weekEnd);
 
   const prevWeekStart = isoDate(shiftDays(end, -13));
   const prevWeekEnd = isoDate(shiftDays(end, -7));
   const prevWeekly = await fetchAnalyticsRange(token, prevWeekStart, prevWeekEnd);
 
-  // NEW: Daily 7d series (for better signals)
   const daily7d = await fetchAnalyticsDaily(token, weekStart, weekEnd);
 
   const windows = build28dWindows(end);
@@ -203,18 +198,15 @@ async function computeKPIs(env) {
   const avgViews = avg(prev6.map((w) => w.metrics.views));
   const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
 
-  // Keep chronological order for sparklines (oldest -> newest)
-  const history28d = [...winResults]
-    .sort((a,b)=>b.idx-a.idx)
-    .map((w)=>({
-      startDate: w.startDate,
-      endDate: w.endDate,
-      netSubs: w.metrics.netSubs,
-      subsGained: w.metrics.subsGained,
-      subsLost: w.metrics.subsLost,
-      views: w.metrics.views,
-      watchHours: w.metrics.watchHours,
-    }));
+  const history28d = [...winResults].sort((a,b)=>b.idx-a.idx).map((w)=>({
+    startDate: w.startDate,
+    endDate: w.endDate,
+    netSubs: w.metrics.netSubs,
+    subsGained: w.metrics.subsGained,
+    subsLost: w.metrics.subsLost,
+    views: w.metrics.views,
+    watchHours: w.metrics.watchHours,
+  }));
 
   const life = await fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
 
@@ -233,7 +225,6 @@ async function computeKPIs(env) {
       subsLost: weekly.subsLost,
       views: weekly.views,
       watchHours: weekly.watchHours,
-
       prevNetSubs: prevWeekly.netSubs,
       prevSubsGained: prevWeekly.subsGained,
       prevSubsLost: prevWeekly.subsLost,
@@ -282,9 +273,7 @@ export async function onRequest(context) {
     if (cached) return cached;
 
     const data = await computeKPIs(context.env);
-    const res = Response.json(data, {
-      headers: { "Cache-Control": "public, max-age=55" },
-    });
+    const res = Response.json(data, { headers: { "Cache-Control": "public, max-age=55" } });
     context.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
   } catch (e) {
