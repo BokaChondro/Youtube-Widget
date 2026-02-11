@@ -4,7 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>YouTube Top Cards</title>
-  <link rel="stylesheet" href="./style.css" />
+  <!-- cache-bust so your browser cannot keep old css -->
+  <link rel="stylesheet" href="./style.css?v=HUD_v3_20260212" />
 </head>
 <body>
   
@@ -15,7 +16,7 @@
 
       <!-- CARD 1: SUBSCRIBERS -->
       <div class="card" id="cardSubs">
-        <div class="glare"></div> <!-- NEW GLARE EFFECT -->
+        <div class="glare"></div>
         <div class="cardTop">
           <div class="left">
             <div class="iconBox" aria-hidden="true">
@@ -182,11 +183,15 @@
       </div>
 
     </div>
-<!-- ... existing grid closing div ... -->
 
-
-    <!-- === NEW HOLO-STREAM HUD === -->
+    <!-- === HUD === -->
     <div class="hud-box" id="hudBox">
+      <!-- FULL BORDER RING (SVG stroke) -->
+      <svg class="hud-ring" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="hud-ring-track" x="1" y="1" width="98" height="30" rx="6" ry="6" pathLength="100"></rect>
+        <rect class="hud-ring-prog"  id="hudRingProg" x="1" y="1" width="98" height="30" rx="6" ry="6" pathLength="100"></rect>
+      </svg>
+
       <div class="hud-scanline"></div>
       
       <div class="hud-content">
@@ -196,25 +201,25 @@
         
         <div class="hud-data">
           <div class="hud-meta">
-            <span class="hud-label">SYSTEM_INTEL //</span>
-            <span class="hud-tag" id="hudTag">LIVE</span>
+            <span class="hud-label">AI HUD //</span>
+            <span class="hud-tag" id="hudTag">Loading</span>
           </div>
           <div class="hud-text-mask">
-            <div class="hud-message" id="hudMessage">Analyzing Channel Frequency...</div>
+            <div class="hud-message" id="hudMessage">Loading your channel insights…</div>
           </div>
         </div>
       </div>
 
+      <!-- keep old bar in html but it is hidden in CSS (no more “only bottom” confusion) -->
       <div class="hud-timer">
         <div class="hud-timer-fill" id="hudTimerFill"></div>
       </div>
     </div>
-    <!-- === END HUD === -->
-
 
     <div class="foot" id="updated">System Initializing...</div>
   </div>
 
-  <script src="./app.js"></script>
+  <!-- cache-bust so your browser cannot keep old js -->
+  <script src="./app.js?v=HUD_v3_20260212"></script>
 </body>
 </html>
