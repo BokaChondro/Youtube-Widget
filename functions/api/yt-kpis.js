@@ -72,6 +72,7 @@ async function fetchChannelBasics(token) {
     logo,
     subscribers: Number(ch?.statistics?.subscriberCount || 0),
     totalViews: Number(ch?.statistics?.viewCount || 0),
+    videoCount: Number(ch?.statistics?.videoCount || 0),
   };
 }
 
@@ -94,8 +95,42 @@ async function fetchAnalyticsRange(token, startDate, endDate) {
   return {
     views,
     watchHours: round1(minutes / 60),
+    subsGained: gained,
+    subsLost: lost,
     netSubs: gained - lost,
   };
+}
+
+async function fetchAnalyticsDaily(token, startDate, endDate) {
+  // Returns day-by-day rows for the same metrics (AI HUD can find "best day", trend, etc.)
+  const q = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
+  q.searchParams.set("ids", "channel==MINE");
+  q.searchParams.set("startDate", startDate);
+  q.searchParams.set("endDate", endDate);
+  q.searchParams.set("dimensions", "day");
+  q.searchParams.set("sort", "day");
+  q.searchParams.set("metrics", "views,estimatedMinutesWatched,subscribersGained,subscribersLost");
+
+  const r = await fetch(q.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  const data = await r.json();
+
+  const rows = data.rows || [];
+  // rows: [ day, views, minutes, gained, lost ]
+  return rows.map((row) => {
+    const day = String(row[0] || "");
+    const views = Number(row[1] || 0);
+    const minutes = Number(row[2] || 0);
+    const gained = Number(row[3] || 0);
+    const lost = Number(row[4] || 0);
+    return {
+      day,
+      views,
+      watchHours: round1(minutes / 60),
+      subsGained: gained,
+      subsLost: lost,
+      netSubs: gained - lost,
+    };
+  });
 }
 
 function build28dWindows(endDateObj) {
@@ -130,6 +165,7 @@ async function computeKPIs(env) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
 
+  // Analytics data often lags; we use yesterday as the safe "closed" day.
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
 
@@ -140,6 +176,14 @@ async function computeKPIs(env) {
   const prevWeekStart = isoDate(shiftDays(end, -13));
   const prevWeekEnd = isoDate(shiftDays(end, -7));
   const prevWeekly = await fetchAnalyticsRange(token, prevWeekStart, prevWeekEnd);
+
+  // Daily trend for HUD (best day, last 3 vs first 4, etc.)
+  let daily7d = [];
+  try {
+    daily7d = await fetchAnalyticsDaily(token, weekStart, weekEnd);
+  } catch (e) {
+    daily7d = [];
+  }
 
   const windows = build28dWindows(end);
 
@@ -168,6 +212,8 @@ async function computeKPIs(env) {
     startDate: w.startDate,
     endDate: w.endDate,
     netSubs: w.metrics.netSubs,
+    subsGained: w.metrics.subsGained,
+    subsLost: w.metrics.subsLost,
     views: w.metrics.views,
     watchHours: w.metrics.watchHours,
   }));
@@ -175,25 +221,39 @@ async function computeKPIs(env) {
   const life = await fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
 
   return {
+    meta: {
+      analyticsEndDate: endIso,
+      generatedAtIso: new Date().toISOString(),
+    },
     channel: ch,
     weekly: {
       startDate: weekStart,
       endDate: weekEnd,
       netSubs: weekly.netSubs,
+      subsGained: weekly.subsGained,
+      subsLost: weekly.subsLost,
       views: weekly.views,
       watchHours: weekly.watchHours,
+
       prevNetSubs: prevWeekly.netSubs,
+      prevSubsGained: prevWeekly.subsGained,
+      prevSubsLost: prevWeekly.subsLost,
       prevViews: prevWeekly.views,
       prevWatchHours: prevWeekly.watchHours
     },
+    daily7d,
     m28: {
       last28: {
         netSubs: last28.metrics.netSubs,
+        subsGained: last28.metrics.subsGained,
+        subsLost: last28.metrics.subsLost,
         views: last28.metrics.views,
         watchHours: last28.metrics.watchHours,
       },
       prev28: {
         netSubs: prev28.metrics.netSubs,
+        subsGained: prev28.metrics.subsGained,
+        subsLost: prev28.metrics.subsLost,
         views: prev28.metrics.views,
         watchHours: prev28.metrics.watchHours,
       },
@@ -221,10 +281,13 @@ export async function onRequest(context) {
     const cacheKey = new Request(new URL(context.request.url).toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
+
     const data = await computeKPIs(context.env);
+
     const res = Response.json(data, {
       headers: { "Cache-Control": "public, max-age=55" },
     });
+
     context.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
   } catch (e) {
