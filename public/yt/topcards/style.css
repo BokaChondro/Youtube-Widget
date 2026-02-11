@@ -32,9 +32,9 @@ body {
 /* --- CARD --- */
 .card {
   position: relative;
-  /* Pure Black with Subtle Gradient Tint from Tier Color */
+  /* Pure Black + Very Subtle Gradient Overlay (Reduced intensity) */
   background: 
-    radial-gradient(circle at top right, var(--c-tier) -60%, transparent 60%),
+    radial-gradient(circle at top right, var(--c-tier) -80%, transparent 60%),
     var(--card-bg);
     
   border: 1px solid var(--glass-border);
@@ -45,8 +45,6 @@ body {
   transition: transform 0.1s ease-out, box-shadow 0.3s ease;
   transform-style: preserve-3d;
   --logo-url: none;
-  
-  /* Defaults to visible to prevent blank screens */
   opacity: 1; 
 }
 
@@ -64,7 +62,7 @@ body {
   box-shadow: 0 20px 60px -10px rgba(0,0,0,0.95), 0 0 20px var(--glass-highlight);
 }
 
-/* LOGO: Screen Blend + Pure Black BG */
+/* LOGO: High Zoom Range (1.0 -> 1.4) */
 .card::before {
   content: "";
   position: absolute;
@@ -82,57 +80,48 @@ body {
   z-index: 0;
   pointer-events: none;
   
-  animation: logoBreath 8s ease-in-out infinite;
+  animation: logoBreath 10s ease-in-out infinite;
 }
 
 @keyframes logoBreath {
   0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
-  50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.6; }
+  50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.6; }
   100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
 }
 
-/* --- BREATHING EFFECTS (Dynamic 0.5s Pulse) --- */
-/* Everything turns Tier Color when breathing */
-.card.pulse-active .title,
-.card.pulse-active .subtitle,
-.card.pulse-active .iconBox, 
-.card.pulse-active .chip,
-.card.pulse-active .bigNumber,
-.card.pulse-active .progressFill {
-  color: var(--c-tier);
-  transition: color 0.3s ease;
-}
-
-/* Specific Element Transforms */
+/* --- BREATHING EFFECTS (Pulse-Active) --- */
+/* IconBox and Chip: Pulse/Grow Animation */
 .card.pulse-active .iconBox,
 .card.pulse-active .chip {
-  animation: pulseBeat 0.5s ease-out 3; /* Pulse 3 times quickly */
+  animation: pulseBeat 0.5s ease-out 3; 
 }
 
+/* Sparkline: Glow Pulse */
 .card.pulse-active .spark {
   animation: pulseGlow 0.5s ease-out 3;
 }
 
+/* Progress Bar: Brightness Pulse */
 .card.pulse-active .progressFill {
   animation: pulseBar 0.5s ease-out 3;
 }
 
-/* Punchy Heartbeat Animations */
+/* --- ANIMATIONS --- */
 @keyframes pulseBeat {
   0% { transform: scale(1); box-shadow: 0 0 0 rgba(0,0,0,0); }
-  50% { transform: scale(1.1); box-shadow: 0 0 15px var(--c-tier); }
+  50% { transform: scale(1.15); box-shadow: 0 0 20px var(--c-tier); }
   100% { transform: scale(1); box-shadow: 0 0 0 rgba(0,0,0,0); }
 }
 
 @keyframes pulseGlow {
   0% { filter: drop-shadow(0 0 4px var(--c-tier)); }
-  50% { filter: drop-shadow(0 0 12px var(--c-tier)); }
+  50% { filter: drop-shadow(0 0 15px var(--c-tier)); }
   100% { filter: drop-shadow(0 0 4px var(--c-tier)); }
 }
 
 @keyframes pulseBar {
   0% { filter: brightness(1); }
-  50% { filter: brightness(1.5); box-shadow: 0 0 10px var(--c-tier); }
+  50% { filter: brightness(1.8); box-shadow: 0 0 15px var(--c-tier); }
   100% { filter: brightness(1); }
 }
 
@@ -141,7 +130,7 @@ body {
   position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 60%, transparent);
   transform: skewX(-25deg); pointer-events: none;
-  z-index: 1; /* BEHIND TEXT (2) */
+  z-index: 1; 
   animation: glareSweep 6s infinite ease-in-out;
 }
 @keyframes glareSweep { 0%, 40% { left: -100%; } 100% { left: 200%; } }
@@ -149,7 +138,8 @@ body {
 .card::after {
   content: ""; position: absolute; top: -60px; right: -60px; width: 180px; height: 180px;
   background: radial-gradient(circle, var(--c-tier) 0%, transparent 70%);
-  opacity: 0.15; filter: blur(50px); z-index: 0; pointer-events: none;
+  opacity: 0.08; /* Reduced opacity */
+  filter: blur(50px); z-index: 0; pointer-events: none;
 }
 
 /* --- CONTENT --- */
@@ -166,8 +156,8 @@ body {
 .icon { width: 20px; height: 20px; fill: currentColor; }
 
 .titles { display: flex; flex-direction: column; }
-.title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95); transition: color 0.3s; }
-.subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; transition: color 0.3s; }
+.title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95); }
+.subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; }
 
 .chip {
   display: flex; align-items: center; gap: 6px;
@@ -179,7 +169,7 @@ body {
 .midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 40px; }
 .bigNumber {
   display: flex; align-items: baseline; gap: 4px; font-size: 28px; font-weight: 700;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.5); font-feature-settings: "tnum"; color: #fff; transition: color 0.3s;
+  text-shadow: 0 4px 20px rgba(0,0,0,0.5); font-feature-settings: "tnum"; color: #fff;
 }
 .mainArrow { font-size: 20px; transform: translateY(-2px); }
 
