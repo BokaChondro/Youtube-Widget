@@ -356,8 +356,6 @@ function initHudBorder() {
   
   // Path: Start Top-Left(0,0) -> Down(0,H) -> Right(W,H) -> Up(W,0) -> Left(0,0)
   // This is CCW direction.
-  // Note: SVG coord 0,0 is top-left.
-  // Path: M 1,1 L 1,H L W,H L W,1 L 1,1 (using 1 to account for half stroke)
   const d = `M 1 1 L 1 ${h} L ${w} ${h} L ${w} 1 L 1 1`;
   
   path.setAttribute("d", d);
@@ -376,16 +374,17 @@ function animateHudBorder(color) {
 
   path.style.stroke = color;
   
-  // 1. Reset to empty (hidden)
+  // 1. Reset to empty (hidden) with NO transition
   path.style.transition = "none";
   path.style.strokeDashoffset = len;
 
-  // 2. Animate to full (visible) over 16s
-  // Force reflow
-  void path.offsetWidth;
-  
-  path.style.transition = "stroke-dashoffset 16s linear";
-  path.style.strokeDashoffset = "0";
+  // 2. Force reflow + Start animation
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      path.style.transition = "stroke-dashoffset 16s linear";
+      path.style.strokeDashoffset = "0";
+    });
+  });
 }
 
 function buildIntel(data) {
