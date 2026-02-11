@@ -22,7 +22,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background-color: var(--bg-dark); /* Pure Notion Dark */
+  background-color: var(--bg-dark);
   color: #fff;
   font-family: var(--font-main);
   overflow: hidden; 
@@ -58,25 +58,23 @@ body {
   box-shadow: 0 4px 20px rgba(0,0,0,0.4);
   transition: transform 0.1s ease-out, box-shadow 0.3s ease;
   transform-style: preserve-3d;
-  /* Logo Variable */
   --logo-url: none;
 }
 
-/* Hover Tilt Effect */
 .card:hover {
   z-index: 10;
   box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), 0 0 20px var(--glass-highlight);
 }
 
-/* Background Logo - More Visible & Pulsing */
+/* Background Logo - Pulse & Zoom */
 .card::before {
   content: "";
   position: absolute;
-  inset: -20px; /* Slight bleed for zoom */
+  inset: -30px; /* Bleed for zoom */
   background-image: var(--logo-url);
   background-size: cover;
   background-position: center;
-  opacity: 0.20; /* Increased Visibility */
+  opacity: 0.15;
   filter: grayscale(100%) contrast(1.4);
   z-index: 0;
   mask-image: radial-gradient(circle at center, black 10%, transparent 80%);
@@ -103,10 +101,10 @@ body {
   pointer-events: none;
 }
 
-/* --- CONTENT LAYOUT --- */
+/* --- CONTENT --- */
 .cardTop, .midRow, .weekLine, .metaRow, .milestoneBox {
   position: relative;
-  z-index: 2; /* Above bg */
+  z-index: 2; 
 }
 
 .cardTop {
@@ -155,7 +153,7 @@ body {
 .dot { width: 6px; height: 6px; border-radius: 50%; background: #555; box-shadow: 0 0 8px currentColor; }
 .chipText { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8); }
 
-/* --- BIG NUMBER & SPARK --- */
+/* --- BIG NUMBER --- */
 .midRow {
   display: flex;
   justify-content: space-between;
@@ -173,7 +171,7 @@ body {
 
 .mainArrow { font-size: 20px; transform: translateY(-2px); }
 
-/* Sparkline Area Chart */
+/* Sparkline */
 .spark {
   width: 100px; height: 40px;
   overflow: visible;
@@ -186,10 +184,8 @@ body {
   transition: d 0.5s ease;
 }
 
-/* --- GAMIFICATION MILESTONE --- */
-.milestoneBox {
-  margin-bottom: 12px;
-}
+/* --- GOAL MILESTONE --- */
+.milestoneBox { margin-bottom: 12px; }
 .milestoneText {
   display: flex; justify-content: space-between;
   font-size: 11px; color: rgba(255,255,255,0.6);
@@ -206,21 +202,12 @@ body {
 .progressFill {
   height: 100%;
   width: 0%;
-  background: var(--c-tier); /* Uses Card Color */
+  background: var(--c-tier);
   box-shadow: 0 0 10px var(--c-tier);
   border-radius: 2px;
   transition: width 1s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.progressFill.pulse-bar {
-  animation: barPulse 1.5s infinite;
-}
-@keyframes barPulse {
-  0% { opacity: 0.8; }
-  50% { opacity: 1; filter: brightness(1.5); }
-  100% { opacity: 0.8; }
-}
 
-/* --- WEEK LINE --- */
 .weekLine {
   font-size: 13px;
   color: rgba(255,255,255,0.9);
@@ -229,18 +216,15 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 
-/* --- META GRID --- */
 .metaRow {
   display: grid;
   grid-template-columns: 1fr 1fr 1.2fr;
   gap: 8px;
 }
-
 .metaItem { display: flex; flex-direction: column; gap: 2px; }
 .metaLabel { font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase; }
 .metaValue { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.9); font-feature-settings: "tnum"; }
 
-.vsNum { font-weight: 600; }
 .vsNum.pos { color: var(--c-green); }
 .vsNum.neg { color: var(--c-red); }
 .vsNum.neu { color: #888; }
@@ -248,7 +232,6 @@ body {
 .vsArrow.pos { color: var(--c-green); }
 .vsArrow.neg { color: var(--c-red); }
 
-/* --- UTILS --- */
 .foot {
   margin-top: 15px;
   text-align: center;
@@ -274,8 +257,10 @@ body {
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
 /* 
-   FLOATING ICON:
-   Pop from bottom (1s), Stay (3s), Fade Up (1s) = 5s total
+   FLOAT ANIMATION (5s total)
+   0-1s: Pop In
+   1-4s: Stay (3s)
+   4-5s: Fade Up & Out
 */
 .floatIcon {
   position: absolute;
@@ -290,30 +275,17 @@ body {
 }
 
 @keyframes floatSequence {
-  0% { 
-    opacity: 0; 
-    transform: translate(-50%, 20px) scale(0.5); 
-  }
-  20% { 
-    opacity: 1; 
-    transform: translate(-50%, -10px) scale(1.2); 
-  }
-  80% { 
-    opacity: 1; 
-    transform: translate(-50%, -10px) scale(1.2); /* Stay in center */
-  }
-  100% { 
-    opacity: 0; 
-    transform: translate(-50%, -60px) scale(1); 
-  }
+  0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); }
+  20% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); }
+  80% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); }
+  100% { opacity: 0; transform: translate(-50%, -60px) scale(1); }
 }
 
-/* Casino Roll Styles */
+/* Casino Roll */
 .rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
-.rollCol { display: flex; flex-direction: column; transition: transform 1s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.rollCol { display: flex; flex-direction: column; }
 .rollLine { height: 1.1em; line-height: 1.1em; display: block; }
 
-/* Mobile */
 @media (max-width: 700px) {
   .grid { grid-template-columns: 1fr; }
   .card { margin-bottom: 10px; }
