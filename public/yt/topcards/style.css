@@ -46,8 +46,8 @@ body {
   border-radius: 20px;
   padding: 20px;
   overflow: hidden;
-  box-shadow: 0 3px 24px rgba(0,0,0,0.7);
-  transition: transform 0.16s ease-out, box-shadow 0.3s ease;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.8);
+  transition: transform 0.1s ease-out, box-shadow 0.3s ease;
   transform-style: preserve-3d;
   --logo-url: none;
   opacity: 1;
@@ -70,7 +70,7 @@ body {
 
 .card:hover {
   z-index: 10;
-  box-shadow: 0 18px 48px -12px rgba(0,0,0,0.85), 0 0 16px var(--glass-highlight);
+  box-shadow: 0 18px 50px -10px rgba(0,0,0,0.95), 0 0 18px var(--glass-highlight);
 }
 
 /* LOGO WATERMARK */
@@ -85,24 +85,24 @@ body {
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-  opacity: 0.45;
+  opacity: 0.5;
   mix-blend-mode: screen;
-  filter: grayscale(90%) contrast(1.1);
+  filter: grayscale(100%) contrast(1.2);
   z-index: 0;
   pointer-events: none;
   animation: logoBreath 10s ease-in-out infinite;
 }
 
 @keyframes logoBreath {
-  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.45; }
-  50% { transform: translate(-50%, -50%) scale(1.35); opacity: 0.55; }
-  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.45; }
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+  50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
 }
 
 /* --- HOLO GLARE --- */
 .glare {
   position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.02) 65%, transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 60%, transparent);
   transform: skewX(-25deg); pointer-events: none;
   z-index: 1;
   animation: glareSweep 6s infinite ease-in-out;
@@ -113,8 +113,8 @@ body {
 .card::after {
   content: ""; position: absolute; top: -60px; right: -60px; width: 180px; height: 180px;
   background: radial-gradient(circle, var(--c-tier) 0%, transparent 70%);
-  opacity: 0.07;
-  filter: blur(35px); z-index: 0; pointer-events: none;
+  opacity: 0.08;
+  filter: blur(40px); z-index: 0; pointer-events: none;
 }
 
 /* --- CONTENT --- */
@@ -159,7 +159,7 @@ body {
 .midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 40px; }
 .bigNumber {
   display: flex; align-items: baseline; gap: 4px; font-size: 28px; font-weight: 700;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.45); font-feature-settings: "tnum"; color: #fff;
+  text-shadow: 0 4px 20px rgba(0,0,0,0.5); font-feature-settings: "tnum"; color: #fff;
 }
 .mainArrow { font-size: 20px; transform: translateY(-2px); }
 
@@ -174,7 +174,7 @@ body {
 .progressFill {
   height: 100%; width: 0%;
   background: var(--c-tier);
-  box-shadow: 0 0 8px var(--c-tier);
+  box-shadow: 0 0 10px var(--c-tier);
   border-radius: 2px;
   transition: width 1s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -196,7 +196,7 @@ body {
 
 .toast {
   position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px);
-  background: rgba(0,255,153,0.15); border: 1px solid rgba(0,255,153,0.25);
+  background: rgba(0,255,153,0.15); border: 1px solid rgba(0,255,153,0.3);
   color: #00ff99; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
   opacity: 0; transition: all 0.3s ease; pointer-events: none; z-index: 100;
 }
@@ -204,13 +204,13 @@ body {
 
 .floatIcon {
   position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff;
-  filter: drop-shadow(0 0 6px rgba(255,255,255,0.7)); pointer-events: none; z-index: 20;
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.9)); pointer-events: none; z-index: 20;
   transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards;
 }
 @keyframes floatSequence {
   0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); }
-  20% { opacity: 1; transform: translate(-50%, -10px) scale(1.1); }
-  80% { opacity: 1; transform: translate(-50%, -10px) scale(1.1); }
+  20% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); }
+  80% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); }
   100% { opacity: 0; transform: translate(-50%, -60px) scale(1); }
 }
 
@@ -233,9 +233,8 @@ body {
   border-radius: 12px;
   padding: 14px 20px;
   overflow: hidden;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 8px 24px -8px rgba(0,0,0,0.75);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 24px -10px rgba(0,0,0,0.8);
   display: flex;
   flex-direction: column;
 
@@ -387,32 +386,38 @@ body {
   .hud-message { font-size: 12px; -webkit-line-clamp: 3; }
 }
 
-/* Motion-friendly fallbacks */
-@media (prefers-reduced-motion: reduce) {
-  .card,
-  .card::before,
-  .glare,
-  .floatIcon,
-  .hud-ring rect,
-  .hud-scanline {
-    animation: none !important;
-  }
+/* ===========================
+   PERFORMANCE: hidden tab + reduced motion
+   =========================== */
 
-  .card {
-    transition: transform 0.2s ease-out;
-    transform: none !important;
-  }
-
-  .hud-ring rect {
-    stroke-dashoffset: 0 !important;
-  }
+/* When Notion tab is hidden, pause the heavy/continuous visuals */
+html.is-hidden .glare,
+html.is-hidden .hud-scanline,
+html.is-hidden .card::before,
+html.is-hidden .hud-glitch {
+  animation-play-state: paused !important;
 }
 
-/* Backdrop-filter fallback */
-@supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
-  .hud-box {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: rgba(10,10,10,0.85);
+html.is-hidden .spark { filter: none !important; }
+html.is-hidden .hud-box { backdrop-filter: none; }
+
+/* Also cheapen the most expensive blend/filter while hidden (not visible anyway) */
+html.is-hidden .card::before {
+  mix-blend-mode: normal;
+  opacity: 0.45;
+}
+
+/* Respect OS accessibility setting */
+@media (prefers-reduced-motion: reduce) {
+  .card { transition: none !important; }
+  .progressFill { transition: none !important; }
+  .card::before,
+  .glare,
+  .hud-scanline,
+  .hud-ring rect,
+  .hud-glitch,
+  .card-enter,
+  .floatIcon {
+    animation: none !important;
   }
 }
