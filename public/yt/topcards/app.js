@@ -16,16 +16,21 @@ const FEEDBACK = {
   watch: { red: "Dropping", orange: "Weak", yellow: "Consistent", green: "Engaging", blue: "Hooked", purple: "Binge" },
 };
 
+// --- DOM HELPERS ---
 function safeSetText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
 }
-
 function safeSetStyle(id, prop, val) {
   const el = document.getElementById(id);
   if (el) el.style[prop] = val;
 }
+function safeSetHTML(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
 
+// --- LOGIC ---
 function tierArrow(tier) {
   if (tier === "red" || tier === "orange") return "↓";
   if (tier === "yellow") return "–";
@@ -48,7 +53,6 @@ function tierFromBaseline(last28, median6m, absMin, minPct) {
   return "purple";
 }
 
-// Logic for "Next Goal"
 function getMilestone(val, type) {
   const v = Number(val || 0);
   if(v < 0) return 100;
@@ -58,8 +62,7 @@ function getMilestone(val, type) {
     if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
     return Math.ceil((v + 1) / 5000) * 5000;
   }
-  const digits = Math.floor(Math.log10(v || 1));
-  const base = Math.pow(10, digits); 
+  if (v < 1000) return Math.ceil((v + 1) / 100) * 100; // 0-1000
   if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
   if (v < 100000) return Math.ceil((v + 1) / 10000) * 10000;
   return Math.ceil((v + 1) / 100000) * 100000;
@@ -75,8 +78,6 @@ function setCardTheme(cardId, tier) {
   const card = document.getElementById(cardId);
   if(!card) return;
   card.style.setProperty('--c-tier', COLORS[tier] || COLORS.yellow);
-  card.classList.add('fresh');
-  setTimeout(() => card.classList.remove('fresh'), 2500);
 }
 
 function setChip(dotId, chipTextId, tier, text) {
@@ -93,14 +94,13 @@ function setMainArrow(elId, tier) {
   if(!el) return;
   el.textContent = tierArrow(tier);
   el.style.color = "var(--c-tier)";
-  el.style.textShadow = "0 0 10px var(--c-tier)";
+  el.style.textShadow = "0 0 15px var(--c-tier)";
 }
 
 function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   const numEl = document.getElementById(elNumId);
   const arrEl = document.getElementById(elArrowId);
   if(!numEl || !arrEl) return;
-
   const d = Number(delta || 0);
   numEl.className = d > 0 ? "vsNum pos" : (d < 0 ? "vsNum neg" : "vsNum neu");
   arrEl.className = d > 0 ? "vsArrow pos" : (d < 0 ? "vsArrow neg" : "vsArrow neu");
@@ -112,12 +112,11 @@ function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
   if(!fillEl || !pathEl) return;
-
   const vals = (values || []).map(Number);
-  if (vals.length < 2) return; // Prevent crash on empty history
+  if (vals.length < 2) return; 
 
   const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
-  const w = 120, h = 40, pad = 2;
+  const w = 120, h = 40, pad = 3;
 
   const pts = vals.map((v, i) => ({
     x: (i / (vals.length - 1)) * w,
@@ -134,26 +133,28 @@ function setSpark(fillId, pathId, values, tier) {
 
   pathEl.setAttribute("d", d);
   pathEl.style.stroke = COLORS[tier];
-  pathEl.style.strokeWidth = "2.5";
   fillEl.setAttribute("d", `${d} L ${w} ${h} L 0 ${h} Z`);
 }
 
+// --- NEW LAYOUT: Last 7D | Prev 7D ---
 function renderPacing(elId, cur, prev, suffix="") {
-  const el = document.getElementById(elId);
-  if(!el) return;
+  const c = Number(cur||0), p = Number(prev||0);
+  const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
   
-  const c = Number(cur||0), p = Number(prev||1);
-  // Velocity: If prev is missing (NaN), assume 0%
-  const pct = isNaN(p) || p === 0 ? 0 : Math.round(((c - p) / p) * 100);
-  
-  let html = `This week: ${fmt(c)}${suffix}`;
-  if(pct > 0) html += ` <span style="color:var(--c-green)">(+${pct}%)</span>`;
-  else if(pct < 0) html += ` <span style="color:var(--c-red)">(${pct}%)</span>`;
-  else html += ` <span style="color:#777">(—)</span>`;
-  el.innerHTML = html;
+  let pctHtml = "";
+  if(pct > 0) pctHtml = `<span style="color:var(--c-green); font-size:0.9em;">(+${pct}%)</span>`;
+  else if(pct < 0) pctHtml = `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>`;
+  else pctHtml = `<span style="color:#666; font-size:0.9em;">(—)</span>`;
+
+  // Left side: Last 7D + Pct
+  const left = `<div><span style="opacity:0.6; margin-right:4px;">Last 7D:</span><b>${fmt(c)}${suffix}</b> ${pctHtml}</div>`;
+  // Right side: Prev 7D
+  const right = `<div><span style="opacity:0.4; margin-right:4px;">Prev:</span><span style="opacity:0.8">${fmt(p)}${suffix}</span></div>`;
+
+  safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL ---
+// --- CASINO ROLL (FIXED) ---
 function ensureRoll(el) {
   if (el._rollWrap && el._rollCol) return;
   el.textContent = "";
@@ -167,42 +168,47 @@ function ensureRoll(el) {
   el._rollCol = col;
 }
 
-function animateCasinoRoll(el, from, to, opts = {}) {
+function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   if(!el) return;
   const isFirst = !!opts.isFirst;
   const decimals = opts.decimals ?? 0;
   const suffix = opts.suffix ?? "";
   
+  // 1. Force Start from 0 if First Load
+  const start = isFirst ? 0 : Number(fromVal || 0);
+  const end = Number(toVal || 0);
+
   ensureRoll(el);
   const col = el._rollCol;
   
   const scale = Math.pow(10, decimals);
-  const a = Math.round(Number(from || 0) * scale);
-  const b = Math.round(Number(to || 0) * scale);
+  const a = Math.round(start * scale);
+  const b = Math.round(end * scale);
   
   const txt = (val) => (decimals ? fmt1(val/scale) : fmt(Math.round(val/scale))) + suffix;
 
-  if (a === b) {
-    col.innerHTML = `<span class="rollLine">${txt(a)}</span>`;
+  // 2. If NO CHANGE and NOT FIRST LOAD, stop animation instantly
+  if (!isFirst && a === b) {
+    col.style.transition = "none";
     col.style.transform = "translateY(0)";
+    col.innerHTML = `<span class="rollLine">${txt(a)}</span>`;
     return;
   }
 
+  // 3. Build Strip
   const diff = b - a; 
   const absDiff = Math.abs(diff);
   let html = "";
   let finalY = 0;
   
-  // Logic: Always show sliding strip for small changes (+/- 15)
-  if (absDiff <= 15) {
+  // Show detailed sliding for small changes (or initial 0->small num)
+  if (absDiff <= 30) {
     const steps = [];
     const dir = diff > 0 ? 1 : -1;
     for (let i = 0; i <= absDiff; i++) {
       steps.push(a + (i * dir));
     }
-    // Stack numbers in direction of travel
     html = steps.map(v => `<span class="rollLine">${txt(v)}</span>`).join("");
-    // We slide from index 0 to index [length-1]
     finalY = -1.1 * absDiff; 
   } else {
     // Big jump: Start -> Blur -> End
@@ -218,15 +224,17 @@ function animateCasinoRoll(el, from, to, opts = {}) {
   col.style.transform = "translateY(0)";
   col.innerHTML = html;
 
-  // FORCE REFLOW (Vital for animation to trigger)
+  // Force Paint
   void col.offsetHeight; 
 
   // Animate
-  col.style.transition = `transform ${isFirst ? 2000 : 1000}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+  // First load = Fast (1.5s), Refresh = Slower (2s) if changing
+  const dur = isFirst ? 1500 : 2000;
+  col.style.transition = `transform ${dur}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
   col.style.transform = `translateY(${finalY}em)`;
 }
 
-/* Floating Icons */
+// --- FLOAT ICON ---
 const SVGS = {
   subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
   views:`<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
@@ -249,7 +257,6 @@ let state = { subs: 0, views: 0, watch: 0 };
 function render(data, isFirst) {
   try {
     const ch = data.channel || {};
-    // Set Logo safely
     if (ch.logo) {
       const v = `url("${ch.logo}")`;
       document.querySelectorAll('.card').forEach(c => c.style.setProperty("--logo-url", v));
@@ -261,16 +268,22 @@ function render(data, isFirst) {
       watch: Number(data.lifetime?.watchHours || 0)
     };
     
-    // Safety Fallbacks for missing arrays/objects
+    // Trigger entrance animations only on first load
+    if (isFirst) {
+      document.querySelectorAll('.card').forEach((c, i) => {
+        c.style.animationDelay = `${i * 150}ms`;
+        c.classList.add('card-enter');
+      });
+    }
+
     const weekly = data.weekly || {};
-    const m28 = data.m28 || {};
-    const last28 = m28.last28 || {};
-    const prev28 = m28.prev28 || {};
-    const med6m = m28.median6m || {};
-    const avg6m = m28.avg6m || {};
+    const last28 = data.m28?.last28 || {};
+    const prev28 = data.m28?.prev28 || {};
+    const med6m = data.m28?.median6m || {};
+    const avg6m = data.m28?.avg6m || {};
     const hist = data.history28d || [];
 
-    // --- 1. SUBS ---
+    // 1. SUBS
     const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30, 0.1);
     setCardTheme("cardSubs", tSubs);
     setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]);
@@ -281,14 +294,13 @@ function render(data, isFirst) {
     safeSetText("subsLast28", (Number(last28.netSubs)>=0?"+":"")+fmt(last28.netSubs));
     safeSetText("subsPrev28", (Number(prev28.netSubs)>=0?"+":"")+fmt(prev28.netSubs));
 
-    // Subs Goal
     const gSubs = getMilestone(cur.subs, 'subs');
     const pSubs = Math.min(100, (cur.subs/gSubs)*100).toFixed(1);
     safeSetText("subsNextGoal", fmt(gSubs));
     safeSetText("subsNextPct", pSubs+"%");
     safeSetStyle("subsProgressFill", "width", pSubs+"%");
 
-    // --- 2. VIEWS ---
+    // 2. VIEWS
     const tViews = tierFromBaseline(last28.views, med6m.views, 25000, 0.1);
     setCardTheme("cardViews", tViews);
     setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]);
@@ -299,14 +311,13 @@ function render(data, isFirst) {
     safeSetText("viewsLast28", fmt(last28.views));
     safeSetText("viewsPrev28", fmt(prev28.views));
 
-    // Views Goal
     const gViews = getMilestone(cur.views, 'views');
     const pViews = Math.min(100, (cur.views/gViews)*100).toFixed(1);
     safeSetText("viewsNextGoal", fmt(gViews));
     safeSetText("viewsNextPct", pViews+"%");
     safeSetStyle("viewsProgressFill", "width", pViews+"%");
 
-    // --- 3. WATCH ---
+    // 3. WATCH
     const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50, 0.1);
     setCardTheme("cardWatch", tWatch);
     setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]);
@@ -317,7 +328,6 @@ function render(data, isFirst) {
     safeSetText("watchLast28", fmt(last28.watchHours)+"h");
     safeSetText("watchPrev28", fmt(prev28.watchHours)+"h");
 
-    // Watch Goal
     const gWatch = getMilestone(cur.watch, 'watch');
     const pWatch = Math.min(100, (cur.watch/gWatch)*100).toFixed(1);
     safeSetText("watchNextGoal", fmt(gWatch));
@@ -325,6 +335,8 @@ function render(data, isFirst) {
     safeSetStyle("watchProgressFill", "width", pWatch+"%");
 
     // --- ANIMATIONS ---
+    // On First Load: Always roll 0 -> X.
+    // On Refresh: Only roll if X != Y.
     animateCasinoRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subs, cur.subs, { isFirst });
     if (!isFirst && cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs");
 
@@ -334,14 +346,14 @@ function render(data, isFirst) {
     animateCasinoRoll(document.getElementById("watchNow"), isFirst ? 0 : state.watch, cur.watch, { isFirst, decimals: cur.watch<100?1:0, suffix:"h" });
     if (!isFirst && cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
 
-    // Save State
     state = cur;
-    document.getElementById("updated").textContent = `SYSTEM ACTIVE • ${nowStamp()}`;
-    showToast("SYNC COMPLETE");
+    document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
+    document.getElementById("toast").classList.add("show");
+    setTimeout(() => document.getElementById("toast").classList.remove("show"), 2000);
 
   } catch (err) {
     console.error(err);
-    document.getElementById("updated").textContent = "RENDER ERROR: " + err.message;
+    document.getElementById("updated").textContent = "ERR: " + err.message;
   }
 }
 
