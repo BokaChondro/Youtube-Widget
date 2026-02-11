@@ -9,6 +9,11 @@
 function isoDate(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
+function toDateOnly(x) {
+  if (!x) return null;
+  // Accepts "YYYY-MM-DD" or "YYYY-MM-DDTHH:mm:ssZ" etc.
+  return String(x).slice(0, 10);
+}
 function shiftDays(d, n) {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
@@ -99,10 +104,15 @@ async function ytFetch(token, url) {
 }
 
 async function ytAnalytics(token, params) {
+  // IMPORTANT FIX: Analytics requires YYYY-MM-DD only
+  const p = { ...params };
+  if (p.startDate) p.startDate = toDateOnly(p.startDate);
+  if (p.endDate) p.endDate = toDateOnly(p.endDate);
+
   const base = "https://youtubeanalytics.googleapis.com/v2/reports";
   const qs = new URLSearchParams({
     ids: "channel==MINE",
-    ...params,
+    ...p,
   });
   return ytFetch(token, `${base}?${qs.toString()}`);
 }
@@ -167,7 +177,7 @@ async function fetchDailyCore(token, startDate, endDate) {
 
 async function fetchLifetimeWatchHours(token, startDate, endDate) {
   const resp = await ytAnalytics(token, {
-    startDate,
+    startDate, // will be auto-sanitized to YYYY-MM-DD in ytAnalytics()
     endDate,
     metrics: "estimatedMinutesWatched",
   });
@@ -186,11 +196,13 @@ async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
     `&maxResults=${clamp(maxResults, 1, 50)}`;
   const j = await ytFetch(token, url);
   const items = j.items || [];
-  return items.map((it) => ({
-    videoId: it.snippet?.resourceId?.videoId || null,
-    publishedAt: it.snippet?.publishedAt || null,
-    title: it.snippet?.title || "",
-  })).filter((x) => x.videoId);
+  return items
+    .map((it) => ({
+      videoId: it.snippet?.resourceId?.videoId || null,
+      publishedAt: it.snippet?.publishedAt || null,
+      title: it.snippet?.title || "",
+    }))
+    .filter((x) => x.videoId);
 }
 
 // ---------------------------
@@ -198,7 +210,6 @@ async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
 // ---------------------------
 
 function parseISO8601DurationToSec(iso) {
-  // PT#H#M#S
   if (!iso || typeof iso !== "string") return 0;
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!m) return 0;
@@ -242,7 +253,6 @@ async function fetchVideos(token, videoIds) {
 // ---------------------------
 
 function parseVideoRows(resp, metricNames) {
-  // resp rows: [videoId, metric1, metric2...]
   const headers = resp?.columnHeaders || [];
   const rows = resp?.rows || [];
   const vidIdx = headers.findIndex((h) => h.name === "video");
@@ -264,9 +274,6 @@ function parseVideoRows(resp, metricNames) {
 }
 
 async function fetchVideoAnalytics7dBundle(token, startIso, endIso, maxResults = 25) {
-  // We use multiple "safe" calls so one unavailable metric doesn't kill everything.
-  // Each returns a map: videoId -> metrics
-
   const [base, retention, thumbs, engage] = await Promise.all([
     safeAnalytics(token, {
       startDate: startIso,
@@ -314,7 +321,7 @@ async function fetchVideoAnalytics7dBundle(token, startIso, endIso, maxResults =
   };
 }
 
-function buildVideoIntelList(videoDetails, bundle, endIso) {
+function buildVideoIntelList(videoDetails, bundle) {
   const base = bundle.baseMap;
   const ret = bundle.retentionMap;
   const th = bundle.thumbsMap;
@@ -356,7 +363,6 @@ function buildVideoIntelList(videoDetails, bundle, endIso) {
     });
   }
 
-  // Keep most relevant first
   vids.sort((a, b) => Number(b.views7d || 0) - Number(a.views7d || 0));
   return vids;
 }
@@ -436,13 +442,15 @@ async function computeKPIs(env) {
       watchHours: w.metrics.watchHours,
     }));
 
-  // Dates used by optional “Holy Grail” analytics (channel-level, safe + optional)
   const last28Start = last28.startDate || isoDate(shiftDays(end, -27));
   const prev28Start = prev28.startDate || isoDate(shiftDays(end, -55));
   const prev28End = prev28.endDate || isoDate(shiftDays(end, -28));
 
+  // Channel start date for lifetime query (FIXED)
+  const channelStartDate = toDateOnly(ch.publishedAt) || dailyStart;
+
   // Kick off independent work in parallel
-  const lifeP = fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
+  const lifeP = fetchLifetimeWatchHours(token, channelStartDate, endIso);
   const uploadsP = fetchRecentUploads(token, ch.uploadsPlaylistId, 25);
 
   const top7P = safeAnalytics(token, {
@@ -508,7 +516,6 @@ async function computeKPIs(env) {
     maxResults: "5",
   });
 
-  // Video-level intel bundle (7D) in parallel too
   const v7dBundleP = fetchVideoAnalytics7dBundle(token, weeklyStart, endIso, 25);
 
   const [
@@ -542,7 +549,6 @@ async function computeKPIs(env) {
   const top7VideoId = top7Resp?.rows?.[0]?.[0] || null;
   const top7Views = Number(top7Resp?.rows?.[0]?.[1] || 0);
 
-  // Fetch details for recent uploads (+ top video if not already included)
   const videoIds = uniq([...(uploads.map((u) => u.videoId)), top7VideoId]);
   const videoDetails = await fetchVideos(token, videoIds);
   const vidsById = Object.fromEntries(videoDetails.map((v) => [v.videoId, v]));
@@ -550,13 +556,10 @@ async function computeKPIs(env) {
   const latestVideo = latestUpload?.videoId ? vidsById[latestUpload.videoId] || null : null;
   const top7Video = top7VideoId ? vidsById[top7VideoId] || null : null;
 
-  // 48h-ish (last 2 days) views from daily core
   const v48 = N >= 2 ? Number(daily[N - 1]?.views || 0) + Number(daily[N - 2]?.views || 0) : 0;
 
-  // Build video intel list (top ~25 recent videos + their 7D analytics)
-  const videoIntelList = buildVideoIntelList(videoDetails, v7dBundle, endIso);
+  const videoIntelList = buildVideoIntelList(videoDetails, v7dBundle);
 
-  // Pack HUD extras (keeps old shape; adds "videoIntel")
   const hud = {
     statsThrough: endIso,
 
@@ -595,7 +598,7 @@ async function computeKPIs(env) {
     thumb28: thumb28?.rows?.[0]
       ? {
           impressions: Number(thumb28.rows[0][0] || 0),
-          ctr: Number(thumb28.rows[0][1] || 0), // percent
+          ctr: Number(thumb28.rows[0][1] || 0),
         }
       : null,
 
@@ -618,7 +621,6 @@ async function computeKPIs(env) {
 
     views48h: v48,
 
-    // ready for 26+ video-specific HUD insights
     videoIntel: {
       range7d: { startDate: weeklyStart, endDate: endIso },
       count: videoIntelList.length,
@@ -638,7 +640,6 @@ async function computeKPIs(env) {
       views: weeklyPacked.views,
       watchHours: weeklyPacked.watchHours,
 
-      // extra (HUD uses)
       subscribersGained: weeklyPacked.gained,
       subscribersLost: weeklyPacked.lost,
       minutesWatched: weeklyPacked.minutes,
