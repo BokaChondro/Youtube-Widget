@@ -70,14 +70,14 @@ body{
   padding:16px;
   overflow:hidden;
 
-  /* glass */
-  background: linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.022));
-  border:1px solid var(--border);
-  backdrop-filter: blur(12px);
+  /* ✅ PURE BLACK base so black-logo square blends */
+  background:#000;
 
+  /* glass border + subtle highlight */
+  border:1px solid var(--border);
   box-shadow:
-    0 12px 34px rgba(0,0,0,.30),
-    inset 0 1px 0 rgba(255,255,255,.07);
+    0 12px 34px rgba(0,0,0,.35),
+    inset 0 1px 0 rgba(255,255,255,.06);
 
   animation: popIn .55s ease both;
 }
@@ -108,7 +108,7 @@ body{
   pointer-events:none;
 }
 
-/* channel logo background (blended / no square edges) */
+/* channel logo background (no visible square edges + bigger zoom range) */
 .card::after{
   content:"";
   position:absolute;
@@ -120,22 +120,20 @@ body{
   background-position:center;
   background-size: contain;
 
-  /* make square edges disappear */
+  /* fade edges so it blends */
   -webkit-mask-image: radial-gradient(circle at center, rgba(0,0,0,1) 52%, rgba(0,0,0,0) 78%);
   mask-image: radial-gradient(circle at center, rgba(0,0,0,1) 52%, rgba(0,0,0,0) 78%);
 
-  opacity:.14;
+  opacity:.16;
   filter: grayscale(100%) contrast(118%);
-  transform: scale(0.94);
+  transform: scale(0.90);
   animation: logoBeat 3.2s ease-in-out infinite;
   pointer-events:none;
 }
-
-/* more lively zoom range */
 @keyframes logoBeat{
-  0%   { transform: scale(0.92); opacity:.12; }
-  50%  { transform: scale(1.16); opacity:.17; }
-  100% { transform: scale(0.92); opacity:.12; }
+  0%   { transform: scale(0.88); opacity:.14; }
+  50%  { transform: scale(1.22); opacity:.18; }
+  100% { transform: scale(0.88); opacity:.14; }
 }
 
 .cardTop{
@@ -207,6 +205,24 @@ body{
   font-size:18px;
   font-weight:900;
   opacity:.95;
+}
+
+/* ✅ slot/casino roll visuals */
+.rollWrap{
+  display:inline-block;
+  height:1em;
+  overflow:hidden;
+  vertical-align:baseline;
+  position:relative;
+}
+.rollCol{
+  display:block;
+  will-change: transform;
+}
+.rollLine{
+  display:block;
+  height:1em;
+  line-height:1em;
 }
 
 .spark{
@@ -328,7 +344,7 @@ body{
   color: rgba(255,255,255,.55);
 }
 
-/* floating icon animation (on increase) */
+/* floating icon animation (slower) */
 .floatIcon{
   position:absolute;
   left:50%;
@@ -339,18 +355,16 @@ body{
   color: rgba(255,255,255,.95);
   filter: drop-shadow(0 8px 18px rgba(0,0,0,.35));
   pointer-events:none;
-  animation: floatUp 950ms ease-out forwards;
+  animation: floatUp 1450ms ease-out forwards;
 }
-
 .floatIcon svg{
   width:34px;
   height:34px;
   fill: currentColor;
   opacity:.95;
 }
-
 @keyframes floatUp{
-  0%   { opacity:0; transform: translateX(-50%) translateY(12px) scale(.94); }
+  0%   { opacity:0; transform: translateX(-50%) translateY(14px) scale(.94); }
   18%  { opacity:.85; }
-  100% { opacity:0; transform: translateX(-50%) translateY(-86px) scale(1.06); }
+  100% { opacity:0; transform: translateX(-50%) translateY(-98px) scale(1.06); }
 }
