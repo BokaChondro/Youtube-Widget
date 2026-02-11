@@ -92,12 +92,10 @@ function getMilestone(val, type) {
     return Math.ceil((v + 1) / 5000) * 5000;
   }
 
-  // Subs and Views logic
   if (v < 1000) return Math.ceil((v + 1) / 100) * 100;
   if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
   if (v < 100000) return Math.ceil((v + 1) / 10000) * 10000;
-  if (v < 1000000) return Math.ceil((v + 1) / 100000) * 100000;
-  return Math.ceil((v + 1) / 1000000) * 1000000;
+  return Math.ceil((v + 1) / 100000) * 100000;
 }
 
 async function fetchJSON(url) {
@@ -156,7 +154,7 @@ function rgbaFromHex(hex, a) {
   return `rgba(${r},${g},${b},${a})`;
 }
 
-// --- SPARKLINE GRADIENT ---
+// --- SPARKLINE GRADIENT (tier -> white) ---
 function ensureSparkGradient(svgEl, gradId, tierHex) {
   if (!svgEl) return null;
 
@@ -510,7 +508,7 @@ function render(data, isFirst) {
 
     state = cur;
 
-    // glow once on refresh + every 30s
+    // glow once on refresh + every 30s (duration handled in CSS/keyframes but class removed after 4s)
     if (!isFirst) {
       triggerGlowOnce("cardSubs");
       triggerGlowOnce("cardViews");
@@ -524,7 +522,7 @@ function render(data, isFirst) {
       triggerGlowOnce("cardWatch");
     }, 30000);
 
-    // --- TRIGGER HUD UPDATE ---
+    // --- INTEGRATION: TRIGGER HUD UPDATE ---
     updateHud(data);
 
     document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
@@ -561,139 +559,346 @@ document.querySelectorAll(".card").forEach(card => {
 });
 
 
-/* --- HOLO-STREAM HUD ENGINE --- */
+/* --- HOLO-STREAM HUD ENGINE (AI MODE) --- */
 const HUD_CONFIG = {
-  interval: 8000,
+  interval: 8500,
   timer: null
 };
 
-// White SVG Icons (fill="white")
+// White SVG Icons for HUD (fill="white")
 const HUD_ICONS = {
-  target: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-8c0 2.76 2.24 5 5 5s5-2.24 5-5-2.24-5-5-5-5 2.24-5 5z"/></svg>`,
+  ai: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2a7 7 0 0 0-7 7v3a3 3 0 0 0 2 2.83V17a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-2.17A3 3 0 0 0 19 12V9a7 7 0 0 0-7-7Zm5 10a1 1 0 0 1-1 1h-1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4H8a1 1 0 0 1-1-1V9a5 5 0 0 1 10 0v3Z"/></svg>`,
+  live: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z M12 6c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>`,
+  target: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-13a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>`,
   rocket: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5zM7.5 13c0-3.32 2.68-7.5 4.5-7.5s4.5 4.18 4.5 7.5c0 2.5-1.5 4.38-1.5 4.38H9s-1.5-1.88-1.5-4.38z"/></svg>`,
   chartUp: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
   chartDown: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
+  bolt: `<svg viewBox="0 0 24 24" fill="white"><path d="M11 21h-1l1-7H7l6-12h1l-1 7h4l-6 12z"/></svg>`,
+  scan: `<svg viewBox="0 0 24 24" fill="white"><path d="M3 3h7v2H5v5H3V3zm16 0h-7v2h5v5h2V3zM3 21h7v-2H5v-5H3v7zm18 0h-7v-2h5v-5h2v7z"/></svg>`,
   bulb: `<svg viewBox="0 0 24 24" fill="white"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
-  strategy: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg>`,
-  live: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z M12 6c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>`
+  strategy: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg>`
 };
 
-// Static Facts
-const YT_FACTS = [
-  "The first YouTube video was uploaded on April 23, 2005.",
-  "70% of YouTube watch time comes from mobile devices.",
-  "Thumbnails with faces often get more clicks.",
-  "YouTube is the second largest search engine in the world.",
-  "Posting consistently helps the algorithm find your audience.",
-  "Community Posts can reach people who are not subscribed yet.",
-  "Shorts views now count toward the Partner Program.",
-  "The first 30 seconds of a video are key for retention.",
-  "Adding subtitles can increase views by over 10%.",
-  "62% of businesses use YouTube to post video content.",
-  "T-Series is the most subscribed channel in the world."
-];
+// Topic-based facts (short + safe)
+const YT_TRIVIA = {
+  reach: [
+    "Small title + thumbnail changes can lift clicks.",
+    "Search traffic grows when your title matches real words people type.",
+    "A clear promise in the first line helps the viewer stay."
+  ],
+  retention: [
+    "The first 15 seconds should show the main value fast.",
+    "Cut dead time. Faster pacing usually improves watch time.",
+    "Chapters help viewers find the part they want."
+  ],
+  conversion: [
+    "Ask people to subscribe right after you deliver value.",
+    "Pin a comment that links to your next best video.",
+    "End screens can send viewers to one more video."
+  ],
+  system: [
+    "Watch time + satisfaction matters more than views alone.",
+    "One strong video can push the whole channel up.",
+    "Playlists help viewers keep watching."
+  ]
+};
 
-// Simple Tips
-const YT_TIPS = [
-  "Use end screens to show your best videos to viewers.",
-  "Reply to comments quickly to boost engagement.",
-  "Use clear keywords in your description for better search results.",
-  "Group similar videos into Playlists to keep people watching.",
-  "Check your 'Audience' tab to see when to upload."
-];
+// Focus tips (actionable + simple)
+const YT_TIPS = {
+  reach: [
+    "Try 2 new thumbnails for the same idea. Keep the best one.",
+    "Use 3-6 simple words in the title. Make the benefit clear.",
+    "Make the first frame match the thumbnail."
+  ],
+  retention: [
+    "Start with the result first, then explain how you got it.",
+    "Remove long intros. Go straight to the point.",
+    "Add pattern breaks every 20-30 seconds (zoom, text, cut)."
+  ],
+  conversion: [
+    "Say one clear CTA: 'Subscribe for ___'. Not many asks.",
+    "Tell viewers what they get next if they subscribe.",
+    "Use end screen: 1 best video + 1 subscribe button."
+  ],
+  system: [
+    "Post on a steady rhythm. Even 1 video per week is good.",
+    "Reply to comments in the first hour to boost signals.",
+    "Make a playlist for your best series and link it often."
+  ]
+};
+
+// Helpers (AI-style)
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+function safePct(cur, prev) {
+  const c = Number(cur || 0), p = Number(prev || 0);
+  if (p === 0) return null;
+  return Math.round(((c - p) / Math.abs(p)) * 100);
+}
+function signed(n) { return (Number(n) >= 0 ? "+" : "") + fmt(n); }
+function pick(arr, seed) { return arr && arr.length ? arr[Math.abs(seed) % arr.length] : ""; }
+
+function seedFromData(data) {
+  const ch = data.channel || {};
+  const w = data.weekly || {};
+  const m = data.m28?.last28 || {};
+  const a = Number(ch.subscribers || 0) * 7;
+  const b = Number(ch.totalViews || 0);
+  const c = Math.round(Number(w.views || 0) * 3);
+  const d = Math.round(Number(m.netSubs || 0) * 11);
+  return a + b + c + d;
+}
+
+function decideFocus(data) {
+  const last28 = data.m28?.last28 || {};
+  const med = data.m28?.median6m || {};
+
+  const rSubs = (Number(med.netSubs || 0) <= 0) ? 1 : (Number(last28.netSubs || 0) / Number(med.netSubs || 1));
+  const rViews = (Number(med.views || 0) <= 0) ? 1 : (Number(last28.views || 0) / Number(med.views || 1));
+  const rWatch = (Number(med.watchHours || 0) <= 0) ? 1 : (Number(last28.watchHours || 0) / Number(med.watchHours || 1));
+
+  const min = Math.min(rSubs, rViews, rWatch);
+  if (min === rWatch) return "retention";
+  if (min === rSubs) return "conversion";
+  return "reach";
+}
+
+function bestDaySummary(daily7d) {
+  const arr = (daily7d || []).slice().filter(x => x && x.day);
+  if (arr.length < 2) return null;
+  let best = arr[0];
+  for (const d of arr) if (Number(d.views || 0) > Number(best.views || 0)) best = d;
+  return best ? { day: best.day, views: Number(best.views || 0) } : null;
+}
+
+function rank28(lastVal, historyVals) {
+  const arr = (historyVals || []).map(Number).filter(Number.isFinite);
+  if (!arr.length) return null;
+  const sorted = arr.slice().sort((a,b)=>b-a);
+  const idx = sorted.findIndex(v => v === Number(lastVal));
+  return idx >= 0 ? (idx + 1) : null;
+}
+
+function etaText(diff, perDay) {
+  const d = Number(diff || 0);
+  const p = Number(perDay || 0);
+  if (d <= 0) return null;
+  if (p <= 0) return null;
+  const days = Math.ceil(d / p);
+  if (days <= 1) return "about 1 day";
+  if (days < 7) return `${days} days`;
+  const weeks = Math.ceil(days / 7);
+  return `${weeks} weeks`;
+}
 
 function generateIntel(data) {
   const intel = [];
   const ch = data.channel || {};
   const w = data.weekly || {};
-  
-  // 1. SYSTEM STATUS (Blue)
+  const last28 = data.m28?.last28 || {};
+  const prev28 = data.m28?.prev28 || {};
+  const hist = data.history28d || [];
+  const daily7d = data.daily7d || [];
+  const meta = data.meta || {};
+
+  const seed = seedFromData(data);
+  const focus = decideFocus(data);
+
+  const subs = Number(ch.subscribers || 0);
+  const views = Number(ch.totalViews || 0);
+  const vids = Number(ch.videoCount || 0);
+
+  const weekViews = Number(w.views || 0);
+  const weekWatch = Number(w.watchHours || 0);
+  const weekNetSubs = Number(w.netSubs || 0);
+  const weekG = Number(w.subsGained || 0);
+  const weekL = Number(w.subsLost || 0);
+
+  const wowViewsPct = safePct(weekViews, w.prevViews);
+  const wowWatchPct = safePct(weekWatch, w.prevWatchHours);
+  const wowSubsPct = safePct(weekNetSubs, w.prevNetSubs);
+
+  const endDate = meta.analyticsEndDate || w.endDate || "";
+
+  // 1) STATUS (always first)
   intel.push({
-    icon: HUD_ICONS.live, tag: "LIVE_FEED", type: "blue",
-    text: `System monitoring active for channel: ${ch.title || "Unknown"}`
+    icon: HUD_ICONS.ai, tag: "AI_CORE", type: "blue",
+    text: `AI online. Reading ${ch.title || "channel"} • Stats thru ${endDate || "latest"}.`
   });
 
-  // 2. MILESTONE MATH (Blue)
-  const subs = Number(ch.subscribers || 0);
-  const nextSubGoal = getMilestone(subs, "subs");
-  const subDiff = nextSubGoal - subs;
-  if (subDiff > 0) {
-    intel.push({
-      icon: HUD_ICONS.target, tag: "TARGET", type: "blue",
-      text: `Goal in sight: Only ${fmt(subDiff)} subscribers away from ${fmt(nextSubGoal)}.`
-    });
-  }
+  // 2) WEEK SUMMARY
+  const weekLine = `Last 7D: ${signed(weekNetSubs)} subs • ${fmt(weekViews)} views • ${fmt1(weekWatch)}h watch.`;
+  intel.push({ icon: HUD_ICONS.scan, tag: "WEEK_SCAN", type: "blue", text: weekLine });
 
-  // 3. VELOCITY (Green/Red)
-  const netSubs = Number(w.netSubs || 0);
-  if (netSubs > 0) {
-    const dailyAvg = (netSubs / 7).toFixed(1);
-    intel.push({
-      icon: HUD_ICONS.rocket, tag: "GROWTH", type: "green",
-      text: `Good pace: You are gaining about ${dailyAvg} subscribers per day this week.`
-    });
-  } else if (netSubs < 0) {
-    intel.push({
-      icon: HUD_ICONS.chartDown, tag: "ALERT", type: "red",
-      text: `You lost ${Math.abs(netSubs)} subscribers this week.`
-    });
-  }
-
-  // 4. WATCH TIME CONTEXT (Green)
-  const totalHours = Number(data.lifetime?.watchHours || 0);
-  if (totalHours > 24) {
-    const days = (totalHours / 24).toFixed(1);
-    intel.push({
-      icon: HUD_ICONS.chartUp, tag: "RETENTION", type: "green",
-      text: `Total watch time is equal to ${days} full days of continuous viewing.`
-    });
-  }
-
-  // 5. MOMENTUM (Green/Red - vs Last Week)
-  const vCur = Number(w.views || 0);
-  const vPrev = Number(w.prevViews || 0);
-  if (vPrev > 0) {
-    const diff = vCur - vPrev;
-    const pct = Math.round((diff / vPrev) * 100);
-    if (pct > 5) {
+  // 3) MOMENTUM (views)
+  if (wowViewsPct !== null) {
+    if (wowViewsPct >= 8) {
       intel.push({
-        icon: HUD_ICONS.chartUp, tag: "TRENDING", type: "green",
-        text: `Views are UP by ${pct}% compared to last week!`
+        icon: HUD_ICONS.chartUp, tag: "MOMENTUM", type: "green",
+        text: `Views speed up: +${wowViewsPct}% vs last week. Keep the winning topic.`
       });
-    } else if (pct < -5) {
+    } else if (wowViewsPct <= -8) {
       intel.push({
         icon: HUD_ICONS.chartDown, tag: "WARNING", type: "red",
-        text: `Views are down ${Math.abs(pct)}% compared to last week.`
+        text: `Views slow down: ${wowViewsPct}% vs last week. Check title + thumbnail.`
+      });
+    } else {
+      intel.push({
+        icon: HUD_ICONS.bolt, tag: "STABLE", type: "yellow",
+        text: `Views steady: ${wowViewsPct > 0 ? "+" : ""}${wowViewsPct}% vs last week.`
       });
     }
   }
 
-  // 6. ACTIONABLE STRATEGY (Yellow)
-  const randomTip = YT_TIPS[Math.floor(Math.random() * YT_TIPS.length)];
+  // 4) WATCH SIGNAL
+  if (wowWatchPct !== null) {
+    if (wowWatchPct >= 8) {
+      intel.push({
+        icon: HUD_ICONS.chartUp, tag: "RETENTION", type: "green",
+        text: `Watch time up: +${wowWatchPct}% vs last week. Strong viewer pull.`
+      });
+    } else if (wowWatchPct <= -8) {
+      intel.push({
+        icon: HUD_ICONS.chartDown, tag: "RETENTION", type: "red",
+        text: `Watch time down: ${wowWatchPct}% vs last week. Improve the first 15s.`
+      });
+    }
+  }
+
+  // 5) SUBS QUALITY (gained vs lost)
+  if (weekG + weekL > 0) {
+    const churnShare = Math.round((weekL / Math.max(1, weekG + weekL)) * 100);
+    if (weekNetSubs < 0) {
+      intel.push({
+        icon: HUD_ICONS.chartDown, tag: "CHURN", type: "red",
+        text: `Churn alert: lost ${fmt(weekL)} subs vs gained ${fmt(weekG)}.`
+      });
+    } else if (churnShare >= 35) {
+      intel.push({
+        icon: HUD_ICONS.bolt, tag: "QUALITY", type: "yellow",
+        text: `Subs mixed: lost ${fmt(weekL)} (about ${churnShare}%). Fix audience match.`
+      });
+    } else {
+      intel.push({
+        icon: HUD_ICONS.rocket, tag: "GROWTH", type: "green",
+        text: `Subs healthy: gained ${fmt(weekG)} with low churn (${churnShare}%).`
+      });
+    }
+  }
+
+  // 6) 28D CONTEXT (AI ranking + delta)
+  const p28Views = safePct(Number(last28.views || 0), Number(prev28.views || 0));
+  if (p28Views !== null) {
+    const up = p28Views >= 6;
+    const down = p28Views <= -6;
+    intel.push({
+      icon: up ? HUD_ICONS.chartUp : (down ? HUD_ICONS.chartDown : HUD_ICONS.bolt),
+      tag: "28D_CONTEXT",
+      type: up ? "green" : (down ? "red" : "yellow"),
+      text: `Last 28D views: ${fmt(last28.views)} (${p28Views > 0 ? "+" : ""}${p28Views}% vs prev 28D).`
+    });
+  }
+
+  // Rank this 28D in your last 7 windows
+  const rankViews = rank28(Number(last28.views || 0), hist.map(x => x.views));
+  if (rankViews) {
+    const type = rankViews === 1 ? "purple" : (rankViews <= 2 ? "green" : "blue");
+    intel.push({
+      icon: HUD_ICONS.scan, tag: "RANK", type,
+      text: `AI rank: This 28D is #${rankViews} out of your last 7 periods (views).`
+    });
+  }
+
+  // 7) BEST DAY THIS WEEK
+  const best = bestDaySummary(daily7d);
+  if (best && best.views > 0) {
+    intel.push({
+      icon: HUD_ICONS.bolt, tag: "BEST_DAY", type: "blue",
+      text: `Best day this week: ${best.day} with ${fmt(best.views)} views.`
+    });
+  }
+
+  // 8) MILESTONE ETA (subs + views)
+  const nextSubGoal = getMilestone(subs, "subs");
+  const subDiff = nextSubGoal - subs;
+  const subsPerDay = weekNetSubs > 0 ? (weekNetSubs / 7) : 0;
+  const subEta = etaText(subDiff, subsPerDay);
+
+  if (subDiff > 0) {
+    let msg = `Next subs goal: ${fmt(nextSubGoal)} (need ${fmt(subDiff)}).`;
+    if (subEta) msg += ` At this pace: ${subEta}.`;
+    intel.push({ icon: HUD_ICONS.target, tag: "TARGET", type: "blue", text: msg });
+  }
+
+  const nextViewGoal = getMilestone(views, "views");
+  const viewDiff = nextViewGoal - views;
+  const viewsPerDay = weekViews > 0 ? (weekViews / 7) : 0;
+  const viewEta = etaText(viewDiff, viewsPerDay);
+  if (viewDiff > 0 && viewEta) {
+    intel.push({
+      icon: HUD_ICONS.target, tag: "GOAL_ETA", type: "blue",
+      text: `Next views goal: ${fmt(nextViewGoal)} (need ${fmt(viewDiff)}). ETA: ${viewEta}.`
+    });
+  }
+
+  // 9) CHANNEL SHAPE (views per video / lifetime pace)
+  if (vids > 0) {
+    const vPerVideo = Math.round(views / vids);
+    intel.push({
+      icon: HUD_ICONS.scan, tag: "PROFILE", type: "blue",
+      text: `Channel size: ${fmt(vids)} videos • Avg ${fmt(vPerVideo)} views per video.`
+    });
+  }
+
+  // 10) FOCUS + TIP (AI picks a focus area)
+  const focusLabel =
+    focus === "retention" ? "Retention Focus" :
+    focus === "conversion" ? "Conversion Focus" :
+    "Reach Focus";
+
+  const focusText =
+    focus === "retention"
+      ? "Main leak looks like retention. Make the first 15s stronger."
+      : (focus === "conversion"
+        ? "Main leak looks like conversion. Turn viewers into subs."
+        : "Main leak looks like reach. Improve clicks and discovery.");
+
   intel.push({
-    icon: HUD_ICONS.strategy, tag: "TIP", type: "yellow",
-    text: randomTip
+    icon: HUD_ICONS.strategy, tag: "AI_FOCUS", type: "yellow",
+    text: `${focusLabel}: ${focusText}`
   });
 
-  // 7. TRIVIA (Purple)
-  const randomFact = YT_FACTS[Math.floor(Math.random() * YT_FACTS.length)];
-  intel.push({
-    icon: HUD_ICONS.bulb, tag: "FACT", type: "purple",
-    text: randomFact
-  });
+  const tip = pick(YT_TIPS[focus] || YT_TIPS.system, seed);
+  intel.push({ icon: HUD_ICONS.strategy, tag: "TIP", type: "yellow", text: `Tip: ${tip}` });
 
-  // Shuffle order (keep System first)
-  const first = intel.shift();
-  return [first, ...intel.sort(() => Math.random() - 0.5)];
+  // 11) TRIVIA (topic-based, deterministic)
+  const trivia = pick(YT_TRIVIA[focus] || YT_TRIVIA.system, seed + 33);
+  intel.push({ icon: HUD_ICONS.bulb, tag: "TRIVIA", type: "purple", text: `Trivia: ${trivia}` });
+
+  // Limit length so it feels curated (AI, not spam)
+  return intel.slice(0, 10);
 }
 
 let intelQueue = [];
 let intelIndex = 0;
+let lastIntelHash = "";
 
 function updateHud(data) {
-  intelQueue = generateIntel(data);
-  intelIndex = 0;
-  
+  // Rebuild intel only if data changed (reduces random feeling)
+  const h = JSON.stringify({
+    a: data?.meta?.analyticsEndDate,
+    b: data?.channel?.subscribers,
+    c: data?.channel?.totalViews,
+    d: data?.weekly?.views,
+    e: data?.weekly?.netSubs,
+    f: data?.m28?.last28?.views
+  });
+
+  if (h !== lastIntelHash) {
+    intelQueue = generateIntel(data);
+    intelIndex = 0;
+    lastIntelHash = h;
+  }
+
   if (!HUD_CONFIG.timer) {
     showNextIntel();
     HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
@@ -701,7 +906,7 @@ function updateHud(data) {
 }
 
 function showNextIntel() {
-  if (intelQueue.length === 0) return;
+  if (!intelQueue.length) return;
 
   const item = intelQueue[intelIndex];
   intelIndex = (intelIndex + 1) % intelQueue.length;
@@ -716,38 +921,38 @@ function showNextIntel() {
   barEl.style.transition = "none";
   barEl.style.width = "0%";
 
-  // Fade Out
+  // Fade out quickly
   msgEl.style.opacity = "0.2";
-  
+
   setTimeout(() => {
-    // Update Content
+    // Update content
     msgEl.textContent = item.text;
     tagEl.textContent = item.tag;
     iconEl.innerHTML = item.icon;
 
-    // Glitch Effect
+    // Glitch in
     msgEl.classList.remove("hud-glitch");
-    void msgEl.offsetWidth; 
+    void msgEl.offsetWidth;
     msgEl.classList.add("hud-glitch");
     msgEl.style.opacity = "1";
 
-    // Set Colors
+    // Color logic
     const c = COLORS[item.type] || COLORS.white;
     tagEl.style.color = c;
     tagEl.style.textShadow = `0 0 10px ${c}`;
+
     boxEl.style.borderLeftColor = c;
+
     barEl.style.background = c;
     barEl.style.boxShadow = `0 0 10px ${c}`;
 
-    // Animate Bar
+    // Start timer bar
     requestAnimationFrame(() => {
       barEl.style.transition = `width ${HUD_CONFIG.interval}ms linear`;
       barEl.style.width = "100%";
     });
-    
-  }, 200);
+  }, 180);
 }
-
 
 (async function init() {
   await load(true);
