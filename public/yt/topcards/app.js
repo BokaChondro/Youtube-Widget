@@ -84,13 +84,12 @@ function triggerBreathing(cardId) {
   const card = document.getElementById(cardId);
   if(!card) return;
   
-  // Reset animation class
+  // Restart Animation
   card.classList.remove('pulse-active');
   void card.offsetWidth; // Force Reflow
   card.classList.add('pulse-active');
 
-  // Pulse lasts 0.5s, we do a few beats then stop
-  // Remove class after 3 seconds
+  // Stop after 3 seconds (let it breathe 2-3 times)
   setTimeout(() => card.classList.remove('pulse-active'), 3000);
 }
 
@@ -122,32 +121,47 @@ function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   numEl.textContent = (decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)))) + suffix;
 }
 
+// --- PHASE 1 SPARKLINE (AREA FILL + BEZIER) ---
 function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
   if(!fillEl || !pathEl) return;
+  
   const vals = (values || []).map(Number);
   if (vals.length < 2) return; 
 
-  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
-  const w = 120, h = 40, pad = 3;
+  const w = 120, h = 40, pad = 0; // Pad 0 for full bleed fill
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max - min || 1;
 
-  const pts = vals.map((v, i) => ({
-    x: (i / (vals.length - 1)) * w,
-    y: h - pad - ((v - min) / span) * (h - pad * 2)
-  }));
+  // Generate points
+  const pts = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((v - min) / span) * h; 
+    return { x, y };
+  });
 
-  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  // 1. Create Line Path (Stroke)
+  let dLine = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
   for (let i = 1; i < pts.length; i++) {
-    const cx = ((pts[i-1].x + pts[i].x) / 2).toFixed(1);
-    const cy = ((pts[i-1].y + pts[i].y) / 2).toFixed(1);
-    d += ` Q ${pts[i-1].x.toFixed(1)} ${pts[i-1].y.toFixed(1)} ${cx} ${cy}`;
+    const p = pts[i - 1];
+    const c = pts[i];
+    const cx = ((p.x + c.x) / 2).toFixed(1);
+    const cy = ((p.y + c.y) / 2).toFixed(1);
+    dLine += ` Q ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${cx} ${cy}`;
   }
-  d += ` T ${pts[pts.length-1].x.toFixed(1)} ${pts[pts.length-1].y.toFixed(1)}`;
+  dLine += ` T ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
 
-  pathEl.setAttribute("d", d);
+  // 2. Create Area Path (Fill)
+  const dArea = `${dLine} L ${w} ${h} L 0 ${h} Z`;
+
+  // Apply
+  pathEl.setAttribute("d", dLine);
   pathEl.style.stroke = COLORS[tier];
-  fillEl.setAttribute("d", `${d} L ${w} ${h} L 0 ${h} Z`);
+  
+  fillEl.setAttribute("d", dArea);
+  // Fill color is handled in CSS/HTML via gradient, but we ensure it's set
 }
 
 function renderPacing(elId, cur, prev, suffix="") {
@@ -164,7 +178,7 @@ function renderPacing(elId, cur, prev, suffix="") {
   safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL (SPEEDOMETER) ---
+// --- CASINO ROLL ---
 function ensureRoll(el) {
   if (el._rollWrap && el._rollCol) return;
   el.textContent = "";
@@ -184,7 +198,6 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   const decimals = opts.decimals ?? 0;
   const suffix = opts.suffix ?? "";
   
-  // On First Load: Force Start at 0
   const start = isFirst ? 0 : Number(fromVal || 0);
   const end = Number(toVal || 0);
 
@@ -197,7 +210,6 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   
   const txt = (val) => (decimals ? fmt1(val/scale) : fmt(Math.round(val/scale))) + suffix;
 
-  // No animation if static update
   if (!isFirst && a === b) {
     col.style.transition = "none";
     col.style.transform = "translateY(0)";
@@ -205,13 +217,13 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
     return;
   }
 
-  // Generate Strip
-  // First load: 0 -> Random -> End
+  // Strip Generation
+  const diff = b - a; 
   let html = "";
   let finalY = 0;
   
+  // First load: Speedometer Blur Effect
   if (isFirst) {
-     // Create a "blur" effect with 4 steps for speed sensation
      const step1 = Math.round(b * 0.2);
      const step2 = Math.round(b * 0.5);
      const step3 = Math.round(b * 0.8);
@@ -222,12 +234,10 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
        <span class="rollLine" style="filter:blur(2px)">${txt(step3)}</span>
        <span class="rollLine">${txt(b)}</span>
      `;
-     finalY = -1.1 * 4; // 4 steps down
+     finalY = -1.1 * 4; 
   } else {
-    // Normal refresh logic (small steps)
-    const diff = b - a; 
+    // Normal refresh
     const absDiff = Math.abs(diff);
-    
     if (absDiff <= 20) {
       const steps = [];
       const dir = diff > 0 ? 1 : -1;
@@ -237,7 +247,6 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
       html = steps.map(v => `<span class="rollLine">${txt(v)}</span>`).join("");
       finalY = -1.1 * absDiff;
     } else {
-      // Big jump refresh
       html = `
         <span class="rollLine">${txt(a)}</span>
         <span class="rollLine" style="filter:blur(2px)">${txt(a + Math.round(diff/2))}</span>
@@ -247,20 +256,34 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
     }
   }
 
-  // 1. Reset Position (Instant)
   col.style.transition = "none";
   col.style.transform = "translateY(0)";
   col.innerHTML = html;
   
-  // 2. Force Paint
-  void col.offsetHeight;
+  void col.offsetHeight; // Force Paint
 
-  // 3. Animate
-  const dur = isFirst ? 1200 : 1500; // Fast for first load
+  const dur = isFirst ? 800 : 1500;
   const easing = isFirst ? "cubic-bezier(0.1, 0.9, 0.2, 1)" : "cubic-bezier(0.2, 0.8, 0.2, 1)";
   
   col.style.transition = `transform ${dur}ms ${easing}`;
   col.style.transform = `translateY(${finalY}em)`;
+}
+
+// --- FLOAT ICON ---
+const SVGS = {
+  subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
+  views:`<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
+  watch:`<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
+};
+
+function spawnFloatIcon(cardId, type) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const el = document.createElement("div");
+  el.className = "floatIcon";
+  el.innerHTML = SVGS[type] || "";
+  card.appendChild(el);
+  setTimeout(() => el.remove(), 5500); 
 }
 
 // --- MAIN RENDER ---
@@ -313,6 +336,7 @@ function render(data, isFirst) {
     safeSetText("subsNextPct", pSubs+"%");
     safeSetStyle("subsProgressFill", "width", pSubs+"%");
     
+    // Trigger Breathe
     triggerBreathing("cardSubs");
 
     // 2. VIEWS
@@ -363,7 +387,7 @@ function render(data, isFirst) {
     animateCasinoRoll(document.getElementById("watchNow"), isFirst ? 0 : state.watch, cur.watch, { isFirst, decimals: cur.watch<100?1:0, suffix:"h" });
     if (!isFirst && cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
 
-    // Half-Time Breathing (30s)
+    // Halftime Breathing (30s)
     clearTimeout(halfTimeTimer);
     halfTimeTimer = setTimeout(() => {
       triggerBreathing("cardSubs");
