@@ -1,7 +1,7 @@
 // functions/api/yt-kpis.js
-// Weekly is ONLY for "This week:" line.
-// Monthly focus (28D windows) for: Last28 / Prev28 / vs Last 6M Avg / Feedback / Sparkline / Main Symbol.
-// Uses edge cache (~55s) so 1-min refresh is safe.
+// Weekly is for "This week" vs "Last week" (Velocity).
+// Monthly focus (28D windows) for: Last28 / Prev28 / vs Last 6M Avg / Feedback / Sparkline.
+// Uses edge cache (~55s).
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -103,10 +103,7 @@ async function fetchAnalyticsRange(token, startDate, endDate) {
 }
 
 function build28dWindows(endDateObj) {
-  // 7 windows:
-  // idx0 = last28 (ends yesterday)
-  // idx1 = prev28, ...
-  // idx6 = prev6
+  // 7 windows: idx0=last28 ... idx6=prev6
   const windows = [];
   for (let i = 0; i < 7; i++) {
     const end_i = shiftDays(endDateObj, -28 * i);
@@ -138,17 +135,23 @@ async function computeKPIs(env) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
 
-  // Use yesterday as end for both weekly + monthly to avoid partial "today"
+  // Use yesterday as end date
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
 
-  // Weekly (7 days ending yesterday)
+  // 1. Current Week (last 7 days)
   const weekStart = isoDate(shiftDays(end, -6));
   const weekEnd = endIso;
   const weekly = await fetchAnalyticsRange(token, weekStart, weekEnd);
 
-  // Monthly 28D windows (7 points for trend)
-  const windows = build28dWindows(end); // idx0..idx6 newest-first
+  // 2. Previous Week (for Velocity calculation)
+  // The 7 days before the current week
+  const prevWeekStart = isoDate(shiftDays(end, -13));
+  const prevWeekEnd = isoDate(shiftDays(end, -7));
+  const prevWeekly = await fetchAnalyticsRange(token, prevWeekStart, prevWeekEnd);
+
+  // 3. Monthly 28D windows (7 points for sparkline/trends)
+  const windows = build28dWindows(end);
 
   const winResults = await Promise.all(
     windows.map((w) =>
@@ -161,7 +164,6 @@ async function computeKPIs(env) {
 
   const last28 = winResults.find((x) => x.idx === 0);
   const prev28 = winResults.find((x) => x.idx === 1);
-
   const prev6 = winResults.filter((x) => x.idx >= 1 && x.idx <= 6);
 
   const medianSubs = median(prev6.map((w) => w.metrics.netSubs));
@@ -172,7 +174,7 @@ async function computeKPIs(env) {
   const avgViews = avg(prev6.map((w) => w.metrics.views));
   const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
 
-  // History for sparkline should be oldest->newest
+  // Sparkline history: oldest -> newest
   const history28d = [...winResults].sort((a,b)=>b.idx-a.idx).map((w)=>({
     startDate: w.startDate,
     endDate: w.endDate,
@@ -191,6 +193,10 @@ async function computeKPIs(env) {
       netSubs: weekly.netSubs,
       views: weekly.views,
       watchHours: weekly.watchHours,
+      // Velocity data
+      prevNetSubs: prevWeekly.netSubs,
+      prevViews: prevWeekly.views,
+      prevWatchHours: prevWeekly.watchHours
     },
 
     m28: {
@@ -208,8 +214,6 @@ async function computeKPIs(env) {
         views: prev28.metrics.views,
         watchHours: prev28.metrics.watchHours,
       },
-
-      // 6 months-ish based on previous 6×28D windows
       avg6m: {
         netSubs: avgSubs,
         views: avgViews,
