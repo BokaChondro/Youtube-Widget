@@ -7,15 +7,14 @@ function fmt(n) { return NF_INT.format(Number(n || 0)); }
 function fmt1(n) { return NF_1.format(Number(n || 0)); }
 function nowStamp() { return new Date().toLocaleTimeString(); }
 
-// STRICT COLOR PALETTE
 const COLORS = {
-  green:  "#00FF00", // Good/Rising
-  red:    "#fe0000", // Warning/Bad
-  blue:   "#0073FF", // Neutral/Channel Facts
-  yellow: "#fdfe02", // Tips
-  purple: "#ab20fd", // Motivation/Nostalgia
-  pink:   "#FF85EF", // Trivia/Fun
-  orange: "#FF9500", // Fallback
+  green:  "#00FF00",
+  red:    "#fe0000",
+  blue:   "#0073FF",
+  yellow: "#fdfe02",
+  purple: "#ab20fd",
+  pink:   "#FF85EF",
+  orange: "#FF9500",
   white:  "#ffffff"
 };
 
@@ -294,10 +293,10 @@ document.querySelectorAll(".card").forEach(card => {
 });
 
 /* ===========================
-   HUD ENGINE (SCI-FI V3)
+   HUD ENGINE (SCI-FI V4 TRACE)
    =========================== */
 
-// SAFELY LOAD STORAGE (Fixes crash)
+// SAFELY LOAD STORAGE
 let shownAt = {};
 try { shownAt = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"); } catch(e) { console.warn("HUD Mem Reset"); }
 
@@ -309,15 +308,15 @@ const HUD_CONFIG = {
 };
 
 const HUD_ICONS = {
-  live: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,
-  target: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>`,
-  rocket: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5z"/></svg>`,
-  warn: `<svg viewBox="0 0 24 24" fill="white"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
-  up: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
-  down: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
-  bulb: `<svg viewBox="0 0 24 24" fill="white"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
-  globe: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.93 9h-3.17a15.7 15.7 0 0 0-1.45-6A8.02 8.02 0 0 1 19.93 11zM12 4c.9 1.3 1.7 3.3 2.1 7H9.9C10.3 7.3 11.1 5.3 12 4zM4.07 13h3.17a15.7 15.7 0 0 0 1.45 6A8.02 8.02 0 0 1 4.07 13zm3.17-2H4.07A8.02 8.02 0 0 1 8.69 5a15.7 15.7 0 0 0-1.45 6zm2.66 2h4.2c-.4 3.7-1.2 5.7-2.1 7-.9-1.3-1.7-3.3-2.1-7zm6.86 6a15.7 15.7 0 0 0 1.45-6h3.17A8.02 8.02 0 0 1 15.31 19z"/></svg>`,
-  chat: `<svg viewBox="0 0 24 24" fill="white"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`,
+  live: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,
+  target: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>`,
+  rocket: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5z"/></svg>`,
+  warn: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
+  up: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
+  down: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
+  bulb: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
+  globe: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.93 9h-3.17a15.7 15.7 0 0 0-1.45-6A8.02 8.02 0 0 1 19.93 11zM12 4c.9 1.3 1.7 3.3 2.1 7H9.9C10.3 7.3 11.1 5.3 12 4zM4.07 13h3.17a15.7 15.7 0 0 0 1.45 6A8.02 8.02 0 0 1 4.07 13zm3.17-2H4.07A8.02 8.02 0 0 1 8.69 5a15.7 15.7 0 0 0-1.45 6zm2.66 2h4.2c-.4 3.7-1.2 5.7-2.1 7-.9-1.3-1.7-3.3-2.1-7zm6.86 6a15.7 15.7 0 0 0 1.45-6h3.17A8.02 8.02 0 0 1 15.31 19z"/></svg>`,
+  chat: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`,
 };
 
 const KB = {
@@ -346,16 +345,47 @@ function secondsToMinSec(s) { const n = Math.floor(Number(s||0)); return `${Math
 function pick(arr) { return arr && arr.length ? arr[Math.floor(Math.random() * arr.length)] : null; }
 function uniqPush(arr, s) { if (!arr.includes(s)) arr.push(s); }
 
+// --- HUD BORDER ANIMATION (Counter Clockwise from Top-Left) ---
 function initHudBorder() {
-  const rect = document.getElementById("hudBorder"); if (!rect) return;
-  // Safety check: if width is 0 (hidden), wait
-  const len = rect.getTotalLength ? rect.getTotalLength() : 400; 
-  if (len === 0) return;
+  const path = document.getElementById("hudTracePath");
+  const box = document.getElementById("hudBox");
+  if (!path || !box) return;
+
+  const w = box.offsetWidth - 2; // -2 for stroke width calc offset
+  const h = box.offsetHeight - 2;
   
-  // Neon Snake effect: 100px dash, followed by gap equal to total length
-  rect.style.strokeDasharray = `100 ${len}`;
-  rect.style.strokeDashoffset = "0"; 
-  // CSS handles the animation loop
+  // Path: Start Top-Left(0,0) -> Down(0,H) -> Right(W,H) -> Up(W,0) -> Left(0,0)
+  // This is CCW direction.
+  // Note: SVG coord 0,0 is top-left.
+  // Path: M 1,1 L 1,H L W,H L W,1 L 1,1 (using 1 to account for half stroke)
+  const d = `M 1 1 L 1 ${h} L ${w} ${h} L ${w} 1 L 1 1`;
+  
+  path.setAttribute("d", d);
+  const len = path.getTotalLength() || 1000;
+  
+  // Reset style for animation start
+  path.style.transition = "none";
+  path.style.strokeDasharray = len;
+  path.style.strokeDashoffset = len; // Hidden start
+}
+
+function animateHudBorder(color) {
+  const path = document.getElementById("hudTracePath");
+  if (!path) return;
+  const len = path.getTotalLength() || 1000;
+
+  path.style.stroke = color;
+  
+  // 1. Reset to empty (hidden)
+  path.style.transition = "none";
+  path.style.strokeDashoffset = len;
+
+  // 2. Animate to full (visible) over 16s
+  // Force reflow
+  void path.offsetWidth;
+  
+  path.style.transition = "stroke-dashoffset 16s linear";
+  path.style.strokeDashoffset = "0";
 }
 
 function buildIntel(data) {
@@ -364,7 +394,6 @@ function buildIntel(data) {
   const churnPct = weekG > 0 ? Math.round((weekL / weekG) * 100) : (weekL > 0 ? 100 : 0);
   const subsPer1k = weekViews > 0 ? (weekNet / weekViews) * 1000 : 0;
   
-  // REAL SIGNALS
   const uploadDaysAgo = (hud.uploads?.latest?.publishedAt && hud.statsThrough) ? daysBetweenISO(hud.uploads.latest.publishedAt, hud.statsThrough) : null;
   if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ key: "warn_gap", cat: "warning", weight: 3, icon: HUD_ICONS.warn, tag: "WARNING", type: "red", text: `UPLOAD BUFFER EMPTY. LAST UPLOAD WAS ${uploadDaysAgo} DAYS AGO.` });
   else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) out.push({ key: "good_gap", cat: "good", weight: 2, icon: HUD_ICONS.up, tag: "RISING", type: "green", text: `CONSISTENCY DETECTED. LAST UPLOAD ${uploadDaysAgo} DAYS AGO.` });
@@ -373,28 +402,24 @@ function buildIntel(data) {
 
   if (weekViews > 0) out.push({ key: "conv", cat: "conversion", weight: 2.6, icon: HUD_ICONS.target, tag: "CONVERSION", type: subsPer1k>=2?"green":"yellow", text: `CONVERSION RATE: ${subsPer1k.toFixed(2)} NET SUBS PER 1K VIEWS.` });
 
-  // CTR
   const thumb = hud.thumb28;
   if (thumb && thumb.ctr) {
     const ctr = thumb.ctr;
     out.push({ key: "ctr", cat: "packaging", weight: 2.1, icon: ctr<2?HUD_ICONS.warn:HUD_ICONS.bulb, tag: ctr<2?"WARNING":"PACKAGING", type: ctr<2?"red":(ctr>8?"green":"yellow"), text: `AVG CTR IS ${ctr.toFixed(1)}%. ${ctr<2?"OPTIMIZE THUMBNAILS.":"HEALTHY METRIC."}` });
   }
 
-  // Retention
   const ret = hud.retention28;
   if (ret && ret.avgViewPercentage) {
     const r = ret.avgViewPercentage;
     out.push({ key: "ret", cat: "retention", weight: 2, icon: r<35?HUD_ICONS.warn:HUD_ICONS.up, tag: r<35?"WARNING":"RETENTION", type: r<35?"red":"green", text: `AVG VIEW PERCENTAGE IS ${r.toFixed(0)}%. ${r<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}` });
   }
 
-  // Latest Video
   const lv = hud.latestVideo;
   if (lv && lv.title) {
     const vViews = Number(lv.views||0);
     out.push({ key: "lv_stat", cat: "video", weight: 2.8, icon: HUD_ICONS.rocket, tag: "LATEST", type: "purple", text: `LATEST UPLOAD: "${lv.title.toUpperCase()}" — ${fmt(vViews)} VIEWS.` });
   }
 
-  // Generic
   const nextSub = getMilestone(Number(ch.subscribers||0), "subs");
   if (nextSub > Number(ch.subscribers||0)) out.push({ key: "goal", cat: "goal", weight: 1.4, icon: HUD_ICONS.target, tag: "MILESTONE", type: "blue", text: `${fmt(nextSub - Number(ch.subscribers))} SUBS REMAINING TO REACH ${fmt(nextSub)}.` });
 
@@ -405,8 +430,6 @@ function buildIntel(data) {
   return out;
 }
 
-let intelQueue = [];
-
 function showNextIntel() {
   const item = intelQueue.length ? intelQueue[Math.floor(Math.random() * intelQueue.length)] : null;
   if (!item) return;
@@ -415,35 +438,36 @@ function showNextIntel() {
   const tag = document.getElementById("hudTag");
   const icon = document.getElementById("hudIcon");
   const box = document.getElementById("hudBox");
-  const border = document.getElementById("hudBorder");
-  const chip = document.getElementById("hudChip");
-
+  
   // Glitch Out
-  if (msg) {
-    msg.classList.remove("glitch-in");
-    msg.style.opacity = "0"; // instant hide before update
-    
-    setTimeout(() => {
-      // Update Content
-      msg.textContent = item.text;
-      tag.textContent = item.tag;
-      icon.innerHTML = item.icon || "⚡";
+  box.classList.remove("glitch-active");
+  msg.style.opacity = "0"; 
+  tag.style.opacity = "0";
+  icon.style.opacity = "0";
 
-      const c = COLORS[item.type] || COLORS.orange;
-      
-      // Update Colors
-      box.style.setProperty("--hud-accent", c);
-      tag.style.color = c;
-      tag.style.textShadow = `0 0 10px ${c}`;
-      border.style.stroke = c;
-      border.style.filter = `drop-shadow(0 0 8px ${c})`;
-      
-      // Glitch In
-      msg.style.opacity = "1";
-      msg.classList.add("glitch-in");
-      
-    }, 200);
-  }
+  setTimeout(() => {
+    // Update
+    msg.textContent = item.text;
+    tag.textContent = item.tag;
+    icon.innerHTML = item.icon || "⚡";
+
+    const c = COLORS[item.type] || COLORS.orange;
+    
+    box.style.setProperty("--hud-accent", c);
+    tag.style.color = c;
+    tag.style.textShadow = `0 0 10px ${c}`;
+    icon.style.color = c; // for fill="currentColor"
+
+    // Restart Trace
+    animateHudBorder(c);
+
+    // Glitch In
+    msg.style.opacity = "1";
+    tag.style.opacity = "1";
+    icon.style.opacity = "1";
+    box.classList.add("glitch-active");
+    
+  }, 200);
 }
 
 function updateHud(data) {
@@ -454,7 +478,7 @@ function updateHud(data) {
       initHudBorder();
       showNextIntel();
       HUD_CONFIG.timer = setInterval(showNextIntel, 16000);
-    }, 1000); // 1s delay to let DOM settle for SVG calc
+    }, 1200);
   }
 }
 
