@@ -1,3 +1,5 @@
+// HUD v3 (2026-02-12) — full ring + 16s + no early "AI active" spam
+
 const NF_INT = new Intl.NumberFormat();
 const NF_1 = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -41,7 +43,6 @@ const FEEDBACK = {
     purple: "Outstanding",
   },
 };
-
 
 // --- DOM HELPERS ---
 function safeSetText(id, text) {
@@ -148,13 +149,12 @@ function hexToRgb(hex) {
   const n = parseInt(full, 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
-
 function rgbaFromHex(hex, a) {
   const { r, g, b } = hexToRgb(hex);
   return `rgba(${r},${g},${b},${a})`;
 }
 
-// --- SPARKLINE GRADIENT (tier -> white) ---
+// --- SPARKLINE GRADIENT ---
 function ensureSparkGradient(svgEl, gradId, tierHex) {
   if (!svgEl) return null;
 
@@ -521,7 +521,6 @@ function render(data, isFirst) {
       triggerGlowOnce("cardWatch");
     }, 30000);
 
-    // HUD update
     updateHud(data);
 
     document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
@@ -557,49 +556,44 @@ document.querySelectorAll(".card").forEach(card => {
   });
 });
 
-
-/* --- HOLO-STREAM HUD ENGINE (AI FEEL + NO REPETITION) --- */
+/* -------------------------
+   HUD LOGIC (REAL 16s)
+-------------------------- */
 const HUD_CONFIG = {
-  interval: 16000,                 // doubled from 8000
+  interval: 16000,
   timer: null,
-  statusCooldownMs: 16000 * 6,     // Status appears rarely (cooldown)
+  // do not show “system status” style lines early
+  warmupMessages: 4,
 };
 
-// White SVG Icons for HUD (fill="white")
 const HUD_ICONS = {
-  status: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2a7 7 0 0 0-7 7v3a3 3 0 0 0 2 2.83V17a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-2.17A3 3 0 0 0 19 12V9a7 7 0 0 0-7-7Zm5 10a1 1 0 0 1-1 1h-1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-4H8a1 1 0 0 1-1-1V9a5 5 0 0 1 10 0v3Z"/></svg>`,
+  signal: `<svg viewBox="0 0 24 24" fill="white"><path d="M4 17h2v-7H4v7zm14 0h2V7h-2v10zM9 17h2V4H9v13zm5 0h2V10h-2v7z"/></svg>`,
   up: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
   down: `<svg viewBox="0 0 24 24" fill="white"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
   warn: `<svg viewBox="0 0 24 24" fill="white"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
-  target: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-13a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>`,
+  goal: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-13a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>`,
   tip: `<svg viewBox="0 0 24 24" fill="white"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
   trivia: `<svg viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg>`,
 };
 
-// simple tags
 const TAG = {
-  Status: "Status",
   Week: "This Week",
-  Compared: "Compared",
+  Compare: "Compared",
   Signal: "Signal",
+  Warning: "Warning",
   Goal: "Goal",
   Tip: "Tip",
   Trivia: "Trivia",
-  Warning: "Warning",
 };
 
 const TRIVIA = [
-  "Trivia: YouTube tests your video with small groups first. If people click and watch, it will show it to more viewers.",
-  "Trivia: Many viewers decide to stay or leave in the first 5 to 15 seconds. A clear hook helps a lot.",
-  "Trivia: If your thumbnail promises one thing, your first seconds should match it. When it matches, people stay longer.",
-  "Trivia: A video series often grows a channel faster than random topics, because viewers know what to expect.",
-  "Trivia: A pinned comment can work like a second title. Use it to guide viewers to your next best video.",
-  "Trivia: If viewers watch another video after yours, YouTube can recommend your channel more often.",
-  "Trivia: Simple titles often win. If the title is confusing, many people will not click.",
-  "Trivia: Cutting small pauses can improve pacing and keep attention longer, even if the video topic is good.",
+  "Trivia: YouTube often tests a video with small groups first. If people click and watch, it shows it to more viewers.",
+  "Trivia: Many viewers decide to stay or leave in the first 5–15 seconds. A strong hook matters a lot.",
+  "Trivia: If your thumbnail promise matches the first seconds of the video, people usually watch longer.",
+  "Trivia: Playlists can increase session time because viewers keep watching related videos.",
+  "Trivia: A pinned comment can work like a second title. Use it to guide people to your next best video.",
 ];
 
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 function pct(cur, prev) {
   const c = Number(cur || 0), p = Number(prev || 0);
   if (!p) return null;
@@ -609,17 +603,8 @@ function signed(n) {
   const x = Number(n || 0);
   return (x >= 0 ? "+" : "") + fmt(x);
 }
-function pick(arr) {
-  if (!arr || !arr.length) return "";
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function shuffleInPlace(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 function eta(diff, perDay) {
   const d = Number(diff || 0);
   const p = Number(perDay || 0);
@@ -631,15 +616,20 @@ function eta(diff, perDay) {
 }
 
 const HUD_STATE = {
-  recentKeys: [],
-  warmupLeft: 3,        // blocks Status right after load/refresh
-  lastStatusAt: 0,
-  lastDataHash: "",
+  warmupLeft: HUD_CONFIG.warmupMessages,
+  lastKey: "",
+  queue: [],
+  idx: 0,
+  lastHash: "",
 };
 
-// Build a smarter queue (many new positive/negative signals)
-function buildIntelQueue(data) {
-  const q = [];
+function buildQueue(data) {
+  const qSignals = [];
+  const qWarnings = [];
+  const qGoals = [];
+  const qTips = [];
+  const qTrivia = [];
+
   const ch = data.channel || {};
   const w = data.weekly || {};
   const m28 = data.m28 || {};
@@ -647,10 +637,7 @@ function buildIntelQueue(data) {
   const prev28 = m28.prev28 || {};
   const avg6m = m28.avg6m || {};
   const hist = data.history28d || [];
-  const meta = data.meta || {};
-
-  const title = ch.title || "your channel";
-  const endDate = meta.analyticsEndDate || w.endDate || "the latest closed day";
+  const d7 = data.daily7d || [];
 
   const weekViews = Number(w.views || 0);
   const weekWatch = Number(w.watchHours || 0);
@@ -658,268 +645,182 @@ function buildIntelQueue(data) {
   const weekG = Number(w.subsGained || 0);
   const weekL = Number(w.subsLost || 0);
 
-  const wowV = pct(weekViews, w.prevViews);
-  const wowW = pct(weekWatch, w.prevWatchHours);
-  const wowS = pct(weekNetSubs, w.prevNetSubs);
-
-  // extra metrics
-  const minsPerView = weekViews > 0 ? roundTo1((weekWatch * 60) / weekViews) : 0;
-  const subsPer1k = weekViews > 0 ? roundTo1((weekNetSubs / weekViews) * 1000) : 0;
-
-  const churnTotal = weekG + weekL;
-  const churnPct = churnTotal > 0 ? Math.round((weekL / churnTotal) * 100) : 0;
-
-  // expected week (from 6m avg 28d -> /4)
-  const expViews = Number(avg6m.views || 0) / 4;
-  const expSubs = Number(avg6m.netSubs || 0) / 4;
-  const expWatch = Number(avg6m.watchHours || 0) / 4;
-
-  // 28d compare
-  const p28V = pct(last28.views, prev28.views);
-  const p28S = pct(last28.netSubs, prev28.netSubs);
-  const p28W = pct(last28.watchHours, prev28.watchHours);
-
-  // trend streak (last 3 28d windows)
-  const last3 = hist.slice(-3);
-  const last3Views = last3.map(x => Number(x.views || 0));
-  const streakUp = last3Views.length === 3 && last3Views[2] > last3Views[1] && last3Views[1] > last3Views[0];
-  const streakDown = last3Views.length === 3 && last3Views[2] < last3Views[1] && last3Views[1] < last3Views[0];
-
-  // volatility (last 6 windows views)
-  const last6 = hist.slice(-6).map(x => Number(x.views || 0)).filter(Number.isFinite);
-  const vol = last6.length ? (Math.max(...last6) - Math.min(...last6)) : 0;
-
-  // --- Status message is RARE and NOT early ---
-  // (we will insert it with random chance below)
-  const statusItem = {
-    icon: HUD_ICONS.status,
-    tag: TAG.Status,
-    type: "blue",
-    text: `System is online for ${title}. Data is updated up to ${endDate}. I will show signals and tips based on this data.`,
-  };
-
-  // --- Week summary (clear) ---
-  q.push({
-    icon: HUD_ICONS.status,
+  // 1) Week summary (always)
+  qSignals.push({
+    icon: HUD_ICONS.signal,
     tag: TAG.Week,
     type: "blue",
-    text: `In the last 7 days you got ${fmt(weekViews)} views and ${fmt1(weekWatch)} watch hours. Your net subscribers changed by ${signed(weekNetSubs)}.`,
+    text: `In the last 7 days, you got ${fmt(weekViews)} views and ${fmt1(weekWatch)} watch hours. Your net subscribers changed by ${signed(weekNetSubs)}.`,
   });
 
-  // --- Gained vs lost (new signal not in cards) ---
+  // 2) gained vs lost + churn %
+  const churnTotal = weekG + weekL;
   if (churnTotal > 0) {
+    const churnPct = Math.round((weekL / churnTotal) * 100);
     const t = churnPct >= 45 ? "red" : (churnPct >= 30 ? "yellow" : "green");
-    q.push({
-      icon: t === "red" ? HUD_ICONS.warn : HUD_ICONS.status,
-      tag: t === "red" ? TAG.Warning : TAG.Signal,
+    const icon = t === "red" ? HUD_ICONS.warn : HUD_ICONS.signal;
+    const tag = t === "red" ? TAG.Warning : TAG.Signal;
+    (t === "red" ? qWarnings : qSignals).push({
+      icon,
+      tag,
       type: t,
-      text: `Subscriber movement detail: you gained ${fmt(weekG)} subscribers but you also lost ${fmt(weekL)}. That means about ${churnPct}% of subscriber movement this week was people leaving.`,
+      text: `Subscriber detail: you gained ${fmt(weekG)} and lost ${fmt(weekL)} this week. That means about ${churnPct}% of subscriber movement was people leaving.`,
     });
   }
 
-  // --- Week compare ---
-  if (wowV !== null || wowW !== null || wowS !== null) {
-    const vTxt = wowV === null ? "views: not enough data" : `views: ${wowV > 0 ? "+" : ""}${wowV}%`;
-    const wTxt = wowW === null ? "watch: not enough data" : `watch: ${wowW > 0 ? "+" : ""}${wowW}%`;
-    const sTxt = wowS === null ? "subs: not enough data" : `subs: ${wowS > 0 ? "+" : ""}${wowS}%`;
-
-    const bad = (wowV !== null && wowV <= -8) || (wowW !== null && wowW <= -8) || (wowS !== null && wowS <= -8);
-    const good = (wowV !== null && wowV >= 8) || (wowW !== null && wowW >= 8) || (wowS !== null && wowS >= 8);
-
-    q.push({
-      icon: good ? HUD_ICONS.up : (bad ? HUD_ICONS.down : HUD_ICONS.status),
-      tag: TAG.Compared,
-      type: good ? "green" : (bad ? "red" : "yellow"),
-      text: `Compared to the previous 7 days, your change is: ${vTxt}, ${wTxt}, and ${sTxt}. This helps you see if your channel is speeding up or slowing down.`,
-    });
-  }
-
-  // --- Watch per view (retention proxy) ---
+  // 3) mins per view (retention proxy)
   if (weekViews > 0) {
+    const minsPerView = (weekWatch * 60) / weekViews;
     const t = minsPerView >= 1.0 ? "green" : (minsPerView >= 0.7 ? "yellow" : "red");
-    q.push({
-      icon: t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.down : HUD_ICONS.status),
-      tag: TAG.Signal,
-      type: t,
-      text: `Retention signal: this week each view gave about ${fmt1(minsPerView)} minutes of watch time. Higher minutes per view usually means people are staying longer.`,
-    });
-  }
-
-  // --- Subs per 1000 views (conversion proxy) ---
-  if (weekViews > 0) {
-    const t = subsPer1k >= 1.2 ? "green" : (subsPer1k >= 0.4 ? "yellow" : "red");
-    q.push({
-      icon: t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.warn : HUD_ICONS.status),
+    const icon = t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.down : HUD_ICONS.signal);
+    (t === "red" ? qWarnings : qSignals).push({
+      icon,
       tag: t === "red" ? TAG.Warning : TAG.Signal,
       type: t,
-      text: `Conversion signal: for every 1,000 views this week, you gained about ${fmt1(subsPer1k)} net subscribers. If this is low, viewers may enjoy the video but not feel the channel is for them.`,
+      text: `Retention signal: each view gave about ${fmt1(minsPerView)} minutes of watch time this week. Higher minutes per view usually means people stay longer.`,
     });
   }
 
-  // --- Expected week vs your usual (new) ---
+  // 4) subs per 1,000 views (conversion)
+  if (weekViews > 0) {
+    const subsPer1k = (weekNetSubs / weekViews) * 1000;
+    const t = subsPer1k >= 1.2 ? "green" : (subsPer1k >= 0.4 ? "yellow" : "red");
+    const icon = t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.warn : HUD_ICONS.signal);
+    (t === "red" ? qWarnings : qSignals).push({
+      icon,
+      tag: t === "red" ? TAG.Warning : TAG.Signal,
+      type: t,
+      text: `Conversion signal: for every 1,000 views, you gained about ${fmt1(subsPer1k)} net subscribers this week. If this is low, add a clear reason to subscribe.`,
+    });
+  }
+
+  // 5) week vs previous week (views / watch / subs)
+  const wowV = pct(w.views, w.prevViews);
+  const wowW = pct(w.watchHours, w.prevWatchHours);
+  const wowS = pct(w.netSubs, w.prevNetSubs);
+  if (wowV !== null || wowW !== null || wowS !== null) {
+    const vTxt = wowV === null ? "views: no compare" : `views: ${wowV > 0 ? "+" : ""}${wowV}%`;
+    const wTxt = wowW === null ? "watch: no compare" : `watch: ${wowW > 0 ? "+" : ""}${wowW}%`;
+    const sTxt = wowS === null ? "subs: no compare" : `subs: ${wowS > 0 ? "+" : ""}${wowS}%`;
+
+    const bad = (wowV !== null && wowV <= -10) || (wowW !== null && wowW <= -10) || (wowS !== null && wowS <= -10);
+    const good = (wowV !== null && wowV >= 10) || (wowW !== null && wowW >= 10) || (wowS !== null && wowS >= 10);
+
+    const t = good ? "green" : (bad ? "red" : "yellow");
+    const icon = good ? HUD_ICONS.up : (bad ? HUD_ICONS.down : HUD_ICONS.signal);
+    (t === "red" ? qWarnings : qSignals).push({
+      icon,
+      tag: TAG.Compare,
+      type: t,
+      text: `Compared to the previous 7 days: ${vTxt}, ${wTxt}, and ${sTxt}. This tells you if your channel is speeding up or slowing down.`,
+    });
+  }
+
+  // 6) usual week vs this week (based on 6m avg 28d / 4)
+  const expViews = Number(avg6m.views || 0) / 4;
   if (expViews > 0) {
-    const diff = weekViews - expViews;
-    const p = Math.round((diff / expViews) * 100);
+    const p = Math.round(((weekViews - expViews) / expViews) * 100);
     const t = p >= 15 ? "green" : (p <= -15 ? "red" : "yellow");
-    q.push({
-      icon: t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.down : HUD_ICONS.status),
+    const icon = t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.down : HUD_ICONS.signal);
+    (t === "red" ? qWarnings : qSignals).push({
+      icon,
       tag: TAG.Signal,
       type: t,
-      text: `Usual-week check: based on your 6-month average, a normal week is about ${fmt(Math.round(expViews))} views. This week you got ${fmt(weekViews)}, which is ${p > 0 ? "+" : ""}${p}% vs normal.`,
+      text: `Usual-week check: a normal week for you is about ${fmt(Math.round(expViews))} views. This week you got ${fmt(weekViews)} (${p > 0 ? "+" : ""}${p}%).`,
     });
   }
 
-  if (expSubs !== 0) {
-    const diff = weekNetSubs - expSubs;
-    const t = diff >= Math.abs(expSubs) * 0.25 ? "green" : (diff <= -Math.abs(expSubs) * 0.25 ? "red" : "yellow");
-    q.push({
-      icon: t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.down : HUD_ICONS.status),
+  // 7) momentum streak (28d windows)
+  const last3 = hist.slice(-3).map(x => Number(x.views || 0));
+  if (last3.length === 3) {
+    const up = last3[2] > last3[1] && last3[1] > last3[0];
+    const down = last3[2] < last3[1] && last3[1] < last3[0];
+    if (up) {
+      qSignals.push({
+        icon: HUD_ICONS.up,
+        tag: TAG.Signal,
+        type: "green",
+        text: `Momentum signal: your last three 28-day view windows are going up. This often means YouTube is finding more viewers for your content.`,
+      });
+    } else if (down) {
+      qWarnings.push({
+        icon: HUD_ICONS.warn,
+        tag: TAG.Warning,
+        type: "red",
+        text: `Momentum warning: your last three 28-day view windows are going down. Try improving one strong video (title + thumbnail + hook).`,
+      });
+    }
+  }
+
+  // 8) best day / worst day this week (from daily7d)
+  if (d7.length >= 4) {
+    const best = [...d7].sort((a,b)=>b.views-a.views)[0];
+    const worst = [...d7].sort((a,b)=>a.views-b.views)[0];
+    qSignals.push({
+      icon: HUD_ICONS.signal,
       tag: TAG.Signal,
-      type: t,
-      text: `Usual-subs check: a normal week for your channel is around ${fmt(Math.round(expSubs))} net subscribers. This week is ${signed(Math.round(weekNetSubs - expSubs))} vs that usual pace.`,
+      type: "blue",
+      text: `Daily pattern: your best day this week was ${best.day} with ${fmt(best.views)} views. Your lowest day was ${worst.day} with ${fmt(worst.views)} views.`,
     });
   }
 
-  // --- 28d trend message (already in cards but now explained) ---
-  if (p28V !== null) {
-    const t = p28V >= 10 ? "green" : (p28V <= -10 ? "red" : "yellow");
-    q.push({
-      icon: t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.down : HUD_ICONS.status),
-      tag: TAG.Compared,
-      type: t,
-      text: `Last 28 days views: you got ${fmt(last28.views)}. Compared to the previous 28 days, it changed by ${p28V > 0 ? "+" : ""}${p28V}%.`,
-    });
-  }
-
-  if (p28W !== null) {
-    const t = p28W >= 10 ? "green" : (p28W <= -10 ? "red" : "yellow");
-    q.push({
-      icon: t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.down : HUD_ICONS.status),
-      tag: TAG.Compared,
-      type: t,
-      text: `Last 28 days watch time: you got ${fmt1(last28.watchHours)} hours. Compared to the previous 28 days, it changed by ${p28W > 0 ? "+" : ""}${p28W}%.`,
-    });
-  }
-
-  if (p28S !== null) {
-    const t = p28S >= 10 ? "green" : (p28S <= -10 ? "red" : "yellow");
-    q.push({
-      icon: t === "green" ? HUD_ICONS.up : (t === "red" ? HUD_ICONS.warn : HUD_ICONS.status),
-      tag: t === "red" ? TAG.Warning : TAG.Compared,
-      type: t,
-      text: `Last 28 days subscribers: your net subscribers were ${signed(last28.netSubs)}. Compared to the previous 28 days, it changed by ${p28S > 0 ? "+" : ""}${p28S}%.`,
-    });
-  }
-
-  // --- Trend streak ---
-  if (streakUp) {
-    q.push({
-      icon: HUD_ICONS.up,
-      tag: TAG.Signal,
-      type: "green",
-      text: `Momentum signal: your last three 28-day view windows are increasing. This usually means YouTube is finding more people for your content.`,
-    });
-  } else if (streakDown) {
-    q.push({
-      icon: HUD_ICONS.warn,
-      tag: TAG.Warning,
-      type: "red",
-      text: `Momentum warning: your last three 28-day view windows are going down. This is a good time to improve one strong video (thumbnail + title + hook) instead of uploading random topics.`,
-    });
-  }
-
-  // --- Volatility ---
-  if (vol > 0) {
-    const t = vol > (last6.reduce((a,b)=>a+b,0) / Math.max(1,last6.length)) ? "yellow" : "blue";
-    q.push({
-      icon: HUD_ICONS.status,
-      tag: TAG.Signal,
-      type: t === "yellow" ? "yellow" : "blue",
-      text: `Stability signal: your 28-day views swing by about ${fmt(vol)} between your lowest and highest recent windows. If you want stable growth, repeat the topic style that made the high window.`,
-    });
-  }
-
-  // --- Goals + ETA ---
+  // 9) Goals + ETA
   const subs = Number(ch.subscribers || 0);
-  const views = Number(ch.totalViews || 0);
-  const watch = Number(data.lifetime?.watchHours || 0);
-
   const nextSub = getMilestone(subs, "subs");
   const subDiff = nextSub - subs;
-  const subPerDay = weekNetSubs > 0 ? weekNetSubs / 7 : 0;
-  const subEta = eta(subDiff, subPerDay);
-
+  const perDaySubs = weekNetSubs > 0 ? weekNetSubs / 7 : 0;
+  const subEta = eta(subDiff, perDaySubs);
   if (subDiff > 0) {
-    let msg = `Goal: your next subscriber milestone is ${fmt(nextSub)}. You need ${fmt(subDiff)} more.`;
-    msg += subEta ? ` If you keep this pace, the estimate is ${subEta}.` : ` If growth is slow, focus on one strong topic and improve it.`;
-    q.push({ icon: HUD_ICONS.target, tag: TAG.Goal, type: "blue", text: msg });
-  }
-
-  const nextV = getMilestone(views, "views");
-  const vDiff = nextV - views;
-  const vPerDay = weekViews > 0 ? weekViews / 7 : 0;
-  const vEta = eta(vDiff, vPerDay);
-  if (vDiff > 0) {
-    q.push({
-      icon: HUD_ICONS.target,
+    qGoals.push({
+      icon: HUD_ICONS.goal,
       tag: TAG.Goal,
       type: "blue",
-      text: `Goal: your next views milestone is ${fmt(nextV)} total views. You need ${fmt(vDiff)} more. ${vEta ? `At your current pace, the estimate is ${vEta}.` : ""}`,
+      text: `Goal: your next subscriber milestone is ${fmt(nextSub)}. You need ${fmt(subDiff)} more. ${subEta ? `If you keep this pace, you may reach it in ${subEta}.` : `If growth is slow, focus on one strong topic and improve it.`}`,
     });
   }
 
-  const nextW = getMilestone(watch, "watch");
-  const wDiff = nextW - watch;
-  if (wDiff > 0) {
-    q.push({
-      icon: HUD_ICONS.target,
-      tag: TAG.Goal,
-      type: "blue",
-      text: `Goal: your next watch milestone is ${fmt(nextW)} hours. You need about ${fmt1(wDiff)} more hours to reach it.`,
-    });
-  }
-
-  // --- Tips (more positive/negative and not shown in cards) ---
+  // 10) Tips based on problems
   const tips = [];
-  if (minsPerView > 0 && minsPerView < 0.8) tips.push("Tip: Improve the first 10 seconds. Show the value first, then explain. Many viewers leave early when the intro is slow.");
-  if (subsPer1k >= 0 && subsPer1k < 0.5) tips.push("Tip: Give one clear reason to subscribe, like: “Subscribe for weekly ___ videos.” Say it after you give value, not at the start.");
+  if (weekNetSubs < 0) tips.push("Tip: If net subscribers is negative, your topic may attract the wrong audience. Try a tighter topic series for the right viewers.");
   if (wowV !== null && wowV <= -10) tips.push("Tip: When views drop, upgrade the thumbnail and title of one good video. Small changes can bring discovery back.");
-  if (weekNetSubs < 0) tips.push("Tip: If net subs is negative, your video topic may be pulling the wrong audience. Try a tighter topic series for the right people.");
-  if (!tips.length) tips.push("Tip: Pick one winning topic and make a small series. A series makes people come back because they know what you post.");
-
-  q.push({
+  tips.push("Tip: Put the main value in the first 10 seconds. Then explain. A slow intro makes many viewers leave early.");
+  tips.push("Tip: After you give value, say one clear reason to subscribe, like: “Subscribe for weekly ___ videos.”");
+  qTips.push({
     icon: HUD_ICONS.tip,
     tag: TAG.Tip,
     type: "yellow",
     text: pick(tips),
   });
 
-  // --- Trivia (always) ---
-  q.push({
+  // 11) Trivia always
+  qTrivia.push({
     icon: HUD_ICONS.trivia,
     tag: TAG.Trivia,
     type: "purple",
     text: pick(TRIVIA),
   });
 
-  // Random chance to include Status (rare)
-  if (Math.random() < 0.22) q.push(statusItem);
+  // --------- BUILD FINAL ORDER (NOT RANDOM SPAM) ----------
+  // We will rotate like:
+  // Warning (if exists) -> Signal -> Signal -> Goal -> Tip -> Trivia -> repeat
+  const final = [];
+  let wi = 0, si = 0, gi = 0, ti = 0, ri = 0;
 
-  // Shuffle so it feels random (not repeating same order)
-  shuffleInPlace(q);
+  while (final.length < 18) {
+    if (qWarnings.length && final.length < 18) { final.push(qWarnings[wi++ % qWarnings.length]); }
+    if (qSignals.length && final.length < 18) { final.push(qSignals[si++ % qSignals.length]); }
+    if (qSignals.length && final.length < 18) { final.push(qSignals[si++ % qSignals.length]); }
+    if (qGoals.length   && final.length < 18) { final.push(qGoals[gi++ % qGoals.length]); }
+    if (qTips.length    && final.length < 18) { final.push(qTips[ti++ % qTips.length]); }
+    if (qTrivia.length  && final.length < 18) { final.push(qTrivia[ri++ % qTrivia.length]); }
+    if (!qWarnings.length && !qSignals.length && !qGoals.length) break;
+  }
 
-  // Keep queue size healthy
-  return q.slice(0, 16);
+  return final.slice(0, 18);
 }
 
-function roundTo1(n) { return Math.round(Number(n || 0) * 10) / 10; }
-
-let intelQueue = [];
-let intelIndex = 0;
-
 function updateHud(data) {
-  // Data hash so queue refresh feels "AI", not random spam
-  const h = JSON.stringify({
+  const hash = JSON.stringify({
     d: data?.meta?.analyticsEndDate,
     s: data?.channel?.subscribers,
     v: data?.channel?.totalViews,
@@ -928,107 +829,68 @@ function updateHud(data) {
     wh: data?.weekly?.watchHours,
   });
 
-  // Rebuild queue only when data changes
-  if (h !== HUD_STATE.lastDataHash) {
-    intelQueue = buildIntelQueue(data);
-    intelIndex = Math.floor(Math.random() * Math.max(1, intelQueue.length));
-    HUD_STATE.warmupLeft = 3; // block Status right after refresh
-    HUD_STATE.lastDataHash = h;
+  if (hash !== HUD_STATE.lastHash) {
+    HUD_STATE.queue = buildQueue(data);
+    HUD_STATE.idx = 0;
+    HUD_STATE.lastHash = hash;
+    HUD_STATE.warmupLeft = HUD_CONFIG.warmupMessages;
   }
 
   if (!HUD_CONFIG.timer) {
-    showNextIntel();
+    showNextIntel(); // first message immediately
     HUD_CONFIG.timer = setInterval(showNextIntel, HUD_CONFIG.interval);
   }
 }
 
-function pickNextIntel() {
-  if (!intelQueue.length) return null;
-
-  const now = Date.now();
-  for (let tries = 0; tries < intelQueue.length; tries++) {
-    const item = intelQueue[intelIndex];
-    intelIndex = (intelIndex + 1) % intelQueue.length;
-
-    // make Status rare and never early
-    if (item.tag === TAG.Status) {
-      if (HUD_STATE.warmupLeft > 0) continue;
-      if ((now - HUD_STATE.lastStatusAt) < HUD_CONFIG.statusCooldownMs) continue;
-    }
-
-    const key = `${item.tag}|${item.text.slice(0, 50)}`;
-    if (HUD_STATE.recentKeys.includes(key)) continue;
-
-    // accept
-    HUD_STATE.recentKeys.push(key);
-    if (HUD_STATE.recentKeys.length > 5) HUD_STATE.recentKeys.shift();
-
-    if (item.tag === TAG.Status) HUD_STATE.lastStatusAt = now;
-    if (HUD_STATE.warmupLeft > 0) HUD_STATE.warmupLeft--;
-
-    return item;
-  }
-
-  // fallback
-  return intelQueue[0];
-}
-
 function showNextIntel() {
-  const item = pickNextIntel();
-  if (!item) return;
+  const q = HUD_STATE.queue || [];
+  if (!q.length) return;
 
-  // reshuffle at loop boundary for more randomness
-  if (intelIndex === 0 && intelQueue.length > 3) shuffleInPlace(intelQueue);
+  const item = q[HUD_STATE.idx % q.length];
+  HUD_STATE.idx++;
 
   const msgEl = document.getElementById("hudMessage");
   const tagEl = document.getElementById("hudTag");
   const iconEl = document.getElementById("hudIcon");
-  const barEl = document.getElementById("hudTimerFill");
-  const boxEl = document.getElementById("hudBox");
+  const ringEl = document.getElementById("hudRingProg");
 
-  // pick color
   const c = COLORS[item.type] || COLORS.white;
 
-  // 1) Reset ring progress cleanly
-  boxEl.classList.add("hud-no-trans");
-  boxEl.style.setProperty("--hud-color", c);
-  boxEl.style.setProperty("--hud-dur", `${HUD_CONFIG.interval}ms`);
-  boxEl.style.setProperty("--hud-p", "0");
-  void boxEl.offsetWidth;
-  boxEl.classList.remove("hud-no-trans");
+  // prevent early “system” spam by forcing early messages to NOT be the same style
+  // (in this v3 we already removed "AI active" lines; warmup is kept for future)
+  if (HUD_STATE.warmupLeft > 0) HUD_STATE.warmupLeft--;
 
-  // 2) Reset bar
-  barEl.style.transition = "none";
-  barEl.style.width = "0%";
-
-  // 3) Fade out
+  // Fade out
   msgEl.style.opacity = "0.2";
 
+  // --- reset ring immediately ---
+  if (ringEl) {
+    ringEl.style.transition = "none";
+    ringEl.style.stroke = c;
+    ringEl.style.filter = `drop-shadow(0 0 6px ${c})`;
+    ringEl.style.strokeDasharray = "100";
+    ringEl.style.strokeDashoffset = "100";
+    void ringEl.getBoundingClientRect();
+  }
+
   setTimeout(() => {
-    // 4) Update content
     msgEl.textContent = item.text;
     tagEl.textContent = item.tag;
     iconEl.innerHTML = item.icon;
 
-    // 5) Glitch in
     msgEl.classList.remove("hud-glitch");
     void msgEl.offsetWidth;
     msgEl.classList.add("hud-glitch");
     msgEl.style.opacity = "1";
 
-    // Tag glow
     tagEl.style.color = c;
     tagEl.style.textShadow = `0 0 10px ${c}`;
 
-    // 6) Start ring + bar timer
-    requestAnimationFrame(() => {
-      boxEl.style.setProperty("--hud-p", "1");
-
-      barEl.style.background = c;
-      barEl.style.boxShadow = `0 0 10px ${c}`;
-      barEl.style.transition = `width ${HUD_CONFIG.interval}ms linear`;
-      barEl.style.width = "100%";
-    });
+    // animate ring for full duration (16s)
+    if (ringEl) {
+      ringEl.style.transition = `stroke-dashoffset ${HUD_CONFIG.interval}ms linear`;
+      ringEl.style.strokeDashoffset = "0";
+    }
   }, 220);
 }
 
