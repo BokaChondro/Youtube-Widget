@@ -39,11 +39,11 @@ function tierArrow(tier) {
   return "⟰⟰";
 }
 
-function tierFromBaseline(last28, median6m, absMin, minPct) {
+function tierFromBaseline(last28, median6m, absMin) {
   const L = Number(last28 || 0);
   const B = Number(median6m || 0);
   if (B <= 0) return L > absMin ? "green" : "orange";
-  
+
   const ratio = L / B;
   if (ratio < 0.7) return "red";
   if (ratio < 0.9) return "orange";
@@ -55,14 +55,16 @@ function tierFromBaseline(last28, median6m, absMin, minPct) {
 
 function getMilestone(val, type) {
   const v = Number(val || 0);
-  if(v < 0) return 100;
-  if (type === 'watch') {
+  if (v < 0) return 100;
+
+  if (type === "watch") {
     if (v < 100) return 100;
-    if (v < 4000) return 4000; 
+    if (v < 4000) return 4000;
     if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
     return Math.ceil((v + 1) / 5000) * 5000;
   }
-  if (v < 1000) return Math.ceil((v + 1) / 100) * 100; 
+
+  if (v < 1000) return Math.ceil((v + 1) / 100) * 100;
   if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
   if (v < 100000) return Math.ceil((v + 1) / 10000) * 10000;
   return Math.ceil((v + 1) / 100000) * 100000;
@@ -74,28 +76,16 @@ async function fetchJSON(url) {
   return r.json();
 }
 
+// --- THEME + UI SETTERS ---
 function setCardTheme(cardId, tier) {
   const card = document.getElementById(cardId);
-  if(!card) return;
-  card.style.setProperty('--c-tier', COLORS[tier] || COLORS.yellow);
-}
-
-function triggerBreathing(cardId) {
-  const card = document.getElementById(cardId);
-  if(!card) return;
-  
-  // Restart Animation
-  card.classList.remove('pulse-active');
-  void card.offsetWidth; // Force Reflow
-  card.classList.add('pulse-active');
-
-  // Stop after 3 seconds (let it breathe 2-3 times)
-  setTimeout(() => card.classList.remove('pulse-active'), 3000);
+  if (!card) return;
+  card.style.setProperty("--c-tier", COLORS[tier] || COLORS.yellow);
 }
 
 function setChip(dotId, chipTextId, tier, text) {
   const dot = document.getElementById(dotId);
-  if(dot) {
+  if (dot) {
     dot.style.background = COLORS[tier];
     dot.style.boxShadow = `0 0 10px ${COLORS[tier]}`;
   }
@@ -104,7 +94,7 @@ function setChip(dotId, chipTextId, tier, text) {
 
 function setMainArrow(elId, tier) {
   const el = document.getElementById(elId);
-  if(!el) return;
+  if (!el) return;
   el.textContent = tierArrow(tier);
   el.style.color = "var(--c-tier)";
   el.style.textShadow = "0 0 15px var(--c-tier)";
@@ -113,36 +103,47 @@ function setMainArrow(elId, tier) {
 function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   const numEl = document.getElementById(elNumId);
   const arrEl = document.getElementById(elArrowId);
-  if(!numEl || !arrEl) return;
+  if (!numEl || !arrEl) return;
+
   const d = Number(delta || 0);
   numEl.className = d > 0 ? "vsNum pos" : (d < 0 ? "vsNum neg" : "vsNum neu");
   arrEl.className = d > 0 ? "vsArrow pos" : (d < 0 ? "vsArrow neg" : "vsArrow neu");
   arrEl.textContent = d > 0 ? "↑" : (d < 0 ? "↓" : "–");
-  numEl.textContent = (decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)))) + suffix;
+
+  const absTxt = decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)));
+  numEl.textContent = absTxt + suffix;
 }
 
-// --- PHASE 1 SPARKLINE (AREA FILL + BEZIER) ---
+function hexToRgba(hex, a) {
+  const h = (hex || "").replace("#", "");
+  const full = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+  const n = parseInt(full, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// --- SPARKLINE (AREA FILL + BEZIER) ---
 function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
-  if(!fillEl || !pathEl) return;
-  
-  const vals = (values || []).map(Number);
-  if (vals.length < 2) return; 
+  if (!fillEl || !pathEl) return;
 
-  const w = 120, h = 40, pad = 0; // Pad 0 for full bleed fill
+  const vals = (values || []).map(Number);
+  if (vals.length < 2) return;
+
+  const w = 120, h = 40;
   const min = Math.min(...vals);
   const max = Math.max(...vals);
   const span = max - min || 1;
 
-  // Generate points
   const pts = vals.map((v, i) => {
     const x = (i / (vals.length - 1)) * w;
-    const y = h - ((v - min) / span) * h; 
+    const y = h - ((v - min) / span) * h;
     return { x, y };
   });
 
-  // 1. Create Line Path (Stroke)
   let dLine = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
   for (let i = 1; i < pts.length; i++) {
     const p = pts[i - 1];
@@ -153,24 +154,22 @@ function setSpark(fillId, pathId, values, tier) {
   }
   dLine += ` T ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
 
-  // 2. Create Area Path (Fill)
   const dArea = `${dLine} L ${w} ${h} L 0 ${h} Z`;
 
-  // Apply
   pathEl.setAttribute("d", dLine);
   pathEl.style.stroke = COLORS[tier];
-  
+
   fillEl.setAttribute("d", dArea);
-  // Fill color is handled in CSS/HTML via gradient, but we ensure it's set
+  fillEl.style.fill = hexToRgba(COLORS[tier], 0.18);
 }
 
-function renderPacing(elId, cur, prev, suffix="") {
-  const c = Number(cur||0), p = Number(prev||0);
+function renderPacing(elId, cur, prev, suffix = "") {
+  const c = Number(cur || 0), p = Number(prev || 0);
   const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
-  
+
   let pctHtml = "";
-  if(pct > 0) pctHtml = `<span style="color:var(--c-green); font-size:0.9em;">(+${pct}%)</span>`;
-  else if(pct < 0) pctHtml = `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>`;
+  if (pct > 0) pctHtml = `<span style="color:var(--c-green); font-size:0.9em;">(+${pct}%)</span>`;
+  else if (pct < 0) pctHtml = `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>`;
   else pctHtml = `<span style="color:#666; font-size:0.9em;">(—)</span>`;
 
   const left = `<div><span style="opacity:0.6; margin-right:4px;">Last 7D:</span><b>${fmt(c)}${suffix}</b> ${pctHtml}</div>`;
@@ -180,7 +179,9 @@ function renderPacing(elId, cur, prev, suffix="") {
 
 // --- CASINO ROLL ---
 function ensureRoll(el) {
+  if (!el) return;
   if (el._rollWrap && el._rollCol) return;
+
   el.textContent = "";
   const wrap = document.createElement("span");
   wrap.className = "rollWrap";
@@ -192,88 +193,102 @@ function ensureRoll(el) {
   el._rollCol = col;
 }
 
+function setRollInstant(el, text) {
+  if (!el) return;
+  ensureRoll(el);
+  const col = el._rollCol;
+  col.style.transition = "none";
+  col.style.transform = "translateY(0)";
+  col.innerHTML = `<span class="rollLine">${text}</span>`;
+}
+
 function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
-  if(!el) return;
-  const isFirst = !!opts.isFirst;
+  if (!el) return;
   const decimals = opts.decimals ?? 0;
   const suffix = opts.suffix ?? "";
-  
-  const start = isFirst ? 0 : Number(fromVal || 0);
+
+  const start = Number(fromVal || 0);
   const end = Number(toVal || 0);
 
   ensureRoll(el);
   const col = el._rollCol;
-  
+
   const scale = Math.pow(10, decimals);
   const a = Math.round(start * scale);
   const b = Math.round(end * scale);
-  
-  const txt = (val) => (decimals ? fmt1(val/scale) : fmt(Math.round(val/scale))) + suffix;
 
-  if (!isFirst && a === b) {
-    col.style.transition = "none";
-    col.style.transform = "translateY(0)";
-    col.innerHTML = `<span class="rollLine">${txt(a)}</span>`;
+  const txt = (val) => {
+    const n = val / scale;
+    return (decimals ? fmt1(n) : fmt(Math.round(n))) + suffix;
+  };
+
+  if (a === b) {
+    setRollInstant(el, txt(b));
     return;
   }
 
-  // Strip Generation
-  const diff = b - a; 
+  const diff = b - a;
+  const absDiff = Math.abs(diff);
+
   let html = "";
   let finalY = 0;
-  
-  // First load: Speedometer Blur Effect
-  if (isFirst) {
-     const step1 = Math.round(b * 0.2);
-     const step2 = Math.round(b * 0.5);
-     const step3 = Math.round(b * 0.8);
-     html = `
-       <span class="rollLine">0</span>
-       <span class="rollLine" style="filter:blur(4px)">${txt(step1)}</span>
-       <span class="rollLine" style="filter:blur(3px)">${txt(step2)}</span>
-       <span class="rollLine" style="filter:blur(2px)">${txt(step3)}</span>
-       <span class="rollLine">${txt(b)}</span>
-     `;
-     finalY = -1.1 * 4; 
+
+  if (absDiff <= 20) {
+    const steps = [];
+    const dir = diff > 0 ? 1 : -1;
+    for (let i = 0; i <= absDiff; i++) steps.push(a + (i * dir));
+    html = steps.map(v => `<span class="rollLine">${txt(v)}</span>`).join("");
+    finalY = -1.1 * absDiff;
   } else {
-    // Normal refresh
-    const absDiff = Math.abs(diff);
-    if (absDiff <= 20) {
-      const steps = [];
-      const dir = diff > 0 ? 1 : -1;
-      for (let i = 0; i <= absDiff; i++) {
-        steps.push(a + (i * dir));
-      }
-      html = steps.map(v => `<span class="rollLine">${txt(v)}</span>`).join("");
-      finalY = -1.1 * absDiff;
-    } else {
-      html = `
-        <span class="rollLine">${txt(a)}</span>
-        <span class="rollLine" style="filter:blur(2px)">${txt(a + Math.round(diff/2))}</span>
-        <span class="rollLine">${txt(b)}</span>
-      `;
-      finalY = -1.1 * 2;
-    }
+    html = `
+      <span class="rollLine">${txt(a)}</span>
+      <span class="rollLine" style="filter:blur(2px)">${txt(a + Math.round(diff / 2))}</span>
+      <span class="rollLine">${txt(b)}</span>
+    `;
+    finalY = -1.1 * 2;
   }
 
   col.style.transition = "none";
   col.style.transform = "translateY(0)";
   col.innerHTML = html;
-  
-  void col.offsetHeight; // Force Paint
 
-  const dur = isFirst ? 800 : 1500;
-  const easing = isFirst ? "cubic-bezier(0.1, 0.9, 0.2, 1)" : "cubic-bezier(0.2, 0.8, 0.2, 1)";
-  
-  col.style.transition = `transform ${dur}ms ${easing}`;
+  void col.offsetHeight;
+
+  col.style.transition = `transform 800ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
   col.style.transform = `translateY(${finalY}em)`;
+}
+
+// --- SPEEDOMETER (FAST 0 -> value) ---
+function animateSpeedometer(el, toVal, opts = {}) {
+  if (!el) return;
+
+  const decimals = opts.decimals ?? 0;
+  const suffix = opts.suffix ?? "";
+  const duration = opts.duration ?? 650;
+
+  const endVal = Number(toVal || 0);
+  if (el._spdRaf) cancelAnimationFrame(el._spdRaf);
+
+  const t0 = performance.now();
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+  const renderText = (v) => (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
+
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / duration);
+    const v = endVal * easeOutCubic(p);
+    el.textContent = renderText(v);
+    if (p < 1) el._spdRaf = requestAnimationFrame(tick);
+  };
+
+  el._spdRaf = requestAnimationFrame(tick);
 }
 
 // --- FLOAT ICON ---
 const SVGS = {
   subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
-  views:`<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
-  watch:`<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
+  views: `<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
+  watch: `<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
 };
 
 function spawnFloatIcon(cardId, type) {
@@ -283,32 +298,31 @@ function spawnFloatIcon(cardId, type) {
   el.className = "floatIcon";
   el.innerHTML = SVGS[type] || "";
   card.appendChild(el);
-  setTimeout(() => el.remove(), 5500); 
+  setTimeout(() => el.remove(), 5500);
 }
 
 // --- MAIN RENDER ---
 let state = { subs: 0, views: 0, watch: 0 };
-let halfTimeTimer = null;
 
 function render(data, isFirst) {
   try {
     const ch = data.channel || {};
     if (ch.logo) {
       const v = `url("${ch.logo}")`;
-      document.querySelectorAll('.card').forEach(c => c.style.setProperty("--logo-url", v));
+      document.querySelectorAll(".card").forEach(c => c.style.setProperty("--logo-url", v));
     }
 
     const cur = {
       subs: Number(ch.subscribers || 0),
       views: Number(ch.totalViews || 0),
-      watch: Number(data.lifetime?.watchHours || 0)
+      watch: Number(data.lifetime?.watchHours || 0),
     };
-    
+
     // Entrance Anim
     if (isFirst) {
-      document.querySelectorAll('.card').forEach((c, i) => {
+      document.querySelectorAll(".card").forEach((c, i) => {
         c.style.animationDelay = `${i * 100}ms`;
-        c.classList.add('card-enter');
+        c.classList.add("card-enter");
       });
     }
 
@@ -319,87 +333,96 @@ function render(data, isFirst) {
     const avg6m = data.m28?.avg6m || {};
     const hist = data.history28d || [];
 
-    // 1. SUBS
-    const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30, 0.1);
+    // 1) SUBS
+    const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
     setCardTheme("cardSubs", tSubs);
     setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]);
     setMainArrow("subsMainArrow", tSubs);
-    setSpark("subsSparkFill", "subsSparkPath", hist.map(x=>x.netSubs), tSubs);
+    setSpark("subsSparkFill", "subsSparkPath", hist.map(x => x.netSubs), tSubs);
     renderPacing("subsWeek", weekly.netSubs, weekly.prevNetSubs);
-    setVsRG("subsVsNum", "subsVsArrow", (last28.netSubs||0) - (avg6m.netSubs||0));
-    safeSetText("subsLast28", (Number(last28.netSubs)>=0?"+":"")+fmt(last28.netSubs));
-    safeSetText("subsPrev28", (Number(prev28.netSubs)>=0?"+":"")+fmt(prev28.netSubs));
+    setVsRG("subsVsNum", "subsVsArrow", (last28.netSubs || 0) - (avg6m.netSubs || 0));
+    safeSetText("subsLast28", (Number(last28.netSubs) >= 0 ? "+" : "") + fmt(last28.netSubs));
+    safeSetText("subsPrev28", (Number(prev28.netSubs) >= 0 ? "+" : "") + fmt(prev28.netSubs));
 
-    const gSubs = getMilestone(cur.subs, 'subs');
-    const pSubs = Math.min(100, (cur.subs/gSubs)*100).toFixed(1);
+    const gSubs = getMilestone(cur.subs, "subs");
+    const pSubs = Math.min(100, (cur.subs / gSubs) * 100).toFixed(1);
     safeSetText("subsNextGoal", fmt(gSubs));
-    safeSetText("subsNextPct", pSubs+"%");
-    safeSetStyle("subsProgressFill", "width", pSubs+"%");
-    
-    // Trigger Breathe
-    triggerBreathing("cardSubs");
+    safeSetText("subsNextPct", pSubs + "%");
+    safeSetStyle("subsProgressFill", "width", pSubs + "%");
 
-    // 2. VIEWS
-    const tViews = tierFromBaseline(last28.views, med6m.views, 25000, 0.1);
+    // 2) VIEWS
+    const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
     setCardTheme("cardViews", tViews);
     setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]);
     setMainArrow("viewsMainArrow", tViews);
-    setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x=>x.views), tViews);
+    setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x => x.views), tViews);
     renderPacing("viewsWeek", weekly.views, weekly.prevViews);
-    setVsRG("viewsVsNum", "viewsVsArrow", (last28.views||0) - (avg6m.views||0));
+    setVsRG("viewsVsNum", "viewsVsArrow", (last28.views || 0) - (avg6m.views || 0));
     safeSetText("viewsLast28", fmt(last28.views));
     safeSetText("viewsPrev28", fmt(prev28.views));
 
-    const gViews = getMilestone(cur.views, 'views');
-    const pViews = Math.min(100, (cur.views/gViews)*100).toFixed(1);
+    const gViews = getMilestone(cur.views, "views");
+    const pViews = Math.min(100, (cur.views / gViews) * 100).toFixed(1);
     safeSetText("viewsNextGoal", fmt(gViews));
-    safeSetText("viewsNextPct", pViews+"%");
-    safeSetStyle("viewsProgressFill", "width", pViews+"%");
+    safeSetText("viewsNextPct", pViews + "%");
+    safeSetStyle("viewsProgressFill", "width", pViews + "%");
 
-    triggerBreathing("cardViews");
-
-    // 3. WATCH
-    const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50, 0.1);
+    // 3) WATCH
+    const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
     setCardTheme("cardWatch", tWatch);
     setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]);
     setMainArrow("watchMainArrow", tWatch);
-    setSpark("watchSparkFill", "watchSparkPath", hist.map(x=>x.watchHours), tWatch);
+    setSpark("watchSparkFill", "watchSparkPath", hist.map(x => x.watchHours), tWatch);
     renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
-    setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours||0) - (avg6m.watchHours||0), 1, "h");
-    safeSetText("watchLast28", fmt(last28.watchHours)+"h");
-    safeSetText("watchPrev28", fmt(prev28.watchHours)+"h");
+    setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (avg6m.watchHours || 0), 1, "h");
+    safeSetText("watchLast28", fmt(last28.watchHours) + "h");
+    safeSetText("watchPrev28", fmt(prev28.watchHours) + "h");
 
-    const gWatch = getMilestone(cur.watch, 'watch');
-    const pWatch = Math.min(100, (cur.watch/gWatch)*100).toFixed(1);
+    const gWatch = getMilestone(cur.watch, "watch");
+    const pWatch = Math.min(100, (cur.watch / gWatch) * 100).toFixed(1);
     safeSetText("watchNextGoal", fmt(gWatch));
-    safeSetText("watchNextPct", pWatch+"%");
-    safeSetStyle("watchProgressFill", "width", pWatch+"%");
+    safeSetText("watchNextPct", pWatch + "%");
+    safeSetStyle("watchProgressFill", "width", pWatch + "%");
 
-    triggerBreathing("cardWatch");
+    // --- COUNTERS: speedometer on first load, casino roll only if increased by >= 1 on refresh ---
+    const subsEl = document.getElementById("subsNow");
+    if (isFirst) {
+      animateSpeedometer(subsEl, cur.subs, { duration: 650 });
+    } else if ((cur.subs - state.subs) >= 1) {
+      animateCasinoRoll(subsEl, state.subs, cur.subs, { decimals: 0, suffix: "" });
+      spawnFloatIcon("cardSubs", "subs");
+    } else {
+      setRollInstant(subsEl, fmt(cur.subs));
+    }
 
-    // --- ANIMATIONS ---
-    animateCasinoRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subs, cur.subs, { isFirst });
-    if (!isFirst && cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs");
+    const viewsEl = document.getElementById("viewsTotal");
+    if (isFirst) {
+      animateSpeedometer(viewsEl, cur.views, { duration: 650 });
+    } else if ((cur.views - state.views) >= 1) {
+      animateCasinoRoll(viewsEl, state.views, cur.views, { decimals: 0, suffix: "" });
+      spawnFloatIcon("cardViews", "views");
+    } else {
+      setRollInstant(viewsEl, fmt(cur.views));
+    }
 
-    animateCasinoRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.views, cur.views, { isFirst });
-    if (!isFirst && cur.views > state.views) spawnFloatIcon("cardViews", "views");
+    const watchEl = document.getElementById("watchNow");
+    const wDec = cur.watch < 100 ? 1 : 0;
+    const watchTxt = (n) => (wDec ? fmt1(n) : fmt(Math.round(n))) + "h";
 
-    animateCasinoRoll(document.getElementById("watchNow"), isFirst ? 0 : state.watch, cur.watch, { isFirst, decimals: cur.watch<100?1:0, suffix:"h" });
-    if (!isFirst && cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
-
-    // Halftime Breathing (30s)
-    clearTimeout(halfTimeTimer);
-    halfTimeTimer = setTimeout(() => {
-      triggerBreathing("cardSubs");
-      triggerBreathing("cardViews");
-      triggerBreathing("cardWatch");
-    }, 30000);
+    if (isFirst) {
+      animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: wDec, suffix: "h" });
+    } else if ((cur.watch - state.watch) >= 1) {
+      animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h" });
+      spawnFloatIcon("cardWatch", "watch");
+    } else {
+      setRollInstant(watchEl, watchTxt(cur.watch));
+    }
 
     state = cur;
+
     document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
     document.getElementById("toast").classList.add("show");
     setTimeout(() => document.getElementById("toast").classList.remove("show"), 2000);
-
   } catch (err) {
     console.error(err);
     document.getElementById("updated").textContent = "ERR: " + err.message;
@@ -417,14 +440,14 @@ async function load(isFirst) {
 }
 
 // 3D Tilt
-document.querySelectorAll('.card').forEach(card => {
-  card.addEventListener('mousemove', (e) => {
+document.querySelectorAll(".card").forEach(card => {
+  card.addEventListener("mousemove", (e) => {
     const r = card.getBoundingClientRect();
     const x = ((e.clientY - r.top) / r.height - 0.5) * -10;
     const y = ((e.clientX - r.left) / r.width - 0.5) * 10;
     card.style.transform = `perspective(1000px) rotateX(${x}deg) rotateY(${y}deg) scale(1.02)`;
   });
-  card.addEventListener('mouseleave', () => {
+  card.addEventListener("mouseleave", () => {
     card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`;
   });
 });
