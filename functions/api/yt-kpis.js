@@ -1,12 +1,7 @@
 // functions/api/yt-kpis.js
-// Weekly KPIs + 6-month weekly average baseline.
-// Card needs:
-// - Subs: current, thisWeekNet, avg6mNet
-// - Views: total, thisWeekViews, avg6mViews
-// - Watch: lifetime totalHours, thisWeekHours, avg6mHours
-// Also returns: channel.logo (for background), spark history (last 8 weeks)
-//
-// Uses edge cache (~55s) so 1-min refresh doesn't hammer YouTube APIs.
+// Weekly is ONLY for "This week:" line.
+// Monthly focus (28D windows) for: Last28 / Prev28 / vs Last 6M Avg / Feedback / Sparkline / Main Symbol.
+// Uses edge cache (~55s) so 1-min refresh is safe.
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -18,16 +13,29 @@ function shiftDays(dateObj, deltaDays) {
   return d;
 }
 
+function round1(n) {
+  return Math.round(Number(n || 0) * 10) / 10;
+}
+
+function median(nums) {
+  const arr = (nums || []).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+  if (!arr.length) return 0;
+  const mid = Math.floor(arr.length/2);
+  return arr.length % 2 ? arr[mid] : (arr[mid-1] + arr[mid]) / 2;
+}
+
+function avg(nums) {
+  const arr = (nums || []).map(Number).filter(Number.isFinite);
+  if (!arr.length) return 0;
+  return arr.reduce((a,b)=>a+b,0) / arr.length;
+}
+
 function safeStartDateFromPublishedAt(publishedAt) {
   if (!publishedAt) return "2006-01-01";
   const d = new Date(publishedAt);
   if (Number.isNaN(d.getTime())) return "2006-01-01";
   const iso = isoDate(d);
   return iso < "2006-01-01" ? "2006-01-01" : iso;
-}
-
-function round1(n) {
-  return Math.round(Number(n || 0) * 10) / 10;
 }
 
 async function getAccessToken(env) {
@@ -54,19 +62,12 @@ async function fetchChannelBasics(token) {
   url.searchParams.set("part", "snippet,statistics");
   url.searchParams.set("mine", "true");
 
-  const r = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const r = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
   const data = await r.json();
   const ch = data.items?.[0];
 
   const thumbs = ch?.snippet?.thumbnails || {};
-  const logo =
-    thumbs.high?.url ||
-    thumbs.medium?.url ||
-    thumbs.default?.url ||
-    "";
+  const logo = thumbs.high?.url || thumbs.medium?.url || thumbs.default?.url || "";
 
   return {
     channelId: ch?.id || null,
@@ -78,166 +79,156 @@ async function fetchChannelBasics(token) {
   };
 }
 
-async function fetchAnalyticsDaily(token, startDate, endDate) {
+async function fetchAnalyticsRange(token, startDate, endDate) {
   const q = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   q.searchParams.set("ids", "channel==MINE");
   q.searchParams.set("startDate", startDate);
   q.searchParams.set("endDate", endDate);
-  q.searchParams.set("dimensions", "day");
-  q.searchParams.set("sort", "day");
-  q.searchParams.set(
-    "metrics",
-    "views,estimatedMinutesWatched,subscribersGained,subscribersLost"
-  );
+  q.searchParams.set("metrics", "views,estimatedMinutesWatched,subscribersGained,subscribersLost");
 
-  const r = await fetch(q.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const r = await fetch(q.toString(), { headers: { Authorization: `Bearer ${token}` } });
   const data = await r.json();
-  const rows = data.rows || [];
-  // columns: day, views, minutes, gained, lost
-  const map = new Map();
-  for (const row of rows) {
-    const day = row[0];
-    map.set(day, {
-      views: Number(row[1] || 0),
-      minutes: Number(row[2] || 0),
-      gained: Number(row[3] || 0),
-      lost: Number(row[4] || 0),
+
+  const row = data.rows?.[0] || [0, 0, 0, 0];
+  const views = Number(row[0] || 0);
+  const minutes = Number(row[1] || 0);
+  const gained = Number(row[2] || 0);
+  const lost = Number(row[3] || 0);
+
+  return {
+    views,
+    watchHours: round1(minutes / 60),
+    netSubs: gained - lost,
+  };
+}
+
+function build28dWindows(endDateObj) {
+  // 7 windows:
+  // idx0 = last28 (ends yesterday)
+  // idx1 = prev28, ...
+  // idx6 = prev6
+  const windows = [];
+  for (let i = 0; i < 7; i++) {
+    const end_i = shiftDays(endDateObj, -28 * i);
+    const start_i = shiftDays(end_i, -27);
+    windows.push({
+      idx: i,
+      startDate: isoDate(start_i),
+      endDate: isoDate(end_i),
     });
   }
-  return map;
+  return windows; // newest-first
 }
 
 async function fetchLifetimeWatchHours(token, publishedAt, endIso) {
   const startIso = safeStartDateFromPublishedAt(publishedAt);
-
   const q = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   q.searchParams.set("ids", "channel==MINE");
   q.searchParams.set("startDate", startIso);
   q.searchParams.set("endDate", endIso);
   q.searchParams.set("metrics", "estimatedMinutesWatched");
 
-  const r = await fetch(q.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
+  const r = await fetch(q.toString(), { headers: { Authorization: `Bearer ${token}` } });
   const data = await r.json();
   const minutes = Number(data.rows?.[0]?.[0] || 0);
   return { startIso, totalHours: round1(minutes / 60) };
-}
-
-function buildWeeklyTotals(dailyMap, endDateObj, weekCount) {
-  // week 0: last 7 days ending on endDateObj (inclusive)
-  // week 1: the 7 days before that, etc.
-  const weeks = [];
-  for (let w = 0; w < weekCount; w++) {
-    const weekEnd = shiftDays(endDateObj, -7 * w);
-    const weekStart = shiftDays(weekEnd, -6);
-
-    let views = 0;
-    let minutes = 0;
-    let gained = 0;
-    let lost = 0;
-
-    for (let i = 0; i < 7; i++) {
-      const d = shiftDays(weekStart, i);
-      const key = isoDate(d);
-      const m = dailyMap.get(key);
-      if (m) {
-        views += m.views;
-        minutes += m.minutes;
-        gained += m.gained;
-        lost += m.lost;
-      }
-    }
-
-    weeks.push({
-      idx: w,
-      startDate: isoDate(weekStart),
-      endDate: isoDate(weekEnd),
-      views,
-      watchHours: round1(minutes / 60),
-      netSubs: gained - lost,
-    });
-  }
-  return weeks; // [week0, week1, ...]
-}
-
-function avg(nums) {
-  const arr = (nums || []).map(Number).filter((x) => Number.isFinite(x));
-  if (!arr.length) return 0;
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 async function computeKPIs(env) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
 
-  // Define "this week" as last 7 FULL days ending yesterday (avoids partial today data)
+  // Use yesterday as end for both weekly + monthly to avoid partial "today"
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
 
-  // We need 27 weeks (this week + previous 26 weeks) => 189 days
-  const start = shiftDays(end, -(189 - 1));
-  const startIso = isoDate(start);
+  // Weekly (7 days ending yesterday)
+  const weekStart = isoDate(shiftDays(end, -6));
+  const weekEnd = endIso;
+  const weekly = await fetchAnalyticsRange(token, weekStart, weekEnd);
 
-  const dailyMap = await fetchAnalyticsDaily(token, startIso, endIso);
+  // Monthly 28D windows (7 points for trend)
+  const windows = build28dWindows(end); // idx0..idx6 newest-first
 
-  // weeks[0] = this week, weeks[1] = previous week ... weeks[26]
-  const weeks = buildWeeklyTotals(dailyMap, end, 27);
+  const winResults = await Promise.all(
+    windows.map((w) =>
+      fetchAnalyticsRange(token, w.startDate, w.endDate).then((m) => ({
+        ...w,
+        metrics: m,
+      }))
+    )
+  );
 
-  const thisWeek = weeks[0];
-  const prevWeek = weeks[1];
+  const last28 = winResults.find((x) => x.idx === 0);
+  const prev28 = winResults.find((x) => x.idx === 1);
 
-  // 6M avg = average of previous 26 weeks (exclude this week)
-  const baselineWeeks = weeks.slice(1, 27); // 26 weeks
+  const prev6 = winResults.filter((x) => x.idx >= 1 && x.idx <= 6);
 
-  const avgSubs = avg(baselineWeeks.map((w) => w.netSubs));
-  const avgViews = avg(baselineWeeks.map((w) => w.views));
-  const avgWatch = avg(baselineWeeks.map((w) => w.watchHours));
+  const medianSubs = median(prev6.map((w) => w.metrics.netSubs));
+  const medianViews = median(prev6.map((w) => w.metrics.views));
+  const medianWatch = median(prev6.map((w) => w.metrics.watchHours));
 
-  // Spark history: last 8 weeks (week7..week0) oldest->newest
-  const spark = weeks.slice(0, 8).reverse(); // week7..week0
+  const avgSubs = avg(prev6.map((w) => w.metrics.netSubs));
+  const avgViews = avg(prev6.map((w) => w.metrics.views));
+  const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
+
+  // History for sparkline should be oldest->newest
+  const history28d = [...winResults].sort((a,b)=>b.idx-a.idx).map((w)=>({
+    startDate: w.startDate,
+    endDate: w.endDate,
+    netSubs: w.metrics.netSubs,
+    views: w.metrics.views,
+    watchHours: w.metrics.watchHours,
+  }));
 
   const life = await fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
 
   return {
     channel: ch,
-    week: { startDate: thisWeek.startDate, endDate: thisWeek.endDate },
-    baseline6m: { weeks: 26, type: "avg" },
-
-    subs: {
-      current: ch.subscribers,
-      thisWeekNet: thisWeek.netSubs,
-      prevWeekNet: prevWeek.netSubs,
-      avg6mNet: avgSubs,
+    weekly: {
+      startDate: weekStart,
+      endDate: weekEnd,
+      netSubs: weekly.netSubs,
+      views: weekly.views,
+      watchHours: weekly.watchHours,
     },
 
-    views: {
-      total: ch.totalViews,
-      thisWeek: thisWeek.views,
-      prevWeek: prevWeek.views,
-      avg6m: avgViews,
+    m28: {
+      last28: {
+        startDate: last28.startDate,
+        endDate: last28.endDate,
+        netSubs: last28.metrics.netSubs,
+        views: last28.metrics.views,
+        watchHours: last28.metrics.watchHours,
+      },
+      prev28: {
+        startDate: prev28.startDate,
+        endDate: prev28.endDate,
+        netSubs: prev28.metrics.netSubs,
+        views: prev28.metrics.views,
+        watchHours: prev28.metrics.watchHours,
+      },
+
+      // 6 months-ish based on previous 6×28D windows
+      avg6m: {
+        netSubs: avgSubs,
+        views: avgViews,
+        watchHours: avgWatch,
+      },
+      median6m: {
+        netSubs: medianSubs,
+        views: medianViews,
+        watchHours: medianWatch,
+      },
     },
 
-    watch: {
-      lifetimeStart: life.startIso,
-      totalHours: life.totalHours,
-      thisWeekHours: thisWeek.watchHours,
-      prevWeekHours: prevWeek.watchHours,
-      avg6mHours: avgWatch,
+    lifetime: {
+      startDate: life.startIso,
+      endDate: endIso,
+      watchHours: life.totalHours,
     },
 
-    // 8-week spark points (oldest->newest)
-    spark: spark.map((w) => ({
-      startDate: w.startDate,
-      endDate: w.endDate,
-      netSubs: w.netSubs,
-      views: w.views,
-      watchHours: w.watchHours,
-    })),
+    history28d,
   };
 }
 
