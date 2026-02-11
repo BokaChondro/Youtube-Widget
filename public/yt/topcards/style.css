@@ -1,0 +1,327 @@
+:root{
+  --bg:#191919;
+  --border:#2a2a2a;
+  --text:#ffffff;
+  --muted:rgba(255,255,255,.7);
+
+  --yt:#ff0033;
+
+  --c-red:#ff3b30;
+  --c-orange:#ff9f0a;
+  --c-yellow:#ffd60a;
+  --c-green:#34c759;
+  --c-blue:#0a84ff;
+  --c-purple:#bf5af2;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto;
+}
+
+.wrap{
+  width:100%;
+  padding:14px;
+  position:relative;
+  overflow:hidden;
+}
+
+/* --- YouTube heartbeat pulse layer --- */
+.ytPulse{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:.9;
+}
+.ytPulse::before{
+  content:"";
+  position:absolute;
+  width:520px;
+  height:520px;
+  left:-220px;
+  top:-240px;
+  background: radial-gradient(circle at 50% 50%, rgba(255,0,51,.22), transparent 60%);
+  filter: blur(2px);
+  animation: pulseBreath 2.1s ease-in-out infinite;
+}
+@keyframes pulseBreath{
+  0%,100%{ transform: scale(1); opacity:.55; }
+  50%{ transform: scale(1.06); opacity:.85; }
+}
+.ytPulse::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  top:22px;
+  height:44px;
+  background:
+    linear-gradient(90deg, transparent, rgba(255,0,51,.18), transparent);
+  transform: translateX(-60%);
+  opacity:.35;
+  animation: heartbeatSweep 3.2s ease-in-out infinite;
+}
+@keyframes heartbeatSweep{
+  0%{ transform: translateX(-60%); opacity:0; }
+  15%{ opacity:.35; }
+  55%{ transform: translateX(60%); opacity:.28; }
+  100%{ transform: translateX(60%); opacity:0; }
+}
+
+/* --- Toast (Updated ✓) --- */
+.toast{
+  position:absolute;
+  top:12px;
+  right:12px;
+  z-index:50;
+  padding:8px 12px;
+  border-radius:999px;
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.10);
+  backdrop-filter: blur(6px);
+  font-size:12px;
+  opacity:0;
+  transform: translateY(-6px) scale(.98);
+  transition: opacity .22s ease, transform .22s ease;
+}
+.toast.show{
+  opacity:1;
+  transform: translateY(0) scale(1);
+}
+.toast .ok{
+  color: rgba(255,255,255,.92);
+}
+
+.grid{
+  width:100%;
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap:14px;
+  position:relative;
+  z-index:2;
+}
+
+@media (max-width: 900px){
+  .grid{ grid-template-columns: 1fr; }
+}
+
+.card{
+  position:relative;
+  background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:16px;
+  overflow:hidden;
+  transform: translateZ(0);
+  animation: popIn .55s ease both;
+}
+.card:nth-child(1){ animation-delay: 0ms; }
+.card:nth-child(2){ animation-delay: 90ms; }
+.card:nth-child(3){ animation-delay: 180ms; }
+
+@keyframes popIn{
+  from{ opacity:0; transform: translateY(10px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+
+.card:hover{
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,.18);
+}
+
+.card::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background:
+    radial-gradient(700px 220px at 20% 0%, rgba(255,0,51,.18), transparent 55%),
+    radial-gradient(420px 240px at 80% 20%, rgba(255,0,51,.10), transparent 60%);
+  opacity:.9;
+  pointer-events:none;
+}
+
+.cardTop{
+  position:relative;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  z-index:2;
+}
+
+.left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+
+.iconBox{
+  width:36px;
+  height:36px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.10);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: rgba(255,255,255,.04);
+  flex: 0 0 auto;
+}
+
+.redGlow{
+  animation: glowPulse 2.2s ease-in-out infinite;
+}
+@keyframes glowPulse{
+  0%,100%{ box-shadow: 0 0 0 rgba(255,0,51,0); }
+  50%{ box-shadow: 0 0 18px rgba(255,0,51,.22); }
+}
+
+.icon{
+  width:20px;
+  height:20px;
+  fill: rgba(255,255,255,.88);
+}
+
+.titles{ min-width:0; }
+
+.title{
+  font-size:14px;
+  font-weight:650;
+  letter-spacing:.2px;
+}
+
+.subtitle{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:2px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.midRow{
+  position:relative;
+  z-index:2;
+  margin-top:12px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.bigNumber{
+  font-size:38px;
+  font-weight:780;
+  letter-spacing:-.6px;
+}
+
+.spark{
+  width:120px;
+  height:36px;
+  opacity:.9;
+}
+.spark path{
+  fill:none;
+  stroke: rgba(255,255,255,.40);
+  stroke-width:2.2;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  filter: drop-shadow(0 0 10px rgba(255,0,51,.10));
+}
+
+.baselineLine{
+  position:relative;
+  z-index:2;
+  margin-top:8px;
+  font-size:12px;
+  color: rgba(255,255,255,.62);
+}
+
+.metaRow{
+  position:relative;
+  z-index:2;
+  margin-top:10px;
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap:10px;
+}
+
+.metaItem{
+  padding:10px;
+  border-radius:14px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+}
+
+.metaLabel{
+  font-size:11px;
+  color: rgba(255,255,255,.62);
+}
+
+.metaValue{
+  margin-top:4px;
+  font-size:13px;
+  font-weight:650;
+}
+
+.chip{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 10px;
+  border-radius:999px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.08);
+  font-size:12px;
+  white-space:nowrap;
+  user-select:none;
+  animation: chipFloat 3.4s ease-in-out infinite;
+}
+@keyframes chipFloat{
+  0%,100%{ transform: translateY(0); }
+  50%{ transform: translateY(-1px); }
+}
+
+.dot{
+  width:9px;
+  height:9px;
+  border-radius:999px;
+  background: var(--c-yellow);
+  box-shadow: 0 0 10px rgba(255,255,255,.06);
+  animation: dotPulse 1.6s ease-in-out infinite;
+}
+@keyframes dotPulse{
+  0%,100%{ transform: scale(1); opacity:.9; }
+  50%{ transform: scale(1.18); opacity:1; }
+}
+
+.chipText{ opacity:.92; font-weight:600; }
+
+.shine{
+  position:absolute;
+  top:-30%;
+  left:-40%;
+  width:60%;
+  height:160%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
+  transform: rotate(12deg);
+  animation: shine 4.8s ease-in-out infinite;
+  pointer-events:none;
+  opacity:.55;
+}
+@keyframes shine{
+  0%{ transform: translateX(-20%) rotate(12deg); opacity:.0; }
+  30%{ opacity:.55; }
+  50%{ transform: translateX(190%) rotate(12deg); opacity:.35; }
+  100%{ transform: translateX(190%) rotate(12deg); opacity:0; }
+}
+
+.foot{
+  margin-top:10px;
+  text-align:center;
+  font-size:12px;
+  color: rgba(255,255,255,.55);
+}
