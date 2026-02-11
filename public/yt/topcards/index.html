@@ -7,9 +7,7 @@
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <!-- Ambient Background Blobs -->
-  <div class="ambient-light"></div>
-
+  
   <div class="wrap">
     <div class="toast" id="toast">Updated ✓</div>
 
@@ -40,7 +38,6 @@
             <span id="subsNow">—</span>
             <span class="mainArrow" id="subsMainArrow">—</span>
           </div>
-          <!-- Area Sparkline: Fill + Stroke -->
           <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none">
             <defs>
               <linearGradient id="gradSubs" x1="0" x2="0" y1="0" y2="1">
@@ -53,7 +50,7 @@
           </svg>
         </div>
 
-        <!-- Milestone Progress (Gamification) -->
+        <!-- Goal -->
         <div class="milestoneBox">
           <div class="milestoneText">
             <span>Next Goal: <b id="subsNextGoal">—</b></span>
@@ -123,6 +120,17 @@
           </svg>
         </div>
 
+        <!-- Goal -->
+        <div class="milestoneBox">
+          <div class="milestoneText">
+            <span>Next Goal: <b id="viewsNextGoal">—</b></span>
+            <span id="viewsNextPct">0%</span>
+          </div>
+          <div class="progressBg">
+            <div class="progressFill" id="viewsProgressFill"></div>
+          </div>
+        </div>
+
         <div class="weekLine" id="viewsWeek">This week: —</div>
 
         <div class="metaRow">
@@ -180,6 +188,17 @@
             <path id="watchSparkFill" d="" fill="url(#gradWatch)" />
             <path id="watchSparkPath" d="" fill="none" />
           </svg>
+        </div>
+
+        <!-- Goal -->
+        <div class="milestoneBox">
+          <div class="milestoneText">
+            <span>Next Goal: <b id="watchNextGoal">—</b></span>
+            <span id="watchNextPct">0%</span>
+          </div>
+          <div class="progressBg">
+            <div class="progressFill" id="watchProgressFill"></div>
+          </div>
         </div>
 
         <div class="weekLine" id="watchWeek">This week: —</div>
