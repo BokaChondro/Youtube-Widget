@@ -46,7 +46,7 @@ body {
   border-radius: 20px;
   padding: 20px;
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.8);
+  box-shadow: 0 4px 30px rgba(0,0,0,0.8);
   transition: transform 0.1s ease-out, box-shadow 0.3s ease;
   transform-style: preserve-3d;
   --logo-url: none;
@@ -70,7 +70,7 @@ body {
 
 .card:hover {
   z-index: 10;
-  box-shadow: 0 18px 50px -10px rgba(0,0,0,0.95), 0 0 18px var(--glass-highlight);
+  box-shadow: 0 20px 60px -10px rgba(0,0,0,0.95), 0 0 20px var(--glass-highlight);
 }
 
 /* LOGO WATERMARK */
@@ -114,7 +114,7 @@ body {
   content: ""; position: absolute; top: -60px; right: -60px; width: 180px; height: 180px;
   background: radial-gradient(circle, var(--c-tier) 0%, transparent 70%);
   opacity: 0.08;
-  filter: blur(40px); z-index: 0; pointer-events: none;
+  filter: blur(50px); z-index: 0; pointer-events: none;
 }
 
 /* --- CONTENT --- */
@@ -163,7 +163,7 @@ body {
 }
 .mainArrow { font-size: 20px; transform: translateY(-2px); }
 
-.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 3px var(--c-tier)); }
+.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 4px var(--c-tier)); }
 .spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 
 .milestoneBox { margin-bottom: 12px; }
@@ -204,7 +204,7 @@ body {
 
 .floatIcon {
   position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff;
-  filter: drop-shadow(0 0 6px rgba(255,255,255,0.9)); pointer-events: none; z-index: 20;
+  filter: drop-shadow(0 0 8px rgba(255,255,255,0.9)); pointer-events: none; z-index: 20;
   transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards;
 }
 @keyframes floatSequence {
@@ -233,8 +233,8 @@ body {
   border-radius: 12px;
   padding: 14px 20px;
   overflow: hidden;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 24px -10px rgba(0,0,0,0.8);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.8);
   display: flex;
   flex-direction: column;
 
@@ -264,7 +264,7 @@ body {
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
 
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--hud-accent) 70%, transparent));
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--hud-accent) 70%, transparent));
 
   /* IMPORTANT: full ring fill in 16s */
   animation: hudRingFill var(--hud-interval) linear infinite;
@@ -280,7 +280,7 @@ body {
   position: absolute;
   top: 0; left: -50%;
   width: 20%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
   transform: skewX(-20deg);
   pointer-events: none;
   z-index: 1;
@@ -384,40 +384,4 @@ body {
 @media (max-width: 600px) {
   .hud-box { margin-top: 15px; padding: 12px; }
   .hud-message { font-size: 12px; -webkit-line-clamp: 3; }
-}
-
-/* ===========================
-   PERFORMANCE: hidden tab + reduced motion
-   =========================== */
-
-/* When Notion tab is hidden, pause the heavy/continuous visuals */
-html.is-hidden .glare,
-html.is-hidden .hud-scanline,
-html.is-hidden .card::before,
-html.is-hidden .hud-glitch {
-  animation-play-state: paused !important;
-}
-
-html.is-hidden .spark { filter: none !important; }
-html.is-hidden .hud-box { backdrop-filter: none; }
-
-/* Also cheapen the most expensive blend/filter while hidden (not visible anyway) */
-html.is-hidden .card::before {
-  mix-blend-mode: normal;
-  opacity: 0.45;
-}
-
-/* Respect OS accessibility setting */
-@media (prefers-reduced-motion: reduce) {
-  .card { transition: none !important; }
-  .progressFill { transition: none !important; }
-  .card::before,
-  .glare,
-  .hud-scanline,
-  .hud-ring rect,
-  .hud-glitch,
-  .card-enter,
-  .floatIcon {
-    animation: none !important;
-  }
 }
