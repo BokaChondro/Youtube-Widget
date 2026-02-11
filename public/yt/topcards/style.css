@@ -3,7 +3,6 @@
   --border:#2a2a2a;
   --text:#ffffff;
   --muted:rgba(255,255,255,.7);
-
   --yt:#ff0033;
 
   --c-red:#ff3b30;
@@ -12,6 +11,10 @@
   --c-green:#34c759;
   --c-blue:#0a84ff;
   --c-purple:#bf5af2;
+
+  --pos:#34c759;
+  --neg:#ff3b30;
+  --neu:rgba(255,255,255,.55);
 }
 
 *{box-sizing:border-box}
@@ -29,7 +32,6 @@ body{
   overflow:hidden;
 }
 
-/* --- YouTube heartbeat pulse layer --- */
 .ytPulse{
   position:absolute;
   inset:0;
@@ -44,7 +46,6 @@ body{
   left:-220px;
   top:-240px;
   background: radial-gradient(circle at 50% 50%, rgba(255,0,51,.22), transparent 60%);
-  filter: blur(2px);
   animation: pulseBreath 2.1s ease-in-out infinite;
 }
 @keyframes pulseBreath{
@@ -58,8 +59,7 @@ body{
   right:0;
   top:22px;
   height:44px;
-  background:
-    linear-gradient(90deg, transparent, rgba(255,0,51,.18), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,0,51,.18), transparent);
   transform: translateX(-60%);
   opacity:.35;
   animation: heartbeatSweep 3.2s ease-in-out infinite;
@@ -71,7 +71,7 @@ body{
   100%{ transform: translateX(60%); opacity:0; }
 }
 
-/* --- Toast (Updated ✓) --- */
+/* Toast */
 .toast{
   position:absolute;
   top:12px;
@@ -87,13 +87,7 @@ body{
   transform: translateY(-6px) scale(.98);
   transition: opacity .22s ease, transform .22s ease;
 }
-.toast.show{
-  opacity:1;
-  transform: translateY(0) scale(1);
-}
-.toast .ok{
-  color: rgba(255,255,255,.92);
-}
+.toast.show{ opacity:1; transform: translateY(0) scale(1); }
 
 .grid{
   width:100%;
@@ -103,19 +97,19 @@ body{
   position:relative;
   z-index:2;
 }
-
 @media (max-width: 900px){
   .grid{ grid-template-columns: 1fr; }
 }
 
+/* Cards */
 .card{
   position:relative;
+  isolation:isolate;
   background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
   border:1px solid var(--border);
   border-radius:18px;
   padding:16px;
   overflow:hidden;
-  transform: translateZ(0);
   animation: popIn .55s ease both;
 }
 .card:nth-child(1){ animation-delay: 0ms; }
@@ -132,15 +126,38 @@ body{
   border-color: rgba(255,255,255,.18);
 }
 
+/* Red mood */
 .card::before{
   content:"";
   position:absolute;
   inset:-2px;
+  z-index:0;
   background:
     radial-gradient(700px 220px at 20% 0%, rgba(255,0,51,.18), transparent 55%),
     radial-gradient(420px 240px at 80% 20%, rgba(255,0,51,.10), transparent 60%);
   opacity:.9;
   pointer-events:none;
+}
+
+/* Channel logo beat background */
+.card::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:1;
+  background-image: var(--logo-url);
+  background-repeat:no-repeat;
+  background-position:center;
+  background-size: 115%;
+  opacity:.07;
+  filter: grayscale(100%) contrast(120%);
+  transform: scale(1);
+  animation: logoBeat 3.2s ease-in-out infinite;
+  pointer-events:none;
+}
+@keyframes logoBeat{
+  0%,100%{ transform: scale(1); opacity:.06; }
+  50%{ transform: scale(1.09); opacity:.085; }
 }
 
 .cardTop{
@@ -170,10 +187,7 @@ body{
   background: rgba(255,255,255,.04);
   flex: 0 0 auto;
 }
-
-.redGlow{
-  animation: glowPulse 2.2s ease-in-out infinite;
-}
+.redGlow{ animation: glowPulse 2.2s ease-in-out infinite; }
 @keyframes glowPulse{
   0%,100%{ box-shadow: 0 0 0 rgba(255,0,51,0); }
   50%{ box-shadow: 0 0 18px rgba(255,0,51,.22); }
@@ -184,22 +198,22 @@ body{
   height:20px;
   fill: rgba(255,255,255,.88);
 }
+.emojiIcon{
+  font-size:18px;
+  line-height:1;
+  transform: translateY(1px);
+}
 
 .titles{ min-width:0; }
-
 .title{
   font-size:14px;
   font-weight:650;
   letter-spacing:.2px;
 }
-
 .subtitle{
   font-size:12px;
   color:var(--muted);
   margin-top:2px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
 }
 
 .midRow{
@@ -216,6 +230,14 @@ body{
   font-size:38px;
   font-weight:780;
   letter-spacing:-.6px;
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+}
+.mainArrow{
+  font-size:18px;
+  font-weight:800;
+  opacity:.95;
 }
 
 .spark{
@@ -232,12 +254,12 @@ body{
   filter: drop-shadow(0 0 10px rgba(255,0,51,.10));
 }
 
-.baselineLine{
+.weekLine{
   position:relative;
   z-index:2;
   margin-top:8px;
   font-size:12px;
-  color: rgba(255,255,255,.62);
+  color: rgba(255,255,255,.70);
 }
 
 .metaRow{
@@ -265,7 +287,18 @@ body{
   margin-top:4px;
   font-size:13px;
   font-weight:650;
+  display:flex;
+  align-items:center;
+  gap:8px;
 }
+
+.vsNum.pos{ color: var(--pos); }
+.vsNum.neg{ color: var(--neg); }
+.vsNum.neu{ color: var(--neu); }
+
+.vsArrow.pos{ color: var(--pos); }
+.vsArrow.neg{ color: var(--neg); }
+.vsArrow.neu{ color: var(--neu); }
 
 .chip{
   display:flex;
@@ -306,6 +339,7 @@ body{
   left:-40%;
   width:60%;
   height:160%;
+  z-index:2;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
   transform: rotate(12deg);
   animation: shine 4.8s ease-in-out infinite;
