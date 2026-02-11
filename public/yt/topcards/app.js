@@ -1,4 +1,8 @@
-function fmt(n) { return Intl.NumberFormat().format(Number(n || 0)); }
+const NF_INT = new Intl.NumberFormat();
+const NF_1 = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+function fmt(n) { return NF_INT.format(Number(n || 0)); }
+function fmt1(n) { return NF_1.format(Number(n || 0)); }
 function nowStamp() { return new Date().toLocaleString(); }
 
 function getCss(varName) {
@@ -41,7 +45,6 @@ const FEEDBACK = {
   },
 };
 
-// main symbol mapping
 function tierArrow(tier) {
   if (tier === "red" || tier === "orange") return "↓";
   if (tier === "yellow") return "–";
@@ -50,7 +53,7 @@ function tierArrow(tier) {
   return "⟰⟰";
 }
 
-// Tier based on LAST 28D vs baseline MEDIAN of prev 6×28D (stable)
+// Monthly tiering: Last28 vs Median(prev6×28D) (stable)
 function tierFromBaseline(last28, median6m, absMin, minPct) {
   const L = Number(last28 || 0);
   const B = Number(median6m || 0);
@@ -76,7 +79,6 @@ function tierFromBaseline(last28, median6m, absMin, minPct) {
   else if (ratio < 1.6) tier = "blue";
   else tier = "purple";
 
-  // prevent fake blue/purple spikes
   if ((tier === "blue" || tier === "purple") && delta < gate) tier = "green";
   return tier;
 }
@@ -103,7 +105,7 @@ function setMainArrow(elId, tier) {
   el.style.textShadow = `0 0 14px ${color}55`;
 }
 
-// vs last 6M avg: ONLY red/green (no multi-color tiering)
+// vs 6M avg is red/green only (no +/- sign, arrows only)
 function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   const numEl = document.getElementById(elNumId);
   const arrEl = document.getElementById(elArrowId);
@@ -124,8 +126,7 @@ function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   }
 
   const abs = Math.abs(d);
-  const shown = decimals ? abs.toFixed(decimals) : fmt(Math.round(abs));
-  numEl.textContent = shown + suffix;
+  numEl.textContent = (decimals ? abs.toFixed(decimals) : fmt(Math.round(abs))) + suffix;
 }
 
 function setSpark(pathEl, values, strokeColor) {
@@ -178,61 +179,84 @@ function setLogo(url) {
   document.getElementById("cardWatch").style.setProperty("--logo-url", v);
 }
 
+/* Floating icons (white SVG) */
+const ICON_SVG = {
+  subs: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/>
+    </svg>`,
+  views: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
+    </svg>`,
+  watch: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/>
+    </svg>`,
+};
+
+function spawnFloatIcon(cardId, type) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const el = document.createElement("div");
+  el.className = "floatIcon";
+  el.innerHTML = ICON_SVG[type] || "";
+  card.appendChild(el);
+  el.addEventListener("animationend", () => el.remove(), { once: true });
+}
+
 /**
- * Stepped/casino-ish counter:
- * - first load: fast 0 -> target
- * - refresh: slower stepped animation from prev -> next
+ * Casino/rolling animation using setInterval:
+ * - First load: fast (0 -> target)
+ * - Refresh: slower (prev -> next)
  */
-function animateStepped(el, from, to, opts = {}) {
+function animateRoll(el, from, to, opts = {}) {
   const isFirst = !!opts.isFirst;
-  const suffix = opts.suffix || "";
-  const decimals = opts.decimals || 0;
+  const decimals = opts.decimals ?? 0;
+  const suffix = opts.suffix ?? "";
 
-  // durations: first is faster, refresh is slower
-  const duration = isFirst ? 700 : 1600;
-
-  const a = Number(from || 0);
-  const b = Number(to || 0);
-  const diff = b - a;
-  const absDiff = Math.abs(diff);
-
-  // Step count controls "slow roll"
-  const steps = isFirst ? 90 : 140;
-
-  // For huge gaps, step size increases automatically
-  const stepSize = Math.max(1, Math.floor(absDiff / steps));
-
-  const start = performance.now();
-  const dir = diff >= 0 ? 1 : -1;
-
-  function formatVal(v) {
-    if (decimals) return v.toFixed(decimals) + suffix;
-    return fmt(Math.round(v)) + suffix;
+  // stop any previous roll on this element
+  if (el._rollTimer) {
+    clearInterval(el._rollTimer);
+    el._rollTimer = null;
   }
 
-  function tick(t) {
-    const p = Math.min((t - start) / duration, 1);
+  const scale = Math.pow(10, decimals);
+  let cur = Math.round(Number(from || 0) * scale);
+  const target = Math.round(Number(to || 0) * scale);
 
-    // easeOut
-    const eased = 1 - Math.pow(1 - p, 3);
+  const dir = target >= cur ? 1 : -1;
+  const diff = Math.abs(target - cur);
 
-    // stepped progress (quantized)
-    const totalSteps = Math.max(1, Math.floor(absDiff / stepSize));
-    const stepIndex = Math.floor(eased * totalSteps);
+  const format = (vInt) => {
+    const v = vInt / scale;
+    return (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
+  };
 
-    let v = a + dir * stepIndex * stepSize;
-
-    // clamp to target on final frame
-    if (p >= 1) v = b;
-    if (dir > 0) v = Math.min(v, b);
-    else v = Math.max(v, b);
-
-    el.textContent = formatVal(v);
-
-    if (p < 1) requestAnimationFrame(tick);
+  // if no change, just render it
+  if (diff === 0) {
+    el.textContent = format(target);
+    return;
   }
 
-  requestAnimationFrame(tick);
+  // tuning
+  const intervalMs = isFirst ? 9 : 22;          // refresh is slower
+  const maxTicks = isFirst ? 110 : 160;         // more ticks on refresh for slow roll
+  const step = Math.max(1, Math.ceil(diff / maxTicks));
+
+  el.textContent = format(cur);
+
+  el._rollTimer = setInterval(() => {
+    if (cur === target) {
+      clearInterval(el._rollTimer);
+      el._rollTimer = null;
+      return;
+    }
+    cur += dir * step;
+    if (dir > 0 && cur > target) cur = target;
+    if (dir < 0 && cur < target) cur = target;
+    el.textContent = format(cur);
+  }, intervalMs);
 }
 
 let state = { subsNow: 0, viewsTotal: 0, watchTotal: 0 };
@@ -240,98 +264,85 @@ let state = { subsNow: 0, viewsTotal: 0, watchTotal: 0 };
 function render(data, isFirst) {
   setLogo(data.channel?.logo);
 
-  // weekly line ONLY
-  const w = data.weekly || {};
-  const weeklySubs = Number(w.netSubs || 0);
-  const weeklyViews = Number(w.views || 0);
-  const weeklyWatch = Number(w.watchHours || 0);
+  // weekly line only
+  const weekly = data.weekly || {};
+  const weeklySubs = Number(weekly.netSubs || 0);
+  const weeklyViews = Number(weekly.views || 0);
+  const weeklyWatch = Number(weekly.watchHours || 0);
 
-  // monthly 28D focus
+  // monthly
   const last28 = data.m28?.last28 || {};
   const prev28 = data.m28?.prev28 || {};
-  const avg6m = data.m28?.avg6m || {};
-  const med6m = data.m28?.median6m || {};
+  const avg6m  = data.m28?.avg6m || {};
+  const med6m  = data.m28?.median6m || {};
 
-  // sparkline monthly
-  const hist = data.history28d || []; // oldest->newest (7)
+  // sparkline (monthly)
+  const hist = data.history28d || [];
   const sparkSubs = hist.map(p => p.netSubs);
   const sparkViews = hist.map(p => p.views);
   const sparkWatch = hist.map(p => p.watchHours);
 
-  // ---------- SUBS CARD ----------
+  // totals
   const subsNow = Number(data.channel?.subscribers || 0);
-  const subsTier = tierFromBaseline(last28.netSubs, med6m.netSubs, 30, 0.10);
+  const viewsTotal = Number(data.channel?.totalViews || 0);
+  const watchTotal = Number(data.lifetime?.watchHours || 0);
 
+  // if totals increased on refresh, spawn floating icon
+  if (!isFirst && subsNow > state.subsNow) spawnFloatIcon("cardSubs", "subs");
+  if (!isFirst && viewsTotal > state.viewsTotal) spawnFloatIcon("cardViews", "views");
+  if (!isFirst && watchTotal > state.watchTotal) spawnFloatIcon("cardWatch", "watch");
+
+  // SUBS tier from monthly baseline (stable)
+  const subsTier = tierFromBaseline(last28.netSubs, med6m.netSubs, 30, 0.10);
   setChip("subsDot", "subsChipText", subsTier, FEEDBACK.subs[subsTier]);
   setMainArrow("subsMainArrow", subsTier);
-
-  document.getElementById("subsWeek").textContent =
-    `This week: ${weeklySubs >= 0 ? "+" : ""}${fmt(weeklySubs)}`;
-
-  document.getElementById("subsLast28").textContent =
-    `${Number(last28.netSubs || 0) >= 0 ? "+" : ""}${fmt(last28.netSubs)}`;
-
-  document.getElementById("subsPrev28").textContent =
-    `${Number(prev28.netSubs || 0) >= 0 ? "+" : ""}${fmt(prev28.netSubs)}`;
-
-  setVsRG("subsVsNum", "subsVsArrow",
-    Number(last28.netSubs || 0) - Number(avg6m.netSubs || 0),
-    0, ""
-  );
-
-  animateStepped(document.getElementById("subsNow"), isFirst ? 0 : state.subsNow, subsNow, { isFirst });
   setSpark(document.getElementById("subsSparkPath"), sparkSubs, COLORS[subsTier]);
-  state.subsNow = subsNow;
 
-  // ---------- VIEWS CARD ----------
-  const viewsTotal = Number(data.channel?.totalViews || 0);
+  document.getElementById("subsWeek").textContent = `This week: ${weeklySubs >= 0 ? "+" : ""}${fmt(weeklySubs)}`;
+  document.getElementById("subsLast28").textContent = `${Number(last28.netSubs||0) >= 0 ? "+" : ""}${fmt(last28.netSubs)}`;
+  document.getElementById("subsPrev28").textContent = `${Number(prev28.netSubs||0) >= 0 ? "+" : ""}${fmt(prev28.netSubs)}`;
+  setVsRG("subsVsNum", "subsVsArrow", Number(last28.netSubs||0) - Number(avg6m.netSubs||0), 0, "");
+
+  // roll totals
+  animateRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subsNow, subsNow, { isFirst });
+
+  // VIEWS
   const viewsTier = tierFromBaseline(last28.views, med6m.views, 25000, 0.10);
-
   setChip("viewsDot", "viewsChipText", viewsTier, FEEDBACK.views[viewsTier]);
   setMainArrow("viewsMainArrow", viewsTier);
+  setSpark(document.getElementById("viewsSparkPath"), sparkViews, COLORS[viewsTier]);
 
   document.getElementById("viewsWeek").textContent = `This week: ${fmt(weeklyViews)}`;
   document.getElementById("viewsLast28").textContent = fmt(last28.views);
   document.getElementById("viewsPrev28").textContent = fmt(prev28.views);
+  setVsRG("viewsVsNum", "viewsVsArrow", Number(last28.views||0) - Number(avg6m.views||0), 0, "");
 
-  setVsRG("viewsVsNum", "viewsVsArrow",
-    Number(last28.views || 0) - Number(avg6m.views || 0),
-    0, ""
-  );
+  animateRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.viewsTotal, viewsTotal, { isFirst });
 
-  animateStepped(document.getElementById("viewsTotal"), isFirst ? 0 : state.viewsTotal, viewsTotal, { isFirst });
-  setSpark(document.getElementById("viewsSparkPath"), sparkViews, COLORS[viewsTier]);
-  state.viewsTotal = viewsTotal;
-
-  // ---------- WATCH CARD ----------
-  const watchTotal = Number(data.lifetime?.watchHours || 0);
+  // WATCH
   const watchTier = tierFromBaseline(last28.watchHours, med6m.watchHours, 50, 0.10);
-
   setChip("watchDot", "watchChipText", watchTier, FEEDBACK.watch[watchTier]);
   setMainArrow("watchMainArrow", watchTier);
+  setSpark(document.getElementById("watchSparkPath"), sparkWatch, COLORS[watchTier]);
 
   document.getElementById("watchWeek").textContent = `This week: ${fmt(weeklyWatch)}h`;
   document.getElementById("watchLast28").textContent = `${fmt(last28.watchHours)}h`;
   document.getElementById("watchPrev28").textContent = `${fmt(prev28.watchHours)}h`;
+  setVsRG("watchVsNum", "watchVsArrow", Number(last28.watchHours||0) - Number(avg6m.watchHours||0), 1, "h");
 
-  setVsRG("watchVsNum", "watchVsArrow",
-    Number(last28.watchHours || 0) - Number(avg6m.watchHours || 0),
-    1, "h"
-  );
-
-  animateStepped(
+  animateRoll(
     document.getElementById("watchNow"),
     isFirst ? 0 : state.watchTotal,
     watchTotal,
     { isFirst, decimals: watchTotal < 100 ? 1 : 0, suffix: "h" }
   );
 
-  setSpark(document.getElementById("watchSparkPath"), sparkWatch, COLORS[watchTier]);
+  // update state AFTER starting rolls
+  state.subsNow = subsNow;
+  state.viewsTotal = viewsTotal;
   state.watchTotal = watchTotal;
 
-  document.getElementById("updated").textContent =
-    `Updated: ${nowStamp()} • Auto-refresh: 1 min`;
-
+  document.getElementById("updated").textContent = `Updated: ${nowStamp()} • Auto-refresh: 1 min`;
   showToast(`Updated ✓ ${nowStamp()}`);
 }
 
@@ -339,7 +350,7 @@ async function load(isFirst) {
   const data = await fetchJSON("/api/yt-kpis");
   if (data.error) {
     document.getElementById("updated").textContent = "Error: " + data.error;
-    showToast("Update failed ✕");
+    showToast("Update failed");
     return;
   }
   render(data, isFirst);
