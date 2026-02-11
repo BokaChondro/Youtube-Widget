@@ -1,6 +1,6 @@
 :root {
   --bg-dark: #191919;
-  --card-bg: #000000; /* PURE BLACK */
+  --card-bg: #000000;
   
   --glass-border: rgba(255, 255, 255, 0.15);
   --glass-highlight: rgba(255, 255, 255, 0.05);
@@ -32,7 +32,11 @@ body {
 /* --- CARD --- */
 .card {
   position: relative;
-  background-color: var(--card-bg); /* Pure Black */
+  /* Pure Black with Subtle Gradient Tint from Tier Color */
+  background: 
+    radial-gradient(circle at top right, var(--c-tier) -60%, transparent 60%),
+    var(--card-bg);
+    
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 20px;
@@ -42,11 +46,10 @@ body {
   transform-style: preserve-3d;
   --logo-url: none;
   
-  /* Make visible by default so it doesn't get stuck invisible */
+  /* Defaults to visible to prevent blank screens */
   opacity: 1; 
 }
 
-/* JS Adds this class on first load to trigger fade in */
 .card-enter {
   animation: cardFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
@@ -78,31 +81,59 @@ body {
   filter: grayscale(100%) contrast(1.2);
   z-index: 0;
   pointer-events: none;
+  
+  animation: logoBreath 8s ease-in-out infinite;
 }
 
-/* --- BREATHING EFFECTS (Pulse-Active) --- */
+@keyframes logoBreath {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+  50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+}
+
+/* --- BREATHING EFFECTS (Dynamic 0.5s Pulse) --- */
+/* Everything turns Tier Color when breathing */
+.card.pulse-active .title,
+.card.pulse-active .subtitle,
+.card.pulse-active .iconBox, 
+.card.pulse-active .chip,
+.card.pulse-active .bigNumber,
+.card.pulse-active .progressFill {
+  color: var(--c-tier);
+  transition: color 0.3s ease;
+}
+
+/* Specific Element Transforms */
 .card.pulse-active .iconBox,
 .card.pulse-active .chip {
-  animation: breatheScale 2s ease-in-out infinite;
-}
-.card.pulse-active .spark {
-  animation: breatheGlow 2s ease-in-out infinite;
-}
-.card.pulse-active .progressFill {
-  animation: breatheBar 2s ease-in-out infinite;
+  animation: pulseBeat 0.5s ease-out 3; /* Pulse 3 times quickly */
 }
 
-@keyframes breatheScale {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 rgba(0,0,0,0); }
-  50% { transform: scale(1.05); box-shadow: 0 0 15px var(--c-tier); }
+.card.pulse-active .spark {
+  animation: pulseGlow 0.5s ease-out 3;
 }
-@keyframes breatheGlow {
-  0%, 100% { filter: drop-shadow(0 0 4px var(--c-tier)); }
+
+.card.pulse-active .progressFill {
+  animation: pulseBar 0.5s ease-out 3;
+}
+
+/* Punchy Heartbeat Animations */
+@keyframes pulseBeat {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(0,0,0,0); }
+  50% { transform: scale(1.1); box-shadow: 0 0 15px var(--c-tier); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(0,0,0,0); }
+}
+
+@keyframes pulseGlow {
+  0% { filter: drop-shadow(0 0 4px var(--c-tier)); }
   50% { filter: drop-shadow(0 0 12px var(--c-tier)); }
+  100% { filter: drop-shadow(0 0 4px var(--c-tier)); }
 }
-@keyframes breatheBar {
-  0%, 100% { filter: brightness(1); box-shadow: 0 0 5px var(--c-tier); }
-  50% { filter: brightness(1.5); box-shadow: 0 0 15px var(--c-tier); }
+
+@keyframes pulseBar {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.5); box-shadow: 0 0 10px var(--c-tier); }
+  100% { filter: brightness(1); }
 }
 
 /* --- HOLO GLARE --- */
@@ -135,8 +166,8 @@ body {
 .icon { width: 20px; height: 20px; fill: currentColor; }
 
 .titles { display: flex; flex-direction: column; }
-.title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95); }
-.subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; }
+.title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95); transition: color 0.3s; }
+.subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; transition: color 0.3s; }
 
 .chip {
   display: flex; align-items: center; gap: 6px;
@@ -148,7 +179,7 @@ body {
 .midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 40px; }
 .bigNumber {
   display: flex; align-items: baseline; gap: 4px; font-size: 28px; font-weight: 700;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.5); font-feature-settings: "tnum";
+  text-shadow: 0 4px 20px rgba(0,0,0,0.5); font-feature-settings: "tnum"; color: #fff; transition: color 0.3s;
 }
 .mainArrow { font-size: 20px; transform: translateY(-2px); }
 
