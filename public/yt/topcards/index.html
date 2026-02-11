@@ -15,12 +15,11 @@
 
       <!-- CARD 1: SUBSCRIBERS -->
       <div class="card" id="cardSubs">
+        <div class="glare"></div> <!-- NEW GLARE EFFECT -->
         <div class="cardTop">
           <div class="left">
             <div class="iconBox" aria-hidden="true">
-              <svg viewBox="0 0 24 24" class="icon">
-                <path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/>
-              </svg>
+              <svg viewBox="0 0 24 24" class="icon"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>
             </div>
             <div class="titles">
               <div class="title">Subscribers</div>
@@ -39,29 +38,20 @@
             <span class="mainArrow" id="subsMainArrow">—</span>
           </div>
           <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="gradSubs" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="var(--c-tier)" stop-opacity="0.4"/>
-                <stop offset="100%" stop-color="var(--c-tier)" stop-opacity="0"/>
-              </linearGradient>
-            </defs>
-            <path id="subsSparkFill" d="" fill="url(#gradSubs)" />
+            <path id="subsSparkFill" d="" fill="rgba(255,255,255,0.1)" />
             <path id="subsSparkPath" d="" fill="none" />
           </svg>
         </div>
 
-        <!-- Goal -->
         <div class="milestoneBox">
           <div class="milestoneText">
             <span>Next Goal: <b id="subsNextGoal">—</b></span>
             <span id="subsNextPct">0%</span>
           </div>
-          <div class="progressBg">
-            <div class="progressFill" id="subsProgressFill"></div>
-          </div>
+          <div class="progressBg"><div class="progressFill" id="subsProgressFill"></div></div>
         </div>
 
-        <div class="weekLine" id="subsWeek">This week: —</div>
+        <div class="weekLine" id="subsWeek">Last 7D: —</div>
 
         <div class="metaRow">
           <div class="metaItem">
@@ -74,23 +64,18 @@
           </div>
           <div class="metaItem">
             <div class="metaLabel">vs 6M Avg</div>
-            <div class="metaValue">
-              <span class="vsNum" id="subsVsNum">—</span>
-              <span class="vsArrow" id="subsVsArrow">—</span>
-            </div>
+            <div class="metaValue"><span class="vsNum" id="subsVsNum">—</span><span class="vsArrow" id="subsVsArrow">—</span></div>
           </div>
         </div>
-        <div class="shine"></div>
       </div>
 
       <!-- CARD 2: VIEWS -->
       <div class="card" id="cardViews">
+        <div class="glare"></div>
         <div class="cardTop">
           <div class="left">
             <div class="iconBox" aria-hidden="true">
-              <svg viewBox="0 0 24 24" class="icon">
-                <path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
-              </svg>
+              <svg viewBox="0 0 24 24" class="icon"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
             </div>
             <div class="titles">
               <div class="title">Total Views</div>
@@ -109,29 +94,20 @@
             <span class="mainArrow" id="viewsMainArrow">—</span>
           </div>
           <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="gradViews" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="var(--c-tier)" stop-opacity="0.4"/>
-                <stop offset="100%" stop-color="var(--c-tier)" stop-opacity="0"/>
-              </linearGradient>
-            </defs>
-            <path id="viewsSparkFill" d="" fill="url(#gradViews)" />
+            <path id="viewsSparkFill" d="" fill="rgba(255,255,255,0.1)" />
             <path id="viewsSparkPath" d="" fill="none" />
           </svg>
         </div>
 
-        <!-- Goal -->
         <div class="milestoneBox">
           <div class="milestoneText">
             <span>Next Goal: <b id="viewsNextGoal">—</b></span>
             <span id="viewsNextPct">0%</span>
           </div>
-          <div class="progressBg">
-            <div class="progressFill" id="viewsProgressFill"></div>
-          </div>
+          <div class="progressBg"><div class="progressFill" id="viewsProgressFill"></div></div>
         </div>
 
-        <div class="weekLine" id="viewsWeek">This week: —</div>
+        <div class="weekLine" id="viewsWeek">Last 7D: —</div>
 
         <div class="metaRow">
           <div class="metaItem">
@@ -144,23 +120,18 @@
           </div>
           <div class="metaItem">
             <div class="metaLabel">vs 6M Avg</div>
-            <div class="metaValue">
-              <span class="vsNum" id="viewsVsNum">—</span>
-              <span class="vsArrow" id="viewsVsArrow">—</span>
-            </div>
+            <div class="metaValue"><span class="vsNum" id="viewsVsNum">—</span><span class="vsArrow" id="viewsVsArrow">—</span></div>
           </div>
         </div>
-        <div class="shine"></div>
       </div>
 
-      <!-- CARD 3: WATCH HOURS -->
+      <!-- CARD 3: WATCH -->
       <div class="card" id="cardWatch">
+        <div class="glare"></div>
         <div class="cardTop">
           <div class="left">
             <div class="iconBox" aria-hidden="true">
-              <svg viewBox="0 0 24 24" class="icon">
-                <path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/>
-              </svg>
+              <svg viewBox="0 0 24 24" class="icon"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>
             </div>
             <div class="titles">
               <div class="title">Watch Hours</div>
@@ -179,29 +150,20 @@
             <span class="mainArrow" id="watchMainArrow">—</span>
           </div>
           <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="gradWatch" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="var(--c-tier)" stop-opacity="0.4"/>
-                <stop offset="100%" stop-color="var(--c-tier)" stop-opacity="0"/>
-              </linearGradient>
-            </defs>
-            <path id="watchSparkFill" d="" fill="url(#gradWatch)" />
+            <path id="watchSparkFill" d="" fill="rgba(255,255,255,0.1)" />
             <path id="watchSparkPath" d="" fill="none" />
           </svg>
         </div>
 
-        <!-- Goal -->
         <div class="milestoneBox">
           <div class="milestoneText">
             <span>Next Goal: <b id="watchNextGoal">—</b></span>
             <span id="watchNextPct">0%</span>
           </div>
-          <div class="progressBg">
-            <div class="progressFill" id="watchProgressFill"></div>
-          </div>
+          <div class="progressBg"><div class="progressFill" id="watchProgressFill"></div></div>
         </div>
 
-        <div class="weekLine" id="watchWeek">This week: —</div>
+        <div class="weekLine" id="watchWeek">Last 7D: —</div>
 
         <div class="metaRow">
           <div class="metaItem">
@@ -214,18 +176,14 @@
           </div>
           <div class="metaItem">
             <div class="metaLabel">vs 6M Avg</div>
-            <div class="metaValue">
-              <span class="vsNum" id="watchVsNum">—</span>
-              <span class="vsArrow" id="watchVsArrow">—</span>
-            </div>
+            <div class="metaValue"><span class="vsNum" id="watchVsNum">—</span><span class="vsArrow" id="watchVsArrow">—</span></div>
           </div>
         </div>
-        <div class="shine"></div>
       </div>
 
     </div>
 
-    <div class="foot" id="updated">Initializing System...</div>
+    <div class="foot" id="updated">System Initializing...</div>
   </div>
 
   <script src="./app.js"></script>
