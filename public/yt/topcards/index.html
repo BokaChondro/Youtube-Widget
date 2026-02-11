@@ -4,11 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>YouTube Top Cards</title>
-  <!-- cache-bust so your browser cannot keep old css -->
-  <link rel="stylesheet" href="./style.css?v=HUD_v3_20260212" />
+  <!-- cache-bust so your changes definitely load -->
+  <link rel="stylesheet" href="./style.css?v=aihud_20260212b" />
 </head>
 <body>
-  
   <div class="wrap">
     <div class="toast" id="toast">Updated ✓</div>
 
@@ -186,40 +185,35 @@
 
     <!-- === HUD === -->
     <div class="hud-box" id="hudBox">
-      <!-- FULL BORDER RING (SVG stroke) -->
-      <svg class="hud-ring" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
-        <rect class="hud-ring-track" x="1" y="1" width="98" height="30" rx="6" ry="6" pathLength="100"></rect>
-        <rect class="hud-ring-prog"  id="hudRingProg" x="1" y="1" width="98" height="30" rx="6" ry="6" pathLength="100"></rect>
+      <!-- ring progress (FULL border) -->
+      <svg class="hud-ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <rect id="hudRingRect" x="2" y="2" width="96" height="96" rx="12" ry="12"></rect>
       </svg>
 
       <div class="hud-scanline"></div>
-      
+
       <div class="hud-content">
         <div class="hud-icon-box">
           <span id="hudIcon" class="hud-icon">⚡</span>
         </div>
-        
+
         <div class="hud-data">
           <div class="hud-meta">
-            <span class="hud-label">AI HUD //</span>
-            <span class="hud-tag" id="hudTag">Loading</span>
+            <span class="hud-label">AI_HUD //</span>
+            <span class="hud-tag" id="hudTag">READY</span>
           </div>
           <div class="hud-text-mask">
-            <div class="hud-message" id="hudMessage">Loading your channel insights…</div>
+            <div class="hud-message" id="hudMessage">Analyzing your channel signals...</div>
           </div>
         </div>
       </div>
-
-      <!-- keep old bar in html but it is hidden in CSS (no more “only bottom” confusion) -->
-      <div class="hud-timer">
-        <div class="hud-timer-fill" id="hudTimerFill"></div>
-      </div>
     </div>
+    <!-- === END HUD === -->
 
     <div class="foot" id="updated">System Initializing...</div>
   </div>
 
-  <!-- cache-bust so your browser cannot keep old js -->
-  <script src="./app.js?v=HUD_v3_20260212"></script>
+  <!-- cache-bust so your changes definitely load -->
+  <script src="./app.js?v=aihud_20260212b"></script>
 </body>
 </html>
