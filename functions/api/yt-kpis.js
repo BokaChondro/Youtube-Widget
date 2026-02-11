@@ -1,89 +1,206 @@
 // functions/api/yt-kpis.js
-// Adds: richer HUD + video-level intel (recent uploads + per-video 7D analytics) without breaking top 3 cards data shape.
+// Cloudflare Pages Functions (ESM) — returns KPIs for 3 cards + AI HUD extras.
+// Caches response 55s at edge for smooth 60s front-end refresh.
 
-const REQUIRED_ENV_KEYS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"];
-const CHANNEL_CACHE_TTL = 60 * 1000;
-const UPLOADS_CACHE_TTL = 60 * 1000;
-
-const channelCache = { data: null, expires: 0 };
-const uploadsCache = new Map();
+// ---------------------------
+// Helpers
+// ---------------------------
 
 function isoDate(d) {
-  return d.toISOString().slice(0, 10);
+  return new Date(d).toISOString().slice(0, 10);
 }
-
-function shiftDays(dateObj, deltaDays) {
-  const d = new Date(dateObj);
-  d.setDate(d.getDate() + deltaDays);
-  return d;
+function shiftDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
 }
-
-function round1(n) {
-  return Math.round(Number(n || 0) * 10) / 10;
+function clamp(n, a, b) {
+  n = Number(n);
+  if (!Number.isFinite(n)) return a;
+  return Math.max(a, Math.min(b, n));
 }
-
+function sumDailyRows(rows, i0, i1) {
+  const out = { views: 0, minutes: 0, gained: 0, lost: 0 };
+  for (let i = i0; i <= i1; i++) {
+    const r = rows[i];
+    out.views += Number(r?.views || 0);
+    out.minutes += Number(r?.minutes || 0);
+    out.gained += Number(r?.gained || 0);
+    out.lost += Number(r?.lost || 0);
+  }
+  return out;
+}
+function packMetrics(sum) {
+  const views = Number(sum?.views || 0);
+  const minutes = Number(sum?.minutes || 0);
+  const gained = Number(sum?.gained || 0);
+  const lost = Number(sum?.lost || 0);
+  const netSubs = gained - lost;
+  const watchHours = minutes / 60;
+  return { views, minutes, watchHours, gained, lost, netSubs };
+}
 function median(nums) {
-  const arr = (nums || [])
-    .map(Number)
-    .filter(Number.isFinite)
-    .sort((a, b) => a - b);
-  if (!arr.length) return 0;
-  const mid = Math.floor(arr.length / 2);
-  return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+  nums = (nums || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!nums.length) return 0;
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
 }
-
 function avg(nums) {
-  const arr = (nums || []).map(Number).filter(Number.isFinite);
-  if (!arr.length) return 0;
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
+  nums = (nums || []).map(Number).filter(Number.isFinite);
+  if (!nums.length) return 0;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+function uniq(arr) {
+  const s = new Set();
+  const out = [];
+  for (const x of arr || []) {
+    if (!x) continue;
+    if (s.has(x)) continue;
+    s.add(x);
+    out.push(x);
+  }
+  return out;
+}
+function rowsToDimList(resp, dimName, metricName) {
+  const rows = resp?.rows || [];
+  const headers = resp?.columnHeaders || [];
+  const dimIdx = headers.findIndex((h) => h.name === dimName);
+  const metIdx = headers.findIndex((h) => h.name === metricName);
+  if (dimIdx < 0 || metIdx < 0) return null;
+  return rows.map((r) => ({ name: String(r[dimIdx]), value: Number(r[metIdx] || 0) }));
 }
 
-function safeStartDateFromPublishedAt(publishedAt) {
-  if (!publishedAt) return "2006-01-01";
-  const d = new Date(publishedAt);
-  if (Number.isNaN(d.getTime())) return "2006-01-01";
-  const iso = isoDate(d);
-  return iso < "2006-01-01" ? "2006-01-01" : iso;
+// ---------------------------
+// OAuth token
+// ---------------------------
+
+async function getAccessToken(env) {
+  const url = "https://oauth2.googleapis.com/token";
+  const form = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    client_secret: env.GOOGLE_CLIENT_SECRET,
+    refresh_token: env.GOOGLE_REFRESH_TOKEN,
+    grant_type: "refresh_token",
+  });
+
+  const r = await fetch(url, { method: "POST", body: form });
+  const j = await r.json();
+  if (!j.access_token) throw new Error("No access_token");
+  return j.access_token;
 }
 
-function daysBetween(isoA, isoB) {
+async function ytFetch(token, url) {
+  const r = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const j = await r.json();
+  if (j?.error?.message) throw new Error(j.error.message);
+  return j;
+}
+
+async function ytAnalytics(token, params) {
+  const base = "https://youtubeanalytics.googleapis.com/v2/reports";
+  const qs = new URLSearchParams({
+    ids: "channel==MINE",
+    ...params,
+  });
+  return ytFetch(token, `${base}?${qs.toString()}`);
+}
+
+// Some analytics metrics/dimensions are not available for all channels.
+// "safeAnalytics" returns null instead of throwing, so HUD stays alive.
+async function safeAnalytics(token, params) {
   try {
-    const a = new Date(isoA);
-    const b = new Date(isoB);
-    return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+    return await ytAnalytics(token, params);
   } catch {
     return null;
   }
 }
 
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
+// ---------------------------
+// Data API: channel basics + uploads playlist
+// ---------------------------
+
+async function fetchChannelBasics(token) {
+  const url =
+    "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&mine=true";
+  const j = await ytFetch(token, url);
+  const item = j.items?.[0];
+  if (!item) throw new Error("No channel");
+  const subs = Number(item.statistics?.subscriberCount || 0);
+  const views = Number(item.statistics?.viewCount || 0);
+  const publishedAt = item.snippet?.publishedAt || null;
+  const uploadsPlaylistId = item.contentDetails?.relatedPlaylists?.uploads || null;
+  return { subs, views, publishedAt, uploadsPlaylistId };
 }
 
-async function safeReadJson(response) {
-  const txt = await response.text();
-  if (!txt) return {};
-  try {
-    return JSON.parse(txt);
-  } catch (err) {
-    console.error("safeReadJson: invalid JSON", {
-      status: response.status,
-      statusText: response.statusText,
-      url: response.url,
-      sample: txt.slice(0, 300),
+// ---------------------------
+// Analytics: daily series for 196 days
+// ---------------------------
+
+async function fetchDailyCore(token, startDate, endDate) {
+  const resp = await ytAnalytics(token, {
+    startDate,
+    endDate,
+    dimensions: "day",
+    metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost",
+    sort: "day",
+  });
+
+  const rows = resp?.rows || [];
+  const out = [];
+  for (const r of rows) {
+    out.push({
+      day: String(r[0]),
+      views: Number(r[1] || 0),
+      minutes: Number(r[2] || 0),
+      gained: Number(r[3] || 0),
+      lost: Number(r[4] || 0),
     });
-    throw new Error("Upstream returned invalid JSON");
   }
+  return out;
 }
 
-function uniq(arr) {
-  return [...new Set((arr || []).filter(Boolean))];
+// ---------------------------
+// Lifetime watch hours
+// ---------------------------
+
+async function fetchLifetimeWatchHours(token, startDate, endDate) {
+  const resp = await ytAnalytics(token, {
+    startDate,
+    endDate,
+    metrics: "estimatedMinutesWatched",
+  });
+  const min = Number(resp?.rows?.[0]?.[0] || 0);
+  return { totalHours: min / 60 };
 }
 
-// ISO 8601 duration like "PT1H2M3S" -> seconds
-function parseISODurationToSeconds(isoDur) {
-  if (!isoDur || typeof isoDur !== "string") return 0;
-  const m = isoDur.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+// ---------------------------
+// Uploads list (recent videos)
+// ---------------------------
+
+async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
+  if (!uploadsPlaylistId) return [];
+  const url =
+    `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}` +
+    `&maxResults=${clamp(maxResults, 1, 50)}`;
+  const j = await ytFetch(token, url);
+  const items = j.items || [];
+  return items.map((it) => ({
+    videoId: it.snippet?.resourceId?.videoId || null,
+    publishedAt: it.snippet?.publishedAt || null,
+    title: it.snippet?.title || "",
+  })).filter((x) => x.videoId);
+}
+
+// ---------------------------
+// Videos details (title, stats, duration)
+// ---------------------------
+
+function parseISO8601DurationToSec(iso) {
+  // PT#H#M#S
+  if (!iso || typeof iso !== "string") return 0;
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!m) return 0;
   const h = Number(m[1] || 0);
   const mm = Number(m[2] || 0);
@@ -91,476 +208,225 @@ function parseISODurationToSeconds(isoDur) {
   return h * 3600 + mm * 60 + s;
 }
 
-function pct(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return 0;
-  return round1(x);
-}
+async function fetchVideos(token, videoIds) {
+  videoIds = uniq(videoIds).filter(Boolean);
+  if (!videoIds.length) return [];
 
-function safeDiv(a, b) {
-  const A = Number(a || 0);
-  const B = Number(b || 0);
-  if (!B) return 0;
-  return A / B;
-}
-
-async function getAccessToken(env) {
-  const body = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
-    client_secret: env.GOOGLE_CLIENT_SECRET,
-    refresh_token: env.GOOGLE_REFRESH_TOKEN,
-    grant_type: "refresh_token",
-  });
-
-  const r = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-
-  const data = await safeReadJson(r);
-  if (!data.access_token) {
-    const err = new Error("Failed to obtain access token");
-    err.statusCode = r.status || 500;
-    err.details = data;
-    throw err;
-  }
-  return data.access_token;
-}
-
-async function ytDataGET(token, path, params = {}) {
-  const url = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "") {
-      url.searchParams.set(k, String(v));
-    }
-  });
-
-  const r = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  const data = await safeReadJson(r);
-  if (!r.ok) {
-    const err = new Error(`YouTube Data API error (${r.status})`);
-    err.statusCode = r.status;
-    err.details = data;
-    throw err;
-  }
-  return data;
-}
-
-async function ytAnalyticsGET(token, params = {}) {
-  const url = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
-  url.searchParams.set("ids", "channel==MINE");
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "") {
-      url.searchParams.set(k, String(v));
-    }
-  });
-
-  const r = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  const data = await safeReadJson(r);
-  if (!r.ok) {
-    const err = new Error(`YouTube Analytics API error (${r.status})`);
-    err.statusCode = r.status;
-    err.details = data;
-    throw err;
-  }
-  return data;
-}
-
-async function safeAnalytics(token, params) {
-  try {
-    return await ytAnalyticsGET(token, params);
-  } catch (err) {
-    console.warn("safeAnalytics failure", { params, message: err.message });
-    return null;
-  }
-}
-
-async function fetchChannelBasics(token) {
-  const data = await ytDataGET(token, "channels", {
-    part: "snippet,statistics,contentDetails",
-    mine: "true",
-  });
-
-  const ch = data.items?.[0];
-  const thumbs = ch?.snippet?.thumbnails || {};
-  const logo = thumbs.high?.url || thumbs.medium?.url || thumbs.default?.url || "";
-
-  const uploadsPlaylistId = ch?.contentDetails?.relatedPlaylists?.uploads || "";
-
-  return {
-    channelId: ch?.id || null,
-    title: ch?.snippet?.title || "",
-    publishedAt: ch?.snippet?.publishedAt || null,
-    logo,
-    uploadsPlaylistId,
-    subscribers: Number(ch?.statistics?.subscriberCount || 0),
-    totalViews: Number(ch?.statistics?.viewCount || 0),
-  };
-}
-
-async function fetchChannelBasicsCached(token) {
-  const now = Date.now();
-  if (channelCache.data && channelCache.expires > now) {
-    return channelCache.data;
-  }
-  const data = await fetchChannelBasics(token);
-  channelCache.data = data;
-  channelCache.expires = now + CHANNEL_CACHE_TTL;
-  return data;
-}
-
-async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
-  if (!uploadsPlaylistId) return [];
-  const cacheKey = `${uploadsPlaylistId}:${maxResults}`;
-  const cached = uploadsCache.get(cacheKey);
-  const now = Date.now();
-  if (cached && cached.expires > now) {
-    return cached.data;
-  }
-
-  const data = await ytDataGET(token, "playlistItems", {
-    part: "snippet,contentDetails",
-    playlistId: uploadsPlaylistId,
-    maxResults: String(clamp(maxResults, 1, 50)),
-  });
-
-  const items = data.items || [];
-  const out = items
-    .map((it) => ({
-      videoId: it?.contentDetails?.videoId || null,
-      publishedAt: it?.contentDetails?.videoPublishedAt || it?.snippet?.publishedAt || null,
-      title: it?.snippet?.title || "",
-    }))
-    .filter((x) => x.videoId);
-
-  uploadsCache.set(cacheKey, { data: out, expires: now + UPLOADS_CACHE_TTL });
-  return out;
-}
-
-async function fetchVideos(token, ids = []) {
-  const idList = uniq(ids);
-  if (!idList.length) return [];
   const chunks = [];
-  for (let i = 0; i < idList.length; i += 50) {
-    const chunkIds = idList.slice(i, i + 50);
-    const data = await ytDataGET(token, "videos", {
-      part: "snippet,statistics,contentDetails",
-      id: chunkIds.join(","),
-    });
-    chunks.push(
-      (data.items || []).map((v) => ({
-        videoId: v?.id || null,
-        title: v?.snippet?.title || "",
-        publishedAt: v?.snippet?.publishedAt || null,
-        views: Number(v?.statistics?.viewCount || 0),
-        likes: Number(v?.statistics?.likeCount || 0),
-        comments: Number(v?.statistics?.commentCount || 0),
-        duration: v?.contentDetails?.duration || null,
-        durationSec: parseISODurationToSeconds(v?.contentDetails?.duration || null),
-      }))
-    );
+  for (let i = 0; i < videoIds.length; i += 50) {
+    chunks.push(videoIds.slice(i, i + 50));
   }
-  return chunks.flat().filter((x) => x.videoId);
-}
 
-function buildDailyPrefix(rows) {
-  const prefix = {
-    views: [0],
-    minutes: [0],
-    gained: [0],
-    lost: [0],
-  };
-  rows.forEach((row, idx) => {
-    prefix.views[idx + 1] = prefix.views[idx] + Number(row.views || 0);
-    prefix.minutes[idx + 1] = prefix.minutes[idx] + Number(row.minutes || 0);
-    prefix.gained[idx + 1] = prefix.gained[idx] + Number(row.gained || 0);
-    prefix.lost[idx + 1] = prefix.lost[idx] + Number(row.lost || 0);
-  });
-  return prefix;
-}
-
-function sumDailyRows(prefix, startIdx, endIdx) {
-  if (!prefix) return { views: 0, minutes: 0, gained: 0, lost: 0 };
-  const a = clamp(startIdx, 0, prefix.views.length - 2);
-  const b = clamp(endIdx, a, prefix.views.length - 2);
-  return {
-    views: prefix.views[b + 1] - prefix.views[a],
-    minutes: prefix.minutes[b + 1] - prefix.minutes[a],
-    gained: prefix.gained[b + 1] - prefix.gained[a],
-    lost: prefix.lost[b + 1] - prefix.lost[a],
-  };
-}
-
-function packMetrics(sum) {
-  const views = Number(sum.views || 0);
-  const minutes = Number(sum.minutes || 0);
-  const gained = Number(sum.gained || 0);
-  const lost = Number(sum.lost || 0);
-  return {
-    views,
-    minutes,
-    watchHours: round1(minutes / 60),
-    gained,
-    lost,
-    netSubs: gained - lost,
-  };
-}
-
-async function fetchDailyCore(token, startIso, endIso) {
-  const data = await ytAnalyticsGET(token, {
-    startDate: startIso,
-    endDate: endIso,
-    dimensions: "day",
-    metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost",
-    sort: "day",
-    maxResults: "500",
-  });
-
-  const rows = (data.rows || []).map((r) => ({
-    day: r[0],
-    views: Number(r[1] || 0),
-    minutes: Number(r[2] || 0),
-    gained: Number(r[3] || 0),
-    lost: Number(r[4] || 0),
-  }));
-
-  return rows;
-}
-
-async function fetchLifetimeWatchHours(token, publishedAt, endIso) {
-  const startIso = safeStartDateFromPublishedAt(publishedAt);
-  const data = await ytAnalyticsGET(token, {
-    startDate: startIso,
-    endDate: endIso,
-    metrics: "estimatedMinutesWatched",
-  });
-
-  const minutes = Number(data.rows?.[0]?.[0] || 0);
-  return { startIso, totalHours: round1(minutes / 60) };
-}
-
-function rowsToDimList(resp, dimName, metricName) {
-  const rows = resp?.rows || [];
-  return rows.map((r) => ({
-    key: String(r[0]),
-    value: Number(r[1] || 0),
-    dim: dimName,
-    metric: metricName,
-  }));
-}
-
-function parseVideoRows(resp, metricKeys = []) {
-  const rows = resp?.rows || [];
-  const out = {};
-  for (const r of rows) {
-    const [videoId, ...metrics] = r;
-    if (!videoId) continue;
-    const entry = out[videoId] || {};
-    metricKeys.forEach((key, idx) => {
-      entry[key] = Number(metrics[idx] || 0);
-    });
-    out[videoId] = entry;
+  const out = [];
+  for (const chunk of chunks) {
+    const url =
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${chunk.join(",")}`;
+    const j = await ytFetch(token, url);
+    for (const it of j.items || []) {
+      const vid = it.id;
+      const title = it.snippet?.title || "";
+      const publishedAt = it.snippet?.publishedAt || null;
+      const views = Number(it.statistics?.viewCount || 0);
+      const likes = Number(it.statistics?.likeCount || 0);
+      const comments = Number(it.statistics?.commentCount || 0);
+      const duration = it.contentDetails?.duration || "";
+      const durationSec = parseISO8601DurationToSec(duration);
+      out.push({ videoId: vid, title, publishedAt, views, likes, comments, duration, durationSec });
+    }
   }
   return out;
+}
+
+// ---------------------------
+// Video analytics 7D bundle (top recent videos)
+// ---------------------------
+
+function parseVideoRows(resp, metricNames) {
+  // resp rows: [videoId, metric1, metric2...]
+  const headers = resp?.columnHeaders || [];
+  const rows = resp?.rows || [];
+  const vidIdx = headers.findIndex((h) => h.name === "video");
+  if (vidIdx < 0) return new Map();
+
+  const metricIdxs = metricNames.map((m) => headers.findIndex((h) => h.name === m));
+  const map = new Map();
+
+  for (const r of rows) {
+    const vid = String(r[vidIdx]);
+    const obj = {};
+    for (let i = 0; i < metricNames.length; i++) {
+      const idx = metricIdxs[i];
+      obj[metricNames[i]] = idx >= 0 ? Number(r[idx] || 0) : null;
+    }
+    map.set(vid, obj);
+  }
+  return map;
 }
 
 async function fetchVideoAnalytics7dBundle(token, startIso, endIso, maxResults = 25) {
-  const safeArgs = (metrics) => ({
-    startDate: startIso,
-    endDate: endIso,
-    dimensions: "video",
-    metrics,
-    sort: "-views",
-    maxResults: String(clamp(maxResults, 1, 50)),
-  });
+  // We use multiple "safe" calls so one unavailable metric doesn't kill everything.
+  // Each returns a map: videoId -> metrics
 
   const [base, retention, thumbs, engage] = await Promise.all([
-    safeAnalytics(token, safeArgs("views,estimatedMinutesWatched,subscribersGained,subscribersLost")),
-    safeAnalytics(token, safeArgs("averageViewDuration,averageViewPercentage")),
-    safeAnalytics(token, safeArgs("videoThumbnailImpressions,videoThumbnailImpressionsClickRate")),
-    safeAnalytics(token, safeArgs("likes,comments,shares")),
+    safeAnalytics(token, {
+      startDate: startIso,
+      endDate: endIso,
+      dimensions: "video",
+      metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost",
+      sort: "-views",
+      maxResults: String(clamp(maxResults, 1, 50)),
+    }),
+
+    safeAnalytics(token, {
+      startDate: startIso,
+      endDate: endIso,
+      dimensions: "video",
+      metrics: "averageViewDuration,averageViewPercentage",
+      sort: "-views",
+      maxResults: String(clamp(maxResults, 1, 50)),
+    }),
+
+    safeAnalytics(token, {
+      startDate: startIso,
+      endDate: endIso,
+      dimensions: "video",
+      metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
+      sort: "-views",
+      maxResults: String(clamp(maxResults, 1, 50)),
+    }),
+
+    safeAnalytics(token, {
+      startDate: startIso,
+      endDate: endIso,
+      dimensions: "video",
+      metrics: "likes,comments,shares",
+      sort: "-views",
+      maxResults: String(clamp(maxResults, 1, 50)),
+    }),
   ]);
 
   return {
-    baseMap: parseVideoRows(base, ["views7d", "minutes7d", "subsGained7d", "subsLost7d"]),
-    retentionMap: parseVideoRows(retention, ["avgViewDurationSec7d", "avgViewPercentage7d"]),
-    thumbsMap: parseVideoRows(thumbs, ["impressions7d", "ctr7d"]),
-    engageMap: parseVideoRows(engage, ["likes7d", "comments7d", "shares7d"]),
-    rawOk: {
-      base: !!base,
-      retention: !!retention,
-      thumbs: !!thumbs,
-      engage: !!engage,
-    },
+    baseMap: parseVideoRows(base, ["views", "estimatedMinutesWatched", "subscribersGained", "subscribersLost"]),
+    retentionMap: parseVideoRows(retention, ["averageViewDuration", "averageViewPercentage"]),
+    thumbsMap: parseVideoRows(thumbs, ["videoThumbnailImpressions", "videoThumbnailImpressionsClickRate"]),
+    engageMap: parseVideoRows(engage, ["likes", "comments", "shares"]),
+    rawOk: !!(base && base.rows && base.rows.length),
   };
 }
 
-function buildVideoIntelList(videoDetails, maps, endIso) {
-  const vids = (videoDetails || []).slice(0, 50);
-  const out = [];
+function buildVideoIntelList(videoDetails, bundle, endIso) {
+  const base = bundle.baseMap;
+  const ret = bundle.retentionMap;
+  const th = bundle.thumbsMap;
+  const en = bundle.engageMap;
 
-  for (const v of vids) {
-    const id = v.videoId;
-    if (!id) continue;
-    const entry = {
-      videoId: id,
-      title: v.title,
-      publishedAt: v.publishedAt,
-      duration: v.duration,
-      durationSec: v.durationSec,
-      lifetimeViews: v.views,
-      lifetimeLikes: v.likes,
-      lifetimeComments: v.comments,
-      reportThrough: endIso,
-    };
+  const byId = new Map(videoDetails.map((v) => [v.videoId, v]));
+  const vids = [];
 
-    const base = maps.baseMap[id];
-    if (base) {
-      entry.views7d = Number(base.views7d || 0);
-      entry.minutes7d = Number(base.minutes7d || 0);
-      entry.watchHours7d = round1((base.minutes7d || 0) / 60);
-      entry.subsGained7d = Number(base.subsGained7d || 0);
-      entry.subsLost7d = Number(base.subsLost7d || 0);
-      entry.netSubs7d = entry.subsGained7d - entry.subsLost7d;
-    }
+  for (const [vid, m] of base.entries()) {
+    const det = byId.get(vid) || {};
+    const gained = Number(m.subscribersGained || 0);
+    const lost = Number(m.subscribersLost || 0);
+    const netSubs = gained - lost;
+    const minutes = Number(m.estimatedMinutesWatched || 0);
+    const watchHours = minutes / 60;
 
-    const retention = maps.retentionMap[id];
-    if (retention) {
-      entry.avgViewDurationSec7d = Number(retention.avgViewDurationSec7d || 0);
-      entry.avgViewPercentage7d = pct(retention.avgViewPercentage7d || 0);
-    }
+    const r = ret.get(vid) || {};
+    const t = th.get(vid) || {};
+    const e = en.get(vid) || {};
 
-    const thumbs = maps.thumbsMap[id];
-    if (thumbs) {
-      entry.thumbnailImpressions7d = Number(thumbs.impressions7d || 0);
-      entry.thumbnailCtr7d = pct(thumbs.ctr7d || 0);
-    }
+    vids.push({
+      videoId: vid,
+      title: det.title || "",
+      publishedAt: det.publishedAt || null,
 
-    const engage = maps.engageMap[id];
-    if (engage) {
-      entry.likes7d = Number(engage.likes7d || 0);
-      entry.comments7d = Number(engage.comments7d || 0);
-      entry.shares7d = Number(engage.shares7d || 0);
-    }
+      views7d: Number(m.views || 0),
+      watchHours7d: watchHours,
+      netSubs7d: netSubs,
 
-    out.push(entry);
+      avgViewDurationSec7d: r.averageViewDuration ?? null,
+      avgViewPercentage7d: r.averageViewPercentage ?? null,
+
+      thumbImpressions7d: t.videoThumbnailImpressions ?? null,
+      thumbCtr7d: t.videoThumbnailImpressionsClickRate ?? null,
+
+      likes7d: e.likes ?? null,
+      comments7d: e.comments ?? null,
+      shares7d: e.shares ?? null,
+    });
   }
 
-  out.sort((a, b) => (b.views7d || 0) - (a.views7d || 0));
-  return out;
+  // Keep most relevant first
+  vids.sort((a, b) => Number(b.views7d || 0) - Number(a.views7d || 0));
+  return vids;
 }
 
-function selectTop(rows, limit = 10) {
-  return (rows || []).slice(0, limit);
-}
+// ---------------------------
+// Main KPI compute (optimized w/ Promise.all)
+// ---------------------------
 
-function assertEnv(env) {
-  const missing = REQUIRED_ENV_KEYS.filter((key) => !env[key]);
-  if (missing.length) {
-    const err = new Error(`Missing required environment variables: ${missing.join(", ")}`);
-    err.statusCode = 500;
-    throw err;
-  }
-}
+async function computeKPIs(env) {
+  const token = await getAccessToken(env);
 
-function buildWeeklySummary(dailyRows, prefix, endIso) {
-  const N = dailyRows.length;
-  const weekSum = N >= 7 ? sumDailyRows(prefix, N - 7, N - 1) : { views: 0, minutes: 0, gained: 0, lost: 0 };
-  const prevWeekSum = N >= 14 ? sumDailyRows(prefix, N - 14, N - 8) : { views: 0, minutes: 0, gained: 0, lost: 0 };
+  // Analytics ends at yesterday (stable). Totals (subs/views) are real-time from channels.list.
+  const end = shiftDays(new Date(), -1);
+  const endIso = isoDate(end);
+
+  // We want 7 blocks of 28 days = 196 days. Start at end-195.
+  const dailyStart = isoDate(shiftDays(end, -195));
+
+  // Run the two big base calls in parallel (Data API + Analytics)
+  const [ch, daily] = await Promise.all([
+    fetchChannelBasics(token),
+    fetchDailyCore(token, dailyStart, endIso),
+  ]);
+
+  const N = daily.length;
+
+  // Weekly (last 7 days, and previous 7 days)
+  const weekSum =
+    N >= 7 ? sumDailyRows(daily, N - 7, N - 1) : { views: 0, minutes: 0, gained: 0, lost: 0 };
+  const prevWeekSum =
+    N >= 14 ? sumDailyRows(daily, N - 14, N - 8) : { views: 0, minutes: 0, gained: 0, lost: 0 };
+
+  const weeklyStart = N >= 7 ? daily[N - 7].day : isoDate(shiftDays(end, -6));
+  const prevWeeklyStart = N >= 14 ? daily[N - 14].day : isoDate(shiftDays(end, -13));
+  const prevWeeklyEnd = N >= 14 ? daily[N - 8].day : isoDate(shiftDays(end, -7));
 
   const weeklyPacked = packMetrics(weekSum);
   const prevWeeklyPacked = packMetrics(prevWeekSum);
 
-  const latestDay = dailyRows[N - 1]?.day || endIso;
-  const prevWeekEndIdx = N >= 14 ? N - 8 : N - 1;
-  const prevWeekEnd = dailyRows[clamp(prevWeekEndIdx, 0, N - 1)]?.day || endIso;
-  const weeklyStart = N >= 7 ? dailyRows[N - 7]?.day || isoDate(shiftDays(new Date(endIso), -6)) : isoDate(shiftDays(new Date(endIso), -6));
-  const prevWeeklyStart = N >= 14 ? dailyRows[N - 14]?.day || isoDate(shiftDays(new Date(endIso), -13)) : isoDate(shiftDays(new Date(endIso), -13));
-
-  return {
-    weeklyPacked,
-    prevWeeklyPacked,
-    summary: {
-      views: weeklyPacked.views,
-      prevViews: prevWeeklyPacked.views,
-      watchHours: weeklyPacked.watchHours,
-      prevWatchHours: prevWeeklyPacked.watchHours,
-      netSubs: weeklyPacked.netSubs,
-      prevNetSubs: prevWeeklyPacked.netSubs,
-      minutesWatched: weekSum.minutes,
-      prevMinutesWatched: prevWeekSum.minutes,
-      subscribersGained: weekSum.gained,
-      subscribersLost: weekSum.lost,
-      prevSubscribersGained: prevWeekSum.gained,
-      prevSubscribersLost: prevWeekSum.lost,
-      startDate: weeklyStart,
-      prevStartDate: prevWeeklyStart,
-      endDate: latestDay,
-      prevEndDate: prevWeekEnd,
-    },
-  };
-}
-
-function buildWindowHistory(dailyRows, prefix) {
-  const windows = [];
-  const N = dailyRows.length;
-  for (let idx = 0; idx < 7; idx++) {
-    const endIdx = N - 1 - idx * 28;
+  // Build 28-day windows from daily array
+  const winResults = [];
+  for (let i = 0; i < 7; i++) {
+    const endIdx = (N - 1) - 28 * i;
     const startIdx = endIdx - 27;
-    if (startIdx < 0 || endIdx < 0) break;
-    const sum = sumDailyRows(prefix, startIdx, endIdx);
+    if (startIdx < 0 || endIdx < 0 || startIdx >= N || endIdx >= N) continue;
+
+    const sum = sumDailyRows(daily, startIdx, endIdx);
     const metrics = packMetrics(sum);
-    windows.push({
-      idx,
-      startDate: dailyRows[startIdx].day,
-      endDate: dailyRows[endIdx].day,
+
+    winResults.push({
+      idx: i,
+      startDate: daily[startIdx].day,
+      endDate: daily[endIdx].day,
       metrics,
     });
   }
-  return windows;
-}
 
-async function computeKPIs(env) {
-  assertEnv(env);
-  const token = await getAccessToken(env);
-  const channel = await fetchChannelBasicsCached(token);
+  const last28 = winResults.find((x) => x.idx === 0) || { startDate: null, endDate: null, metrics: packMetrics({}) };
+  const prev28 = winResults.find((x) => x.idx === 1) || { startDate: null, endDate: null, metrics: packMetrics({}) };
+  const prev6 = winResults.filter((x) => x.idx >= 1 && x.idx <= 6);
 
-  const end = shiftDays(new Date(), -1);
-  const endIso = isoDate(end);
-  const dailyStart = isoDate(shiftDays(end, -195));
+  const medianSubs = median(prev6.map((w) => w.metrics.netSubs));
+  const medianViews = median(prev6.map((w) => w.metrics.views));
+  const medianWatch = median(prev6.map((w) => w.metrics.watchHours));
 
-  const [dailyRows, lifetimePromise, uploadsPromise] = await Promise.all([
-    fetchDailyCore(token, dailyStart, endIso),
-    fetchLifetimeWatchHours(token, channel.publishedAt, endIso),
-    fetchRecentUploads(token, channel.uploadsPlaylistId, 25),
-  ]);
+  const avgSubs = avg(prev6.map((w) => w.metrics.netSubs));
+  const avgViews = avg(prev6.map((w) => w.metrics.views));
+  const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
 
-  const prefix = buildDailyPrefix(dailyRows);
-  const N = dailyRows.length;
-
-  const { weeklyPacked, prevWeeklyPacked, summary } = buildWeeklySummary(dailyRows, prefix, endIso);
-  const historyWindows = buildWindowHistory(dailyRows, prefix);
-
-  const last28 = historyWindows.find((x) => x.idx === 0)?.metrics || packMetrics({});
-  const prev28 = historyWindows.find((x) => x.idx === 1)?.metrics || packMetrics({});
-  const prevSix = historyWindows.filter((x) => x.idx >= 1 && x.idx <= 6).map((x) => x.metrics);
-
-  const medianSubs = median(prevSix.map((w) => w.netSubs));
-  const medianViews = median(prevSix.map((w) => w.views));
-  const medianWatch = median(prevSix.map((w) => w.watchHours));
-
-  const avgSubs = avg(prevSix.map((w) => w.netSubs));
-  const avgViews = avg(prevSix.map((w) => w.views));
-  const avgWatch = avg(prevSix.map((w) => w.watchHours));
-
-  const history28d = [...historyWindows]
+  const history28d = [...winResults]
     .sort((a, b) => b.idx - a.idx)
     .map((w) => ({
       startDate: w.startDate,
@@ -570,12 +436,16 @@ async function computeKPIs(env) {
       watchHours: w.metrics.watchHours,
     }));
 
-  const lifetime = await lifetimePromise;
-  const uploads = await uploadsPromise;
-  const latestUpload = uploads[0] || null;
+  // Dates used by optional “Holy Grail” analytics (channel-level, safe + optional)
+  const last28Start = last28.startDate || isoDate(shiftDays(end, -27));
+  const prev28Start = prev28.startDate || isoDate(shiftDays(end, -55));
+  const prev28End = prev28.endDate || isoDate(shiftDays(end, -28));
 
-  const weeklyStart = summary.startDate;
-  const top7Resp = await safeAnalytics(token, {
+  // Kick off independent work in parallel
+  const lifeP = fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
+  const uploadsP = fetchRecentUploads(token, ch.uploadsPlaylistId, 25);
+
+  const top7P = safeAnalytics(token, {
     startDate: weeklyStart,
     endDate: endIso,
     dimensions: "video",
@@ -583,140 +453,255 @@ async function computeKPIs(env) {
     sort: "-views",
     maxResults: "1",
   });
+
+  const thumb28P = safeAnalytics(token, {
+    startDate: last28Start,
+    endDate: endIso,
+    metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
+  });
+
+  const ret28P = safeAnalytics(token, {
+    startDate: last28Start,
+    endDate: endIso,
+    metrics: "averageViewDuration,averageViewPercentage",
+  });
+
+  const uniq28P = safeAnalytics(token, {
+    startDate: last28Start,
+    endDate: endIso,
+    metrics: "uniqueViewers",
+  });
+
+  const traffic28P = safeAnalytics(token, {
+    startDate: last28Start,
+    endDate: endIso,
+    dimensions: "insightTrafficSourceType",
+    metrics: "views",
+    sort: "-views",
+    maxResults: "10",
+  });
+
+  const trafficPrev28P = safeAnalytics(token, {
+    startDate: prev28Start,
+    endDate: prev28End,
+    dimensions: "insightTrafficSourceType",
+    metrics: "views",
+    sort: "-views",
+    maxResults: "10",
+  });
+
+  const subStatus28P = safeAnalytics(token, {
+    startDate: last28Start,
+    endDate: endIso,
+    dimensions: "subscribedStatus",
+    metrics: "views",
+    sort: "-views",
+    maxResults: "5",
+  });
+
+  const country28P = safeAnalytics(token, {
+    startDate: last28Start,
+    endDate: endIso,
+    dimensions: "country",
+    metrics: "views",
+    sort: "-views",
+    maxResults: "5",
+  });
+
+  // Video-level intel bundle (7D) in parallel too
+  const v7dBundleP = fetchVideoAnalytics7dBundle(token, weeklyStart, endIso, 25);
+
+  const [
+    life,
+    uploads,
+    top7Resp,
+    thumb28,
+    ret28,
+    uniq28,
+    traffic28,
+    trafficPrev28,
+    subStatus28,
+    country28,
+    v7dBundle,
+  ] = await Promise.all([
+    lifeP,
+    uploadsP,
+    top7P,
+    thumb28P,
+    ret28P,
+    uniq28P,
+    traffic28P,
+    trafficPrev28P,
+    subStatus28P,
+    country28P,
+    v7dBundleP,
+  ]);
+
+  const latestUpload = uploads[0] || null;
+
   const top7VideoId = top7Resp?.rows?.[0]?.[0] || null;
   const top7Views = Number(top7Resp?.rows?.[0]?.[1] || 0);
 
+  // Fetch details for recent uploads (+ top video if not already included)
   const videoIds = uniq([...(uploads.map((u) => u.videoId)), top7VideoId]);
   const videoDetails = await fetchVideos(token, videoIds);
   const vidsById = Object.fromEntries(videoDetails.map((v) => [v.videoId, v]));
+
   const latestVideo = latestUpload?.videoId ? vidsById[latestUpload.videoId] || null : null;
   const top7Video = top7VideoId ? vidsById[top7VideoId] || null : null;
 
-  const last28Start = historyWindows.find((x) => x.idx === 0)?.startDate || isoDate(shiftDays(end, -27));
-  const prev28Start = historyWindows.find((x) => x.idx === 1)?.startDate || isoDate(shiftDays(end, -55));
-  const prev28End = historyWindows.find((x) => x.idx === 1)?.endDate || isoDate(shiftDays(end, -28));
+  // 48h-ish (last 2 days) views from daily core
+  const v48 = N >= 2 ? Number(daily[N - 1]?.views || 0) + Number(daily[N - 2]?.views || 0) : 0;
 
-  const [thumb28, ret28, uniq28, traffic28, trafficPrev28, subStatus28, country28] = await Promise.all([
-    safeAnalytics(token, {
-      startDate: last28Start,
-      endDate: endIso,
-      metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
-    }),
-    safeAnalytics(token, {
-      startDate: last28Start,
-      endDate: endIso,
-      metrics: "averageViewDuration,averageViewPercentage",
-    }),
-    safeAnalytics(token, {
-      startDate: last28Start,
-      endDate: endIso,
-      metrics: "uniqueViewers",
-    }),
-    safeAnalytics(token, {
-      startDate: last28Start,
-      endDate: endIso,
-      dimensions: "insightTrafficSourceType",
-      metrics: "views",
-      sort: "-views",
-      maxResults: "10",
-    }),
-    safeAnalytics(token, {
-      startDate: prev28Start,
-      endDate: prev28End,
-      dimensions: "insightTrafficSourceType",
-      metrics: "views",
-      sort: "-views",
-      maxResults: "10",
-    }),
-    safeAnalytics(token, {
-      startDate: last28Start,
-      endDate: endIso,
-      dimensions: "subscribedStatus",
-      metrics: "views",
-      sort: "-views",
-      maxResults: "5",
-    }),
-    safeAnalytics(token, {
-      startDate: last28Start,
-      endDate: endIso,
-      dimensions: "country",
-      metrics: "views",
-      sort: "-views",
-      maxResults: "5",
-    }),
-  ]);
-
-  const v48 = N >= 2 ? Number(dailyRows[N - 1]?.views || 0) + Number(dailyRows[N - 2]?.views || 0) : (dailyRows[0]?.views || 0);
-
-  const v7dBundle = await fetchVideoAnalytics7dBundle(token, weeklyStart, endIso, 25);
+  // Build video intel list (top ~25 recent videos + their 7D analytics)
   const videoIntelList = buildVideoIntelList(videoDetails, v7dBundle, endIso);
 
-  const hudPayload = {
+  // Pack HUD extras (keeps old shape; adds "videoIntel")
+  const hud = {
     statsThrough: endIso,
+
     uploads: {
-      latest: latestUpload,
-      recent: uploads.slice(0, 10),
+      latest: latestUpload
+        ? {
+            videoId: latestUpload.videoId,
+            publishedAt: latestUpload.publishedAt,
+            title: latestUpload.title || (latestVideo?.title || ""),
+          }
+        : null,
+      recent: uploads,
     },
-    latestVideo: latestVideo ? { ...latestVideo } : null,
-    topVideo7d: top7VideoId ? { ...(top7Video || {}), views: top7Views, videoId: top7VideoId } : null,
-    thumb28: thumb28 ? {
-      impressions: Number(thumb28.rows?.[0]?.[0] || 0),
-      ctr: pct(thumb28.rows?.[0]?.[1] || 0),
-    } : null,
-    retention28: ret28 ? {
-      avgViewDurationSec: Number(ret28.rows?.[0]?.[0] || 0),
-      avgViewPercentage: pct(ret28.rows?.[0]?.[1] || 0),
-    } : null,
-    uniqueViewers28: uniq28 ? Number(uniq28.rows?.[0]?.[0] || 0) : null,
+
+    latestVideo: latestVideo
+      ? {
+          videoId: latestVideo.videoId,
+          title: latestVideo.title,
+          publishedAt: latestVideo.publishedAt,
+          views: latestVideo.views,
+          likes: latestVideo.likes,
+          comments: latestVideo.comments,
+          duration: latestVideo.duration,
+          durationSec: latestVideo.durationSec,
+        }
+      : null,
+
+    topVideo7d: top7VideoId
+      ? {
+          videoId: top7VideoId,
+          title: top7Video?.title || "",
+          views: top7Views,
+        }
+      : null,
+
+    thumb28: thumb28?.rows?.[0]
+      ? {
+          impressions: Number(thumb28.rows[0][0] || 0),
+          ctr: Number(thumb28.rows[0][1] || 0), // percent
+        }
+      : null,
+
+    retention28: ret28?.rows?.[0]
+      ? {
+          avgViewDurationSec: Number(ret28.rows[0][0] || 0),
+          avgViewPercentage: Number(ret28.rows[0][1] || 0),
+        }
+      : null,
+
+    uniqueViewers28: Number(uniq28?.rows?.[0]?.[0] || 0) || null,
+
     traffic: {
-      last28: selectTop(rowsToDimList(traffic28, "trafficSource", "views"), 10),
-      prev28: selectTop(rowsToDimList(trafficPrev28, "trafficSource", "views"), 10),
+      last28: traffic28 ? rowsToDimList(traffic28, "insightTrafficSourceType", "views") : null,
+      prev28: trafficPrev28 ? rowsToDimList(trafficPrev28, "insightTrafficSourceType", "views") : null,
     },
-    subscribedStatus: selectTop(rowsToDimList(subStatus28, "subscribedStatus", "views"), 5),
-    countries: selectTop(rowsToDimList(country28, "country", "views"), 5),
+
+    subscribedStatus: subStatus28 ? rowsToDimList(subStatus28, "subscribedStatus", "views") : null,
+    countries: country28 ? rowsToDimList(country28, "country", "views") : null,
+
     views48h: v48,
-    videoIntel: videoIntelList,
+
+    // ready for 26+ video-specific HUD insights
+    videoIntel: {
+      range7d: { startDate: weeklyStart, endDate: endIso },
+      count: videoIntelList.length,
+      dataOk: v7dBundle.rawOk,
+      videos: videoIntelList,
+    },
   };
 
   return {
-    channel,
-    lifetime,
+    channel: ch,
+
     weekly: {
-      ...summary,
+      startDate: weeklyStart,
+      endDate: endIso,
+
+      netSubs: weeklyPacked.netSubs,
+      views: weeklyPacked.views,
+      watchHours: weeklyPacked.watchHours,
+
+      // extra (HUD uses)
+      subscribersGained: weeklyPacked.gained,
+      subscribersLost: weeklyPacked.lost,
+      minutesWatched: weeklyPacked.minutes,
+
+      prevNetSubs: prevWeeklyPacked.netSubs,
+      prevViews: prevWeeklyPacked.views,
+      prevWatchHours: prevWeeklyPacked.watchHours,
+      prevSubscribersGained: prevWeeklyPacked.gained,
+      prevSubscribersLost: prevWeeklyPacked.lost,
+      prevMinutesWatched: prevWeeklyPacked.minutes,
+
+      prevStartDate: prevWeeklyStart,
+      prevEndDate: prevWeeklyEnd,
     },
-    weeklyStart,
+
     m28: {
-      last28,
-      prev28,
-      median6m: {
-        netSubs: medianSubs,
-        views: medianViews,
-        watchHours: medianWatch,
+      last28: {
+        netSubs: last28.metrics.netSubs,
+        views: last28.metrics.views,
+        watchHours: last28.metrics.watchHours,
+      },
+      prev28: {
+        netSubs: prev28.metrics.netSubs,
+        views: prev28.metrics.views,
+        watchHours: prev28.metrics.watchHours,
       },
       avg6m: {
         netSubs: avgSubs,
         views: avgViews,
         watchHours: avgWatch,
       },
+      median6m: {
+        netSubs: medianSubs,
+        views: medianViews,
+        watchHours: medianWatch,
+      },
     },
+
+    lifetime: {
+      watchHours: life.totalHours,
+    },
+
     history28d,
-    hud: hudPayload,
+    hud,
   };
 }
 
 export async function onRequest(context) {
   try {
-    const data = await computeKPIs(context.env || {});
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { "content-type": "application/json; charset=utf-8" },
+    const cache = caches.default;
+    const cacheKey = new Request(new URL(context.request.url).toString(), { method: "GET" });
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+
+    const data = await computeKPIs(context.env);
+
+    const res = Response.json(data, {
+      headers: { "Cache-Control": "public, max-age=55" },
     });
-  } catch (err) {
-    console.error("computeKPIs error", err);
-    const status = err.statusCode || 500;
-    return new Response(JSON.stringify({ error: err.message || "Internal Error" }), {
-      status,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
+
+    context.waitUntil(cache.put(cacheKey, res.clone()));
+    return res;
+  } catch (e) {
+    return Response.json({ error: String(e) }, { status: 500 });
   }
 }
