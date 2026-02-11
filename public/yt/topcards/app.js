@@ -6,8 +6,12 @@ function fmt1(n) { return NF_1.format(Number(n || 0)); }
 function nowStamp() { return new Date().toLocaleTimeString(); }
 
 const COLORS = {
-  red: "#ff3344", orange: "#ff8800", yellow: "#ffd700",
-  green: "#00ff99", blue: "#00ccff", purple: "#bb00ff",
+  red: "#e81416",
+  orange: "#ffa500",
+  yellow: "#faeb36",
+  green: "#79c314",
+  blue: "#487de7",
+  purple: "#70369d",
 };
 
 const FEEDBACK = {
@@ -32,11 +36,19 @@ function safeSetHTML(id, html) {
 
 // --- LOGIC ---
 function tierArrow(tier) {
-  if (tier === "red" || tier === "orange") return "↓";
-  if (tier === "yellow") return "–";
+  // MUST FOLLOW:
+  // red: ↓ ↓
+  // orange: ↓
+  // yellow: -
+  // green: ↑
+  // blue: ↑↑
+  // purple: ⟰
+  if (tier === "red") return "↓↓";
+  if (tier === "orange") return "↓";
+  if (tier === "yellow") return "-";
   if (tier === "green") return "↑";
-  if (tier === "blue") return "⟰";
-  return "⟰⟰";
+  if (tier === "blue") return "↑↑";
+  return "⟰";
 }
 
 function tierFromBaseline(last28, median6m, absMin) {
@@ -161,14 +173,14 @@ function ensureSparkGradient(svgEl, gradId, tierHex) {
   }
 
   const stops = grad.querySelectorAll("stop");
-  if (stops[0]) stops[0].setAttribute("stop-color", rgbaFromHex(tierHex, 0.22));     // near line
-  if (stops[1]) stops[1].setAttribute("stop-color", "rgba(255,255,255,0.10)");      // fade to white
-  if (stops[2]) stops[2].setAttribute("stop-color", "rgba(255,255,255,0.02)");      // bottom
+  if (stops[0]) stops[0].setAttribute("stop-color", rgbaFromHex(tierHex, 0.22));
+  if (stops[1]) stops[1].setAttribute("stop-color", "rgba(255,255,255,0.10)");
+  if (stops[2]) stops[2].setAttribute("stop-color", "rgba(255,255,255,0.02)");
 
   return `url(#${gradId})`;
 }
 
-// --- PHASE 1 SPARKLINE (AREA FILL + BEZIER) ---
+// --- SPARKLINE ---
 function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
@@ -200,12 +212,10 @@ function setSpark(fillId, pathId, values, tier) {
 
   const dArea = `${dLine} L ${w} ${h} L 0 ${h} Z`;
 
-  // main line (slightly thicker)
   pathEl.setAttribute("d", dLine);
   pathEl.style.stroke = COLORS[tier];
   pathEl.style.strokeWidth = "2.4";
 
-  // fill gradient -> white
   fillEl.setAttribute("d", dArea);
   const svgEl = fillEl.closest("svg");
   const gradUrl = ensureSparkGradient(svgEl, `grad-${fillId}`, COLORS[tier]);
@@ -226,7 +236,7 @@ function renderPacing(elId, cur, prev, suffix = "") {
   safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL (unchanged behavior) ---
+// --- CASINO ROLL ---
 function ensureRoll(el) {
   if (!el) return;
   if (el._rollWrap && el._rollCol) return;
@@ -307,7 +317,7 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   col.style.transform = `translateY(${finalY}em)`;
 }
 
-// --- SPEEDOMETER (unchanged) ---
+// --- SPEEDOMETER ---
 function animateSpeedometer(el, toVal, opts = {}) {
   if (!el) return;
 
@@ -333,7 +343,7 @@ function animateSpeedometer(el, toVal, opts = {}) {
   el._spdRaf = requestAnimationFrame(tick);
 }
 
-// --- FLOAT ICON (unchanged) ---
+// --- FLOAT ICON ---
 const SVGS = {
   subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
   views: `<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
@@ -350,16 +360,16 @@ function spawnFloatIcon(cardId, type) {
   setTimeout(() => el.remove(), 5500);
 }
 
-// --- GLOW ONCE (iconBox + chip glow; svg changes color only) ---
+// --- GLOW ONCE (timing controlled by CSS duration = 4s) ---
 function triggerGlowOnce(cardId) {
   const card = document.getElementById(cardId);
   if (!card) return;
 
   card.classList.remove("glow-once");
-  void card.offsetWidth; // reflow to restart
+  void card.offsetWidth;
   card.classList.add("glow-once");
 
-  setTimeout(() => card.classList.remove("glow-once"), 2000);
+  setTimeout(() => card.classList.remove("glow-once"), 4000);
 }
 
 let glowTimer = null;
@@ -446,7 +456,7 @@ function render(data, isFirst) {
     safeSetText("watchNextPct", pWatch + "%");
     safeSetStyle("watchProgressFill", "width", pWatch + "%");
 
-    // Counters (unchanged)
+    // Counters
     const subsEl = document.getElementById("subsNow");
     if (isFirst) {
       animateSpeedometer(subsEl, cur.subs, { duration: 650 });
@@ -482,9 +492,7 @@ function render(data, isFirst) {
 
     state = cur;
 
-    // --- GLOW RULES ---
-    // 1) On auto refresh (isFirst=false): glow once immediately
-    // 2) Every 30s: glow once
+    // glow once on refresh + every 30s (duration handled in CSS/keyframes but class removed after 4s)
     if (!isFirst) {
       triggerGlowOnce("cardSubs");
       triggerGlowOnce("cardViews");
@@ -518,7 +526,7 @@ async function load(isFirst) {
   }
 }
 
-// 3D Tilt (unchanged)
+// 3D Tilt
 document.querySelectorAll(".card").forEach(card => {
   card.addEventListener("mousemove", (e) => {
     const r = card.getBoundingClientRect();
