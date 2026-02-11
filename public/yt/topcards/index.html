@@ -7,12 +7,15 @@
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
+  <!-- Ambient Background Blobs -->
+  <div class="ambient-light"></div>
+
   <div class="wrap">
     <div class="toast" id="toast">Updated ✓</div>
 
     <div class="grid">
 
-      <!-- CARD 1 -->
+      <!-- CARD 1: SUBSCRIBERS -->
       <div class="card" id="cardSubs">
         <div class="cardTop">
           <div class="left">
@@ -26,7 +29,6 @@
               <div class="subtitle">Current</div>
             </div>
           </div>
-
           <div class="chip">
             <span class="dot" id="subsDot"></span>
             <span class="chipText" id="subsChipText">—</span>
@@ -38,9 +40,28 @@
             <span id="subsNow">—</span>
             <span class="mainArrow" id="subsMainArrow">—</span>
           </div>
-          <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
-            <path id="subsSparkPath" d="" />
+          <!-- Area Sparkline: Fill + Stroke -->
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="gradSubs" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="var(--c-tier)" stop-opacity="0.4"/>
+                <stop offset="100%" stop-color="var(--c-tier)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path id="subsSparkFill" d="" fill="url(#gradSubs)" />
+            <path id="subsSparkPath" d="" fill="none" />
           </svg>
+        </div>
+
+        <!-- Milestone Progress (Gamification) -->
+        <div class="milestoneBox">
+          <div class="milestoneText">
+            <span>Next Goal: <b id="subsNextGoal">—</b></span>
+            <span id="subsNextPct">0%</span>
+          </div>
+          <div class="progressBg">
+            <div class="progressFill" id="subsProgressFill"></div>
+          </div>
         </div>
 
         <div class="weekLine" id="subsWeek">This week: —</div>
@@ -55,18 +76,17 @@
             <div class="metaValue" id="subsPrev28">—</div>
           </div>
           <div class="metaItem">
-            <div class="metaLabel">vs. Last 6M Avg</div>
+            <div class="metaLabel">vs 6M Avg</div>
             <div class="metaValue">
               <span class="vsNum" id="subsVsNum">—</span>
               <span class="vsArrow" id="subsVsArrow">—</span>
             </div>
           </div>
         </div>
-
         <div class="shine"></div>
       </div>
 
-      <!-- CARD 2 -->
+      <!-- CARD 2: VIEWS -->
       <div class="card" id="cardViews">
         <div class="cardTop">
           <div class="left">
@@ -80,7 +100,6 @@
               <div class="subtitle">Lifetime</div>
             </div>
           </div>
-
           <div class="chip">
             <span class="dot" id="viewsDot"></span>
             <span class="chipText" id="viewsChipText">—</span>
@@ -92,8 +111,15 @@
             <span id="viewsTotal">—</span>
             <span class="mainArrow" id="viewsMainArrow">—</span>
           </div>
-          <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
-            <path id="viewsSparkPath" d="" />
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="gradViews" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="var(--c-tier)" stop-opacity="0.4"/>
+                <stop offset="100%" stop-color="var(--c-tier)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path id="viewsSparkFill" d="" fill="url(#gradViews)" />
+            <path id="viewsSparkPath" d="" fill="none" />
           </svg>
         </div>
 
@@ -109,23 +135,21 @@
             <div class="metaValue" id="viewsPrev28">—</div>
           </div>
           <div class="metaItem">
-            <div class="metaLabel">vs. Last 6M Avg</div>
+            <div class="metaLabel">vs 6M Avg</div>
             <div class="metaValue">
               <span class="vsNum" id="viewsVsNum">—</span>
               <span class="vsArrow" id="viewsVsArrow">—</span>
             </div>
           </div>
         </div>
-
         <div class="shine"></div>
       </div>
 
-      <!-- CARD 3 -->
+      <!-- CARD 3: WATCH HOURS -->
       <div class="card" id="cardWatch">
         <div class="cardTop">
           <div class="left">
             <div class="iconBox" aria-hidden="true">
-              <!-- white video icon -->
               <svg viewBox="0 0 24 24" class="icon">
                 <path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/>
               </svg>
@@ -135,7 +159,6 @@
               <div class="subtitle">Lifetime</div>
             </div>
           </div>
-
           <div class="chip">
             <span class="dot" id="watchDot"></span>
             <span class="chipText" id="watchChipText">—</span>
@@ -147,8 +170,15 @@
             <span id="watchNow">—</span>
             <span class="mainArrow" id="watchMainArrow">—</span>
           </div>
-          <svg class="spark" viewBox="0 0 120 36" preserveAspectRatio="none">
-            <path id="watchSparkPath" d="" />
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="gradWatch" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="var(--c-tier)" stop-opacity="0.4"/>
+                <stop offset="100%" stop-color="var(--c-tier)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path id="watchSparkFill" d="" fill="url(#gradWatch)" />
+            <path id="watchSparkPath" d="" fill="none" />
           </svg>
         </div>
 
@@ -164,20 +194,19 @@
             <div class="metaValue" id="watchPrev28">—</div>
           </div>
           <div class="metaItem">
-            <div class="metaLabel">vs. Last 6M Avg</div>
+            <div class="metaLabel">vs 6M Avg</div>
             <div class="metaValue">
               <span class="vsNum" id="watchVsNum">—</span>
               <span class="vsArrow" id="watchVsArrow">—</span>
             </div>
           </div>
         </div>
-
         <div class="shine"></div>
       </div>
 
     </div>
 
-    <div class="foot" id="updated">—</div>
+    <div class="foot" id="updated">Initializing System...</div>
   </div>
 
   <script src="./app.js"></script>
