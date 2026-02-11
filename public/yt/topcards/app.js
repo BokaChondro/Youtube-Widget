@@ -5,32 +5,16 @@ function fmt(n) { return NF_INT.format(Number(n || 0)); }
 function fmt1(n) { return NF_1.format(Number(n || 0)); }
 function nowStamp() { return new Date().toLocaleTimeString(); }
 
-// --- THEME & COLORS ---
 const COLORS = {
-  red: "#ff3344",
-  orange: "#ff8800",
-  yellow: "#ffd700",
-  green: "#00ff99",
-  blue: "#00ccff",
-  purple: "#bb00ff",
+  red: "#ff3344", orange: "#ff8800", yellow: "#ffd700",
+  green: "#00ff99", blue: "#00ccff", purple: "#bb00ff",
 };
 
 const FEEDBACK = {
-  subs: {
-    red: "Churn warning", orange: "Slow growth", yellow: "Stable flow",
-    green: "Climbing", blue: "Surging", purple: "Viral",
-  },
-  views: {
-    red: "Low reach", orange: "Needs push", yellow: "Holding",
-    green: "Rising", blue: "Trending", purple: "Explosive",
-  },
-  watch: {
-    red: "Drops", orange: "Weak", yellow: "Consistent",
-    green: "Engaging", blue: "Hooked", purple: "Binge-mode",
-  },
+  subs: { red: "Churn", orange: "Slow", yellow: "Stable", green: "Climbing", blue: "Surging", purple: "Viral" },
+  views: { red: "Low Reach", orange: "Needs Push", yellow: "Steady", green: "Rising", blue: "Trending", purple: "Explosive" },
+  watch: { red: "Dropping", orange: "Weak", yellow: "Consistent", green: "Engaging", blue: "Hooked", purple: "Binge" },
 };
-
-// --- LOGIC HELPERS ---
 
 function tierArrow(tier) {
   if (tier === "red" || tier === "orange") return "↓";
@@ -43,41 +27,44 @@ function tierArrow(tier) {
 function tierFromBaseline(last28, median6m, absMin, minPct) {
   const L = Number(last28 || 0);
   const B = Number(median6m || 0);
+  if (B <= 0) return L > absMin ? "green" : "orange";
+  
+  const ratio = L / B;
+  if (ratio < 0.7) return "red";
+  if (ratio < 0.9) return "orange";
+  if (ratio < 1.05) return "yellow";
+  if (ratio < 1.25) return "green";
+  if (ratio < 1.6) return "blue";
+  return "purple";
+}
 
-  if (B <= 0) {
-    if (L <= 0) return "red";
-    if (L < absMin) return "orange";
-    if (L < absMin * 4) return "yellow";
-    if (L < absMin * 10) return "green";
-    if (L < absMin * 25) return "blue";
-    return "purple";
+// Logic for "Next Goal"
+function getMilestone(val, type) {
+  const v = Number(val || 0);
+  if(v < 0) return 100;
+
+  // Watch Hours (smaller scale)
+  if (type === 'watch') {
+    if (v < 100) return 100;
+    if (v < 1000) return Math.ceil((v + 1) / 100) * 100;
+    if (v < 4000) return 4000; // Special YouTube monetization goal
+    if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
+    return Math.ceil((v + 1) / 5000) * 5000;
   }
 
-  const ratio = L / B;
-  const delta = L - B;
-  const gate = Math.max(absMin, B * minPct);
-
-  let tier = "yellow";
-  if (ratio < 0.7) tier = "red";
-  else if (ratio < 0.9) tier = "orange";
-  else if (ratio < 1.05) tier = "yellow";
-  else if (ratio < 1.25) tier = "green";
-  else if (ratio < 1.6) tier = "blue";
-  else tier = "purple";
-
-  if ((tier === "blue" || tier === "purple") && delta < gate) tier = "green";
-  return tier;
+  // Views & Subs (Powers of 10-ish logic)
+  const digits = Math.floor(Math.log10(v));
+  const base = Math.pow(10, digits); // e.g., 700 -> 100
+  
+  // If 740, next is 800. If 950, next is 1000.
+  const nextStep = Math.ceil((v + 1) / base) * base;
+  
+  // If we just hit a round number (e.g. 1000), target is 1100 (or 2000?)
+  // Let's do finer steps for smaller channels
+  if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
+  if (v < 100000) return Math.ceil((v + 1) / 10000) * 10000;
+  return Math.ceil((v + 1) / 100000) * 100000;
 }
-
-function getMilestone(current) {
-  // Dynamic stepping for milestones
-  if (current < 1000) return Math.ceil((current + 1) / 100) * 100; // Next 100
-  if (current < 10000) return Math.ceil((current + 1) / 1000) * 1000; // Next 1k
-  if (current < 100000) return Math.ceil((current + 1) / 10000) * 10000; // Next 10k
-  return Math.ceil((current + 1) / 100000) * 100000; // Next 100k
-}
-
-// --- DOM UPDATERS ---
 
 async function fetchJSON(url) {
   const r = await fetch(url, { cache: "no-store" });
@@ -86,24 +73,15 @@ async function fetchJSON(url) {
 
 function setCardTheme(cardId, tier) {
   const card = document.getElementById(cardId);
-  const color = COLORS[tier] || COLORS.yellow;
-  // Set CSS variable locally for this card
-  card.style.setProperty('--c-tier', color);
-  
-  // Flash effect logic
+  card.style.setProperty('--c-tier', COLORS[tier] || COLORS.yellow);
   card.classList.add('fresh');
   setTimeout(() => card.classList.remove('fresh'), 2500);
 }
 
 function setChip(dotId, chipTextId, tier, text) {
-  const dot = document.getElementById(dotId);
-  const chipText = document.getElementById(chipTextId);
-  const color = COLORS[tier] || COLORS.yellow;
-  
-  dot.style.background = color;
-  dot.style.boxShadow = `0 0 10px ${color}`;
-  chipText.textContent = text;
-  chipText.style.color = "#fff";
+  document.getElementById(dotId).style.background = COLORS[tier];
+  document.getElementById(dotId).style.boxShadow = `0 0 10px ${COLORS[tier]}`;
+  document.getElementById(chipTextId).textContent = text;
 }
 
 function setMainArrow(elId, tier) {
@@ -117,122 +95,48 @@ function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   const numEl = document.getElementById(elNumId);
   const arrEl = document.getElementById(elArrowId);
   const d = Number(delta || 0);
-
-  if (d > 0) {
-    numEl.className = "vsNum pos";
-    arrEl.className = "vsArrow pos";
-    arrEl.textContent = "↑";
-  } else if (d < 0) {
-    numEl.className = "vsNum neg";
-    arrEl.className = "vsArrow neg";
-    arrEl.textContent = "↓";
-  } else {
-    numEl.className = "vsNum neu";
-    arrEl.className = "vsArrow neu";
-    arrEl.textContent = "–";
-  }
-  const abs = Math.abs(d);
-  numEl.textContent = (decimals ? abs.toFixed(decimals) : fmt(Math.round(abs))) + suffix;
+  numEl.className = d > 0 ? "vsNum pos" : (d < 0 ? "vsNum neg" : "vsNum neu");
+  arrEl.className = d > 0 ? "vsArrow pos" : (d < 0 ? "vsArrow neg" : "vsArrow neu");
+  arrEl.textContent = d > 0 ? "↑" : (d < 0 ? "↓" : "–");
+  numEl.textContent = (decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)))) + suffix;
 }
 
-// Generates both a Line (stroke) and an Area (fill)
 function setSpark(fillId, pathId, values, tier) {
-  const fillEl = document.getElementById(fillId);
-  const pathEl = document.getElementById(pathId);
-  const color = COLORS[tier];
-
-  const w = 120, h = 40, pad = 2;
   const vals = (values || []).map(Number);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = max - min || 1;
+  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
+  const w = 120, h = 40, pad = 2;
 
-  // Generate points
-  const pts = vals.map((v, i) => {
-    const x = (i / (vals.length - 1)) * w;
-    const y = h - pad - ((v - min) / span) * (h - pad * 2); 
-    return { x, y };
-  });
+  const pts = vals.map((v, i) => ({
+    x: (i / (vals.length - 1)) * w,
+    y: h - pad - ((v - min) / span) * (h - pad * 2)
+  }));
 
-  // Create Smooth Curve (Catmull-Rom or Quad Bezier)
-  // Simple Quad Bezier approach
-  let dLine = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
   for (let i = 1; i < pts.length; i++) {
-    const p = pts[i - 1];
-    const c = pts[i];
-    const cx = ((p.x + c.x) / 2).toFixed(1);
-    const cy = ((p.y + c.y) / 2).toFixed(1);
-    dLine += ` Q ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${cx} ${cy}`;
+    const cx = ((pts[i-1].x + pts[i].x) / 2).toFixed(1);
+    const cy = ((pts[i-1].y + pts[i].y) / 2).toFixed(1);
+    d += ` Q ${pts[i-1].x.toFixed(1)} ${pts[i-1].y.toFixed(1)} ${cx} ${cy}`;
   }
-  dLine += ` T ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
+  d += ` T ${pts[pts.length-1].x.toFixed(1)} ${pts[pts.length-1].y.toFixed(1)}`;
 
-  // Close the loop for the fill
-  const dFill = `${dLine} L ${w} ${h} L 0 ${h} Z`;
-
-  // Apply Line
-  pathEl.setAttribute("d", dLine);
-  pathEl.style.stroke = color;
-  pathEl.style.strokeWidth = "2.5";
-
-  // Apply Fill
-  fillEl.setAttribute("d", dFill);
-  // (Fill color is handled by SVG LinearGradient referencing --c-tier in CSS)
-}
-
-function renderPacing(elId, current, previous, suffix="") {
-  const cur = Number(current || 0);
-  const prev = Number(previous || 1); // protect div0
-  if (prev === 0) return; // skip if no history
+  document.getElementById(pathId).setAttribute("d", d);
+  document.getElementById(pathId).style.stroke = COLORS[tier];
+  document.getElementById(pathId).style.strokeWidth = "2.5";
   
-  const pct = Math.round(((cur - prev) / prev) * 100);
-  const el = document.getElementById(elId);
-  
-  let html = `This week: ${fmt(cur)}${suffix}`;
-  
-  // Velocity Indicator
-  if (pct > 0) {
-    html += ` <span style="color:var(--c-green); font-size:0.9em; margin-left:4px;">(+${pct}%)</span>`;
-  } else if (pct < 0) {
-    html += ` <span style="color:var(--c-red); font-size:0.9em; margin-left:4px;">(${pct}%)</span>`;
-  } else {
-    html += ` <span style="color:#777; font-size:0.9em; margin-left:4px;">(—)</span>`;
-  }
-  
-  el.innerHTML = html;
+  document.getElementById(fillId).setAttribute("d", `${d} L ${w} ${h} L 0 ${h} Z`);
 }
 
-function showToast(text) {
-  const t = document.getElementById("toast");
-  t.textContent = text;
-  t.classList.add("show");
-  clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => t.classList.remove("show"), 1500);
+function renderPacing(elId, cur, prev, suffix="") {
+  const c = Number(cur||0), p = Number(prev||1);
+  const pct = Math.round(((c - p) / p) * 100);
+  let html = `This week: ${fmt(c)}${suffix}`;
+  if(pct > 0) html += ` <span style="color:var(--c-green)">(+${pct}%)</span>`;
+  else if(pct < 0) html += ` <span style="color:var(--c-red)">(${pct}%)</span>`;
+  else html += ` <span style="color:#777">(—)</span>`;
+  document.getElementById(elId).innerHTML = html;
 }
 
-function setLogo(url) {
-  if (!url) return;
-  const v = `url("${url}")`;
-  document.querySelectorAll('.card').forEach(c => c.style.setProperty("--logo-url", v));
-}
-
-/* Floating Icons */
-const ICON_SVG = {
-  subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
-  views:`<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
-  watch:`<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
-};
-
-function spawnFloatIcon(cardId, type) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const el = document.createElement("div");
-  el.className = "floatIcon";
-  el.innerHTML = ICON_SVG[type] || "";
-  card.appendChild(el);
-  el.addEventListener("animationend", () => el.remove(), { once: true });
-}
-
-/* CASINO ROLL (Standard Numbers) */
+// --- CASINO ROLL (FILMSTRIP) ---
 function ensureRoll(el) {
   if (el._rollWrap && el._rollCol) return;
   el.textContent = "";
@@ -246,12 +150,6 @@ function ensureRoll(el) {
   el._rollCol = col;
 }
 
-function formatValue(v, decimals, suffix) {
-  const num = Number(v || 0);
-  const t = decimals ? fmt1(num) : fmt(Math.round(num));
-  return t + (suffix || "");
-}
-
 function animateCasinoRoll(el, from, to, opts = {}) {
   const isFirst = !!opts.isFirst;
   const decimals = opts.decimals ?? 0;
@@ -263,146 +161,186 @@ function animateCasinoRoll(el, from, to, opts = {}) {
   const scale = Math.pow(10, decimals);
   const a = Math.round(Number(from || 0) * scale);
   const b = Math.round(Number(to || 0) * scale);
-  const diff = Math.abs(b - a);
+  
+  // Create formatting helper
+  const txt = (val) => {
+    const n = val / scale;
+    return (decimals ? fmt1(n) : fmt(Math.round(n))) + suffix;
+  }
 
-  // Instant if no change
-  if (diff === 0) {
-    col.innerHTML = `<span class="rollLine">${formatValue(b/scale, decimals, suffix)}</span>`;
-    col.style.transform = "translateY(0px)";
+  // If identical, just set text (no animation)
+  if (a === b) {
+    col.innerHTML = `<span class="rollLine">${txt(a)}</span>`;
+    col.style.transition = "none";
+    col.style.transform = "translateY(0)";
     return;
   }
 
-  // Determine steps
-  const maxSteps = isFirst ? 50 : 80;
-  const stepVal = Math.max(1, Math.ceil(diff / maxSteps));
+  // Always generate a strip of numbers to ensure movement is visible
+  // Limit strip length to max 10 items for performance. If diff > 10, just show start/end/blur
+  const diff = b - a; // can be negative
+  const absDiff = Math.abs(diff);
   
-  // Animate
-  let cur = a;
-  const dir = b > a ? 1 : -1;
+  let html = "";
+  let finalY = 0;
   
-  clearInterval(el._rollTimer);
-  col.innerHTML = `<span class="rollLine">${formatValue(cur/scale, decimals, suffix)}</span>`;
-  
-  el._rollTimer = setInterval(() => {
-    if ((dir > 0 && cur >= b) || (dir < 0 && cur <= b)) {
-      cur = b;
-      clearInterval(el._rollTimer);
-    } else {
-      cur += dir * stepVal;
+  if (absDiff <= 15) {
+    // Generate full strip (e.g. 742, 743, 744 OR 744, 743, 742)
+    // We always stack them top-to-bottom in the HTML
+    // If going UP (742->744): HTML: 742, 743, 744. Slide 0 -> -2em
+    // If going DOWN (744->742): HTML: 744, 743, 742. Slide 0 -> -2em
+    
+    const steps = [];
+    const dir = diff > 0 ? 1 : -1;
+    for (let i = 0; i <= absDiff; i++) {
+      steps.push(a + (i * dir));
     }
-    col.innerHTML = `<span class="rollLine">${formatValue(cur/scale, decimals, suffix)}</span>`;
-  }, 20);
+    
+    html = steps.map(v => `<span class="rollLine">${txt(v)}</span>`).join("");
+    finalY = -1.1 * absDiff; // 1.1em line height
+  } else {
+    // Big jump: Show Start -> ... -> End
+    // We create a fake strip: Start, [Random Middle], End
+    html = `
+      <span class="rollLine">${txt(a)}</span>
+      <span class="rollLine" style="filter:blur(2px)">${txt(a + Math.round(diff/2))}</span>
+      <span class="rollLine">${txt(b)}</span>
+    `;
+    finalY = -1.1 * 2; // Move 2 slots
+  }
+
+  col.innerHTML = html;
+  col.style.transition = "none";
+  col.style.transform = "translateY(0)";
+
+  // Trigger Reflow
+  col.offsetHeight; 
+
+  // Animate
+  col.style.transition = `transform ${isFirst ? 2000 : 1000}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+  col.style.transform = `translateY(${finalY}em)`;
 }
 
-// --- MAIN INIT ---
+/* Floating Icons */
+const SVGS = {
+  subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
+  views:`<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
+  watch:`<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
+};
 
-let state = { subsNow: 0, viewsTotal: 0, watchTotal: 0 };
+function spawnFloatIcon(cardId, type) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const el = document.createElement("div");
+  el.className = "floatIcon";
+  el.innerHTML = SVGS[type] || "";
+  card.appendChild(el);
+  // Removes itself after animation (5s) defined in CSS
+  setTimeout(() => el.remove(), 5500); 
+}
+
+// --- MAIN RENDER ---
+let state = { subs: 0, views: 0, watch: 0 };
 
 function render(data, isFirst) {
   setLogo(data.channel?.logo);
 
-  // DATA EXTRACTION
+  const cur = {
+    subs: Number(data.channel?.subscribers || 0),
+    views: Number(data.channel?.totalViews || 0),
+    watch: Number(data.lifetime?.watchHours || 0)
+  };
+  
   const weekly = data.weekly || {};
   const last28 = data.m28?.last28 || {};
-  const prev28 = data.m28?.prev28 || {};
-  const avg6m  = data.m28?.avg6m || {};
-  const med6m  = data.m28?.median6m || {};
-  const hist   = data.history28d || [];
+  const med6m = data.m28?.median6m || {};
+  const avg6m = data.m28?.avg6m || {};
+  const hist = data.history28d || [];
 
-  const subsNow = Number(data.channel?.subscribers || 0);
-  const viewsTotal = Number(data.channel?.totalViews || 0);
-  const watchTotal = Number(data.lifetime?.watchHours || 0);
-
-  // --- CARD 1: SUBS ---
-  const subsTier = tierFromBaseline(last28.netSubs, med6m.netSubs, 30, 0.10);
-  setCardTheme("cardSubs", subsTier);
-  setChip("subsDot", "subsChipText", subsTier, FEEDBACK.subs[subsTier]);
-  setMainArrow("subsMainArrow", subsTier);
-  setSpark("subsSparkFill", "subsSparkPath", hist.map(p => p.netSubs), subsTier);
-  
-  // Velocity Pacing
+  // 1. SUBS
+  const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30, 0.1);
+  setCardTheme("cardSubs", tSubs);
+  setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]);
+  setMainArrow("subsMainArrow", tSubs);
+  setSpark("subsSparkFill", "subsSparkPath", hist.map(x=>x.netSubs), tSubs);
   renderPacing("subsWeek", weekly.netSubs, weekly.prevNetSubs);
-  
-  // Meta
-  document.getElementById("subsLast28").textContent = `${Number(last28.netSubs)>=0?"+":""}${fmt(last28.netSubs)}`;
-  document.getElementById("subsPrev28").textContent = `${Number(prev28.netSubs)>=0?"+":""}${fmt(prev28.netSubs)}`;
-  setVsRG("subsVsNum", "subsVsArrow", Number(last28.netSubs) - Number(avg6m.netSubs), 0, "");
-  
-  // Gamification: Next Milestone
-  const nextGoal = getMilestone(subsNow);
-  const subPct = Math.min(100, (subsNow / nextGoal) * 100).toFixed(1);
-  document.getElementById("subsNextGoal").textContent = fmt(nextGoal);
-  document.getElementById("subsNextPct").textContent = subPct + "%";
-  document.getElementById("subsProgressFill").style.width = subPct + "%";
-  if(Number(subPct) > 95) document.getElementById("subsProgressFill").classList.add("pulse-bar");
-  else document.getElementById("subsProgressFill").classList.remove("pulse-bar");
+  setVsRG("subsVsNum", "subsVsArrow", last28.netSubs - avg6m.netSubs);
+  document.getElementById("subsLast28").textContent = (last28.netSubs>0?"+":"")+fmt(last28.netSubs);
+  document.getElementById("subsPrev28").textContent = (data.m28.prev28.netSubs>0?"+":"")+fmt(data.m28.prev28.netSubs);
 
-  // Roll & Float
-  if(!isFirst && subsNow > state.subsNow) spawnFloatIcon("cardSubs", "subs");
-  animateCasinoRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subsNow, subsNow, { isFirst });
+  // Subs Goal
+  const gSubs = getMilestone(cur.subs, 'subs');
+  const pSubs = Math.min(100, (cur.subs/gSubs)*100).toFixed(1);
+  document.getElementById("subsNextGoal").textContent = fmt(gSubs);
+  document.getElementById("subsNextPct").textContent = pSubs+"%";
+  document.getElementById("subsProgressFill").style.width = pSubs+"%";
 
-
-  // --- CARD 2: VIEWS ---
-  const viewsTier = tierFromBaseline(last28.views, med6m.views, 25000, 0.10);
-  setCardTheme("cardViews", viewsTier);
-  setChip("viewsDot", "viewsChipText", viewsTier, FEEDBACK.views[viewsTier]);
-  setMainArrow("viewsMainArrow", viewsTier);
-  setSpark("viewsSparkFill", "viewsSparkPath", hist.map(p => p.views), viewsTier);
-  
+  // 2. VIEWS
+  const tViews = tierFromBaseline(last28.views, med6m.views, 25000, 0.1);
+  setCardTheme("cardViews", tViews);
+  setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]);
+  setMainArrow("viewsMainArrow", tViews);
+  setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x=>x.views), tViews);
   renderPacing("viewsWeek", weekly.views, weekly.prevViews);
-  
+  setVsRG("viewsVsNum", "viewsVsArrow", last28.views - avg6m.views);
   document.getElementById("viewsLast28").textContent = fmt(last28.views);
-  document.getElementById("viewsPrev28").textContent = fmt(prev28.views);
-  setVsRG("viewsVsNum", "viewsVsArrow", Number(last28.views) - Number(avg6m.views), 0, "");
+  document.getElementById("viewsPrev28").textContent = fmt(data.m28.prev28.views);
 
-  if(!isFirst && viewsTotal > state.viewsTotal) spawnFloatIcon("cardViews", "views");
-  animateCasinoRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.viewsTotal, viewsTotal, { isFirst });
+  // Views Goal
+  const gViews = getMilestone(cur.views, 'views');
+  const pViews = Math.min(100, (cur.views/gViews)*100).toFixed(1);
+  document.getElementById("viewsNextGoal").textContent = fmt(gViews);
+  document.getElementById("viewsNextPct").textContent = pViews+"%";
+  document.getElementById("viewsProgressFill").style.width = pViews+"%";
 
-
-  // --- CARD 3: WATCH ---
-  const watchTier = tierFromBaseline(last28.watchHours, med6m.watchHours, 50, 0.10);
-  setCardTheme("cardWatch", watchTier);
-  setChip("watchDot", "watchChipText", watchTier, FEEDBACK.watch[watchTier]);
-  setMainArrow("watchMainArrow", watchTier);
-  setSpark("watchSparkFill", "watchSparkPath", hist.map(p => p.watchHours), watchTier);
-  
+  // 3. WATCH
+  const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50, 0.1);
+  setCardTheme("cardWatch", tWatch);
+  setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]);
+  setMainArrow("watchMainArrow", tWatch);
+  setSpark("watchSparkFill", "watchSparkPath", hist.map(x=>x.watchHours), tWatch);
   renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
+  setVsRG("watchVsNum", "watchVsArrow", last28.watchHours - avg6m.watchHours, 1, "h");
+  document.getElementById("watchLast28").textContent = fmt(last28.watchHours)+"h";
+  document.getElementById("watchPrev28").textContent = fmt(data.m28.prev28.watchHours)+"h";
 
-  document.getElementById("watchLast28").textContent = `${fmt(last28.watchHours)}h`;
-  document.getElementById("watchPrev28").textContent = `${fmt(prev28.watchHours)}h`;
-  setVsRG("watchVsNum", "watchVsArrow", Number(last28.watchHours) - Number(avg6m.watchHours), 1, "h");
+  // Watch Goal
+  const gWatch = getMilestone(cur.watch, 'watch');
+  const pWatch = Math.min(100, (cur.watch/gWatch)*100).toFixed(1);
+  document.getElementById("watchNextGoal").textContent = fmt(gWatch);
+  document.getElementById("watchNextPct").textContent = pWatch+"%";
+  document.getElementById("watchProgressFill").style.width = pWatch+"%";
 
-  if(!isFirst && watchTotal > state.watchTotal) spawnFloatIcon("cardWatch", "watch");
-  animateCasinoRoll(document.getElementById("watchNow"), isFirst ? 0 : state.watchTotal, watchTotal, { isFirst, decimals: watchTotal<100?1:0, suffix:"h" });
+  // --- ANIMATIONS ---
+  // Only animate if value changed
+  animateCasinoRoll(document.getElementById("subsNow"), isFirst ? 0 : state.subs, cur.subs, { isFirst });
+  if (!isFirst && cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs");
 
-  // Update State
-  state.subsNow = subsNow;
-  state.viewsTotal = viewsTotal;
-  state.watchTotal = watchTotal;
+  animateCasinoRoll(document.getElementById("viewsTotal"), isFirst ? 0 : state.views, cur.views, { isFirst });
+  if (!isFirst && cur.views > state.views) spawnFloatIcon("cardViews", "views");
 
-  document.getElementById("updated").textContent = `SYSTEM ACTIVE • UPDATED ${nowStamp()} • AUTO-CYCLE 60s`;
-  showToast("DATA SYNCED");
+  animateCasinoRoll(document.getElementById("watchNow"), isFirst ? 0 : state.watch, cur.watch, { isFirst, decimals: cur.watch<100?1:0, suffix:"h" });
+  if (!isFirst && cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch");
+
+  // Save State
+  state = cur;
+  document.getElementById("updated").textContent = `SYSTEM ACTIVE • ${nowStamp()}`;
+  showToast("SYNC COMPLETE");
 }
 
 async function load(isFirst) {
   const data = await fetchJSON("/api/yt-kpis");
-  if (data.error) {
-    document.getElementById("updated").textContent = "ERR: " + data.error;
-    showToast("SYNC FAILED");
-    return;
-  }
+  if (data.error) return;
   render(data, isFirst);
 }
 
-// 3D Tilt Interaction
+// 3D Tilt
 document.querySelectorAll('.card').forEach(card => {
   card.addEventListener('mousemove', (e) => {
-    const rect = card.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const xRot = ((y / rect.height) - 0.5) * -8; 
-    const yRot = ((x / rect.width) - 0.5) * 8;
-    card.style.transform = `perspective(1000px) rotateX(${xRot}deg) rotateY(${yRot}deg) scale(1.02)`;
+    const r = card.getBoundingClientRect();
+    const x = ((e.clientY - r.top) / r.height - 0.5) * -10;
+    const y = ((e.clientX - r.left) / r.width - 0.5) * 10;
+    card.style.transform = `perspective(1000px) rotateX(${x}deg) rotateY(${y}deg) scale(1.02)`;
   });
   card.addEventListener('mouseleave', () => {
     card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`;
