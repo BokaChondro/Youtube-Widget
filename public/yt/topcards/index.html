@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>YouTube Top Cards</title>
   <!-- cache-bust so your changes definitely load -->
-  <link rel="stylesheet" href="./style.css?v=aihud_20260212b" />
+  <link rel="stylesheet" href="./style.css?v=aihud_20260212c" />
 </head>
 <body>
   <div class="wrap">
@@ -185,9 +185,9 @@
 
     <!-- === HUD === -->
     <div class="hud-box" id="hudBox">
-      <!-- ring progress (FULL border) -->
-      <svg class="hud-ring" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <rect id="hudRingRect" x="2" y="2" width="96" height="96" rx="12" ry="12"></rect>
+      <!-- FULL border progress ring: normalized length using pathLength -->
+      <svg class="hud-ring" viewBox="0 0 100 100" aria-hidden="true">
+        <rect id="hudRingRect" x="2" y="2" width="96" height="96" rx="12" ry="12" pathLength="100"></rect>
       </svg>
 
       <div class="hud-scanline"></div>
@@ -202,9 +202,13 @@
             <span class="hud-label">AI_HUD //</span>
             <span class="hud-tag" id="hudTag">READY</span>
           </div>
+
           <div class="hud-text-mask">
             <div class="hud-message" id="hudMessage">Analyzing your channel signals...</div>
           </div>
+
+          <!-- Optional tiny helper line for video-specific insights (safe if unused) -->
+          <div class="hud-subline" id="hudSubline"></div>
         </div>
       </div>
     </div>
@@ -214,6 +218,6 @@
   </div>
 
   <!-- cache-bust so your changes definitely load -->
-  <script src="./app.js?v=aihud_20260212b"></script>
+  <script src="./app.js?v=aihud_20260212c"></script>
 </body>
 </html>
