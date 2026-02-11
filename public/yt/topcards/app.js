@@ -19,6 +19,12 @@ const COLORS = {
   white:  "#ffffff"
 };
 
+const FEEDBACK = {
+  subs: { red: "Audience Leak", orange: "Slow Convert", yellow: "Steady Growth", green: "Strong Pull", blue: "Rising Fast", purple: "Exceptional" },
+  views: { red: "Reach Down", orange: "Low Reach", yellow: "Stable Reach", green: "Reach Up", blue: "Trending", purple: "Viral" },
+  watch: { red: "Poor Engage", orange: "Retention Issue", yellow: "Consistent", green: "Engage Up", blue: "Hooked", purple: "Outstanding" }
+};
+
 // --- DOM HELPERS ---
 function safeSetText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 function safeSetStyle(id, prop, val) { const el = document.getElementById(id); if (el) el.style[prop] = val; }
@@ -291,10 +297,14 @@ document.querySelectorAll(".card").forEach(card => {
    HUD ENGINE (SCI-FI V3)
    =========================== */
 
+// SAFELY LOAD STORAGE (Fixes crash)
+let shownAt = {};
+try { shownAt = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"); } catch(e) { console.warn("HUD Mem Reset"); }
+
 const HUD_CONFIG = {
   interval: 16000,
   timer: null, started: false, bootAt: Date.now(),
-  lastKey: null, recentKeys: [], shownAt: JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"),
+  lastKey: null, recentKeys: [], shownAt: shownAt,
   cooldownMs: { freshness: 600000, birthday: 900000, status: 480000, trivia: 60000, tip: 60000, motivation: 90000 }
 };
 
@@ -338,110 +348,16 @@ function uniqPush(arr, s) { if (!arr.includes(s)) arr.push(s); }
 
 function initHudBorder() {
   const rect = document.getElementById("hudBorder"); if (!rect) return;
-  const len = rect.getTotalLength();
-  rect.style.strokeDasharray = `100 ${len}`; // "Snake" effect: 100px line, rest gap
-  // Animation handled in CSS, but we set dynamic color here
+  // Safety check: if width is 0 (hidden), wait
+  const len = rect.getTotalLength ? rect.getTotalLength() : 400; 
+  if (len === 0) return;
+  
+  // Neon Snake effect: 100px dash, followed by gap equal to total length
+  rect.style.strokeDasharray = `100 ${len}`;
+  rect.style.strokeDashoffset = "0"; 
+  // CSS handles the animation loop
 }
 
 function buildIntel(data) {
   const out = []; const ch = data.channel || {}, w = data.weekly || {}, m28 = data.m28 || {}, hud = data.hud || {}, hist = data.history28d || [];
-  const weekViews = Number(w.views || 0), weekG = Number(w.subscribersGained || 0), weekL = Number(w.subscribersLost || 0), weekNet = Number(w.netSubs || 0);
-  const churnPct = weekG > 0 ? Math.round((weekL / weekG) * 100) : (weekL > 0 ? 100 : 0);
-  const subsPer1k = weekViews > 0 ? (weekNet / weekViews) * 1000 : 0;
-  
-  // REAL SIGNALS (Prioritized)
-  // Upload Gap (Red/Orange)
-  const uploadDaysAgo = (hud.uploads?.latest?.publishedAt && hud.statsThrough) ? daysBetweenISO(hud.uploads.latest.publishedAt, hud.statsThrough) : null;
-  if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ key: "warn_gap", cat: "warning", weight: 3, icon: HUD_ICONS.warn, tag: "WARNING", type: "red", text: `UPLOAD BUFFER EMPTY. LAST UPLOAD WAS ${uploadDaysAgo} DAYS AGO.` });
-  else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) out.push({ key: "good_gap", cat: "good", weight: 2, icon: HUD_ICONS.up, tag: "RISING", type: "green", text: `CONSISTENCY DETECTED. LAST UPLOAD ${uploadDaysAgo} DAYS AGO.` });
-
-  // Churn (Red/Green)
-  if (weekG > 0 || weekL > 0) out.push({ key: "churn", cat: "subs", weight: 3.2, icon: weekL>weekG?HUD_ICONS.down:HUD_ICONS.up, tag: weekL>weekG?"DROPPING":"GROWTH", type: weekL>weekG?"red":"green", text: `NET SUBS: ${weekNet}. GAINED ${weekG}, LOST ${weekL}.` });
-
-  // Conversion (Yellow/Green)
-  if (weekViews > 0) out.push({ key: "conv", cat: "conversion", weight: 2.6, icon: HUD_ICONS.target, tag: "CONVERSION", type: subsPer1k>=2?"green":"yellow", text: `CONVERSION RATE: ${subsPer1k.toFixed(2)} NET SUBS PER 1K VIEWS.` });
-
-  // CTR (Red/Green/Orange)
-  const thumb = hud.thumb28;
-  if (thumb && thumb.ctr) {
-    const ctr = thumb.ctr;
-    out.push({ key: "ctr", cat: "packaging", weight: 2.1, icon: ctr<2?HUD_ICONS.warn:HUD_ICONS.bulb, tag: ctr<2?"WARNING":"PACKAGING", type: ctr<2?"red":(ctr>8?"green":"yellow"), text: `AVG CTR IS ${ctr.toFixed(1)}%. ${ctr<2?"OPTIMIZE THUMBNAILS.":"HEALTHY METRIC."}` });
-  }
-
-  // Retention (Red/Green)
-  const ret = hud.retention28;
-  if (ret && ret.avgViewPercentage) {
-    const r = ret.avgViewPercentage;
-    out.push({ key: "ret", cat: "retention", weight: 2, icon: r<35?HUD_ICONS.warn:HUD_ICONS.up, tag: r<35?"WARNING":"RETENTION", type: r<35?"red":"green", text: `AVG VIEW PERCENTAGE IS ${r.toFixed(0)}%. ${r<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}` });
-  }
-
-  // Latest Video (Purple)
-  const lv = hud.latestVideo;
-  if (lv && lv.title) {
-    const vViews = Number(lv.views||0), vLikes = Number(lv.likes||0);
-    out.push({ key: "lv_stat", cat: "video", weight: 2.8, icon: HUD_ICONS.rocket, tag: "LATEST", type: "purple", text: `LATEST UPLOAD: "${lv.title.toUpperCase()}" — ${fmt(vViews)} VIEWS.` });
-  }
-
-  // Generic (Blue/Pink/Orange)
-  const nextSub = getMilestone(Number(ch.subscribers||0), "subs");
-  if (nextSub > Number(ch.subscribers||0)) out.push({ key: "goal", cat: "goal", weight: 1.4, icon: HUD_ICONS.target, tag: "MILESTONE", type: "blue", text: `${fmt(nextSub - Number(ch.subscribers))} SUBS REMAINING TO REACH ${fmt(nextSub)}.` });
-
-  const tip = pick(KB.tips); if (tip) out.push({ key: "tip", cat: "tip", weight: 0.4, icon: HUD_ICONS.bulb, tag: "TIP", type: "yellow", text: tip.toUpperCase() });
-  const fact = pick(KB.facts); if (fact) out.push({ key: "fact", cat: "trivia", weight: 0.3, icon: HUD_ICONS.bulb, tag: "FACT", type: "pink", text: fact.toUpperCase() });
-  const mot = pick(KB.motivation); if (mot) out.push({ key: "mot", cat: "motivation", weight: 0.2, icon: HUD_ICONS.live, tag: "INSIGHT", type: "purple", text: mot.toUpperCase() });
-
-  return out;
-}
-
-let intelQueue = [];
-
-function showNextIntel() {
-  const item = intelQueue.length ? intelQueue[Math.floor(Math.random() * intelQueue.length)] : null;
-  if (!item) return;
-
-  const msg = document.getElementById("hudMessage");
-  const tag = document.getElementById("hudTag");
-  const icon = document.getElementById("hudIcon");
-  const box = document.getElementById("hudBox");
-  const border = document.getElementById("hudBorder");
-  const chip = document.getElementById("hudChip");
-
-  // Glitch Out
-  if (msg) {
-    msg.classList.remove("glitch-in");
-    msg.style.opacity = "0"; // instant hide before update
-    
-    setTimeout(() => {
-      // Update Content
-      msg.textContent = item.text;
-      tag.textContent = item.tag;
-      icon.innerHTML = item.icon || "⚡";
-
-      const c = COLORS[item.type] || COLORS.orange;
-      
-      // Update Colors
-      box.style.setProperty("--hud-accent", c);
-      tag.style.color = c;
-      tag.style.textShadow = `0 0 10px ${c}`;
-      border.style.stroke = c;
-      border.style.filter = `drop-shadow(0 0 8px ${c})`;
-      
-      // Glitch In
-      msg.style.opacity = "1";
-      msg.classList.add("glitch-in");
-      
-    }, 200);
-  }
-}
-
-function updateHud(data) {
-  intelQueue = buildIntel(data);
-  if (!HUD_CONFIG.started) {
-    HUD_CONFIG.started = true;
-    initHudBorder();
-    showNextIntel();
-    HUD_CONFIG.timer = setInterval(showNextIntel, 16000);
-  }
-}
-
-(async function init() { await load(true); setInterval(() => load(false), 60 * 1000); })();
+  const weekViews = Number(w.views || 0), weekG = Number(w.subscribersGained || 0), weekL = Number(w.subscribersLost || 0), weekNet = Number(
