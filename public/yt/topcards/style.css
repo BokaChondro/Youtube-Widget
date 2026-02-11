@@ -223,3 +223,101 @@ body {
   .grid { grid-template-columns: 1fr; }
   .card { margin-bottom: 10px; }
 }
+
+
+
+
+
+/* --- HOLO-STREAM HUD --- */
+.hud-box {
+  position: relative;
+  margin-top: 20px;
+  width: 100%;
+  background: rgba(10, 10, 10, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 2px solid var(--c-tier); /* Dynamic border color */
+  border-radius: 12px;
+  padding: 14px 20px;
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.8);
+  display: flex; flex-direction: column;
+  transition: border-color 0.5s ease;
+}
+
+/* 1. The Moving Laser Scanline */
+.hud-scanline {
+  position: absolute; top: 0; left: -50%; width: 20%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  transform: skewX(-20deg);
+  pointer-events: none; z-index: 1;
+  animation: hudScan 6s infinite ease-in-out;
+}
+@keyframes hudScan {
+  0%, 40% { left: -50%; }
+  100% { left: 150%; }
+}
+
+/* 2. Content Layout */
+.hud-content {
+  display: flex; align-items: center; gap: 16px; position: relative; z-index: 2;
+}
+
+.hud-icon-box {
+  width: 32px; height: 32px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+
+.hud-data { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+
+.hud-meta {
+  display: flex; gap: 8px; align-items: center;
+  font-size: 10px; letter-spacing: 1px; font-weight: 700;
+  font-family: Consolas, monospace; opacity: 0.5;
+}
+.hud-tag { color: var(--c-tier); text-shadow: 0 0 8px var(--c-tier); transition: color 0.3s; }
+
+.hud-text-mask { overflow: hidden; }
+
+.hud-message {
+  font-size: 13px; color: rgba(255, 255, 255, 0.95);
+  font-weight: 500; line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+/* 3. The Glitch Animation (Triggered by JS) */
+.hud-glitch {
+  animation: glitchAnim 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  color: #fff;
+}
+@keyframes glitchAnim {
+  0% { transform: translate(0); opacity: 0; text-shadow: 0 0 0 transparent; }
+  20% { transform: translate(-2px, 2px); opacity: 1; text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue); }
+  40% { transform: translate(2px, -2px); text-shadow: -2px 0 var(--c-green), 2px 0 var(--c-purple); }
+  60% { transform: translate(0); text-shadow: 0 0 0 transparent; }
+  80% { opacity: 1; }
+  100% { transform: translate(0); opacity: 1; }
+}
+
+/* 4. Timer Bar */
+.hud-timer {
+  position: absolute; bottom: 0; left: 0; width: 100%; height: 2px;
+  background: rgba(255,255,255,0.05);
+}
+.hud-timer-fill {
+  height: 100%; width: 0%;
+  background: var(--c-tier);
+  box-shadow: 0 0 10px var(--c-tier);
+  transition: width linear;
+}
+
+/* Mobile Tweak */
+@media (max-width: 600px) {
+  .hud-message { white-space: normal; font-size: 12px; }
+  .hud-box { margin-top: 15px; padding: 12px; }
+}
