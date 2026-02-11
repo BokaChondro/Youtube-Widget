@@ -1,11 +1,10 @@
 function fmt(n) {
   return Intl.NumberFormat().format(Number(n || 0));
 }
-
-function fmtSigned(n) {
-  const v = Number(n || 0);
-  const sign = v > 0 ? "+" : "";
-  return sign + fmt(v);
+function fmtAbs(n, decimals = 0) {
+  const v = Math.abs(Number(n || 0));
+  if (decimals) return v.toFixed(decimals);
+  return fmt(Math.round(v));
 }
 
 function nowStamp() {
@@ -52,11 +51,19 @@ const FEEDBACK = {
   },
 };
 
+// Main arrow mapping by tier (buff-like)
+function tierArrow(tier) {
+  if (tier === "red" || tier === "orange") return "↓";
+  if (tier === "yellow") return "–";
+  if (tier === "green") return "↑";
+  if (tier === "blue") return "⟰";
+  return "⟰⟰"; // purple
+}
+
 function animateNumber(el, fromValue, toValue, options = {}) {
   const duration = options.duration ?? 850;
   const decimals = options.decimals ?? 0;
   const suffix = options.suffix ?? "";
-  const prefix = options.prefix ?? "";
 
   const start = performance.now();
 
@@ -66,9 +73,7 @@ function animateNumber(el, fromValue, toValue, options = {}) {
     const val = fromValue + (toValue - fromValue) * eased;
 
     el.textContent =
-      prefix +
-      (decimals ? val.toFixed(decimals) : fmt(Math.round(val))) +
-      suffix;
+      (decimals ? val.toFixed(decimals) : fmt(Math.round(val))) + suffix;
 
     if (p < 1) requestAnimationFrame(tick);
   }
@@ -80,10 +85,10 @@ async function fetchJSON(url) {
   return r.json();
 }
 
-// Tier based on last28 vs baseline median, with a "delta gate" to avoid false spikes.
-function tierFromBaseline(last, baselineMedian, absMin, minPct) {
-  const L = Number(last || 0);
-  const B = Number(baselineMedian || 0);
+// Tier: compare thisWeek vs 6M avg (with a delta gate so tiny bumps don't become blue/purple)
+function tierFromAvg(thisWeek, avg6m, absMin, minPct) {
+  const L = Number(thisWeek || 0);
+  const B = Number(avg6m || 0);
 
   if (B <= 0) {
     if (L <= 0) return "red";
@@ -123,10 +128,35 @@ function setChip(dotId, chipTextId, tier, text) {
   chipText.textContent = text;
 }
 
-function setDelta(elId, last, prev, suffix = "") {
-  const d = Number(last || 0) - Number(prev || 0);
-  const sign = d > 0 ? "+" : "";
-  document.getElementById(elId).textContent = sign + fmt(d) + suffix;
+function setMainArrow(elId, tier) {
+  const el = document.getElementById(elId);
+  const color = COLORS[tier] || COLORS.yellow;
+  el.textContent = tierArrow(tier);
+  el.style.color = color;
+  el.style.textShadow = `0 0 14px ${color}55`;
+}
+
+function setVs(elNumId, elArrowId, delta, neutralBand, decimals = 0, suffix = "") {
+  const numEl = document.getElementById(elNumId);
+  const arrEl = document.getElementById(elArrowId);
+
+  const d = Number(delta || 0);
+
+  let cls = "neu";
+  let arrow = "–";
+  if (d > neutralBand) {
+    cls = "pos";
+    arrow = "↑";
+  } else if (d < -neutralBand) {
+    cls = "neg";
+    arrow = "↓";
+  }
+
+  numEl.className = `vsNum ${cls}`;
+  arrEl.className = `vsArrow ${cls}`;
+
+  numEl.textContent = fmtAbs(d, decimals) + suffix;
+  arrEl.textContent = arrow;
 }
 
 function setSpark(pathEl, values, strokeColor) {
@@ -171,82 +201,117 @@ function showToast(text) {
   showToast._timer = setTimeout(() => t.classList.remove("show"), 1300);
 }
 
+function setLogo(url) {
+  if (!url) return;
+  const v = `url("${url}")`;
+  document.getElementById("cardSubs").style.setProperty("--logo-url", v);
+  document.getElementById("cardViews").style.setProperty("--logo-url", v);
+  document.getElementById("cardWatch").style.setProperty("--logo-url", v);
+}
+
 let state = { subsNow: 0, viewsTotal: 0, watchTotal: 0 };
 
-function setDates(data) {
-  const lastW = data.windows.last28;
-  const prevW = data.windows.prev28;
-  const lifeW = data.windows.lifetime;
+function calc28dFromWeekly(weeks) {
+  // weeks: [thisWeek, prevWeek, prev2, prev3, ...] where week is 7-day sums
+  // last28 = sum of weeks[0..3], prev28 = sum of weeks[4..7] (needs 8 weeks)
+  const w = weeks.slice().reverse(); // spark is oldest->newest; we want newest-first
+  // easier: just rebuild from spark (oldest->newest) -> newest-first
+  const newestFirst = [...weeks].reverse();
 
-  document.getElementById("subsDates").textContent =
-    `${prevW.startDate} → ${prevW.endDate} vs ${lastW.startDate} → ${lastW.endDate}`;
-  document.getElementById("viewsDates").textContent =
-    `${prevW.startDate} → ${prevW.endDate} vs ${lastW.startDate} → ${lastW.endDate}`;
-  document.getElementById("watchDates").textContent =
-    `Lifetime ${lifeW.startDate} → ${lifeW.endDate} • compare last/prev below`;
+  const sum = (arr, key) => arr.reduce((a, b) => a + Number(b[key] || 0), 0);
+
+  // if we don't have 8, fallback gracefully
+  const last4 = newestFirst.slice(0, 4);
+  const prev4 = newestFirst.slice(4, 8);
+
+  return {
+    last28: {
+      netSubs: sum(last4, "netSubs"),
+      views: sum(last4, "views"),
+      watchHours: Math.round(sum(last4, "watchHours") * 10) / 10,
+    },
+    prev28: {
+      netSubs: sum(prev4, "netSubs"),
+      views: sum(prev4, "views"),
+      watchHours: Math.round(sum(prev4, "watchHours") * 10) / 10,
+    },
+  };
 }
 
 function render(data, isFirst) {
-  setDates(data);
+  setLogo(data.channel?.logo);
 
-  const histSubs = data.history.map((p) => p.netSubs);
-  const histViews = data.history.map((p) => p.views);
-  const histWatch = data.history.map((p) => p.watchHours);
+  // spark points: oldest->newest (8 points)
+  const spark = data.spark || [];
+  const sparkSubs = spark.map((p) => p.netSubs);
+  const sparkViews = spark.map((p) => p.views);
+  const sparkWatch = spark.map((p) => p.watchHours);
 
-  // SUBS
+  // derive 28D blocks from 4 weeks + previous 4 weeks
+  const blocks = calc28dFromWeekly(spark);
+  const last28 = blocks.last28;
+  const prev28 = blocks.prev28;
+
+  // --- SUBS ---
   const subsNow = Number(data.subs.current || 0);
-  const subsLast = Number(data.subs.last28Net || 0);
-  const subsPrev = Number(data.subs.prev28Net || 0);
-  const subsBase = Number(data.subs.baselineMedian || 0);
+  const subsWeek = Number(data.subs.thisWeekNet || 0);
+  const subsAvg = Number(data.subs.avg6mNet || 0);
 
-  const subsTier = tierFromBaseline(subsLast, subsBase, 10, 0.12);
+  const subsTier = tierFromAvg(subsWeek, subsAvg, 8, 0.12);
   setChip("subsDot", "subsChipText", subsTier, FEEDBACK.subs[subsTier]);
-  document.getElementById("subsLast").textContent = fmtSigned(subsLast);
-  document.getElementById("subsPrev").textContent = fmtSigned(subsPrev);
-  setDelta("subsDelta", subsLast, subsPrev);
-  document.getElementById("subsBase").textContent =
-    `Baseline (median of prev 6×28D): ${fmtSigned(subsBase)}`;
+  setMainArrow("subsMainArrow", subsTier);
+
+  document.getElementById("subsWeek").textContent = `This week: ${subsWeek >= 0 ? "+" : ""}${fmt(subsWeek)}`;
+  document.getElementById("subsLast28").textContent = `${last28.netSubs >= 0 ? "+" : ""}${fmt(last28.netSubs)}`;
+  document.getElementById("subsPrev28").textContent = `${prev28.netSubs >= 0 ? "+" : ""}${fmt(prev28.netSubs)}`;
+
+  setVs("subsVsNum", "subsVsArrow", subsWeek - subsAvg, 1, 0, "");
+
   animateNumber(document.getElementById("subsNow"), isFirst ? 0 : state.subsNow, subsNow, { duration: isFirst ? 950 : 650 });
-  setSpark(document.getElementById("subsSparkPath"), histSubs, COLORS[subsTier]);
+  setSpark(document.getElementById("subsSparkPath"), sparkSubs, COLORS[subsTier]);
   state.subsNow = subsNow;
 
-  // VIEWS
+  // --- VIEWS ---
   const viewsTotal = Number(data.views.total || 0);
-  const viewsLast = Number(data.views.last28 || 0);
-  const viewsPrev = Number(data.views.prev28 || 0);
-  const viewsBase = Number(data.views.baselineMedian || 0);
+  const viewsWeek = Number(data.views.thisWeek || 0);
+  const viewsAvg = Number(data.views.avg6m || 0);
 
-  const viewsTier = tierFromBaseline(viewsLast, viewsBase, 1000, 0.12);
+  const viewsTier = tierFromAvg(viewsWeek, viewsAvg, 1200, 0.12);
   setChip("viewsDot", "viewsChipText", viewsTier, FEEDBACK.views[viewsTier]);
-  document.getElementById("viewsLast").textContent = fmt(viewsLast);
-  document.getElementById("viewsPrev").textContent = fmt(viewsPrev);
-  setDelta("viewsDelta", viewsLast, viewsPrev);
-  document.getElementById("viewsBase").textContent =
-    `Baseline (median of prev 6×28D): ${fmt(viewsBase)}`;
+  setMainArrow("viewsMainArrow", viewsTier);
+
+  document.getElementById("viewsWeek").textContent = `This week: ${fmt(viewsWeek)}`;
+  document.getElementById("viewsLast28").textContent = fmt(last28.views);
+  document.getElementById("viewsPrev28").textContent = fmt(prev28.views);
+
+  setVs("viewsVsNum", "viewsVsArrow", viewsWeek - viewsAvg, 50, 0, "");
+
   animateNumber(document.getElementById("viewsTotal"), isFirst ? 0 : state.viewsTotal, viewsTotal, { duration: isFirst ? 1000 : 650 });
-  setSpark(document.getElementById("viewsSparkPath"), histViews, COLORS[viewsTier]);
+  setSpark(document.getElementById("viewsSparkPath"), sparkViews, COLORS[viewsTier]);
   state.viewsTotal = viewsTotal;
 
-  // WATCH (lifetime big)
+  // --- WATCH (lifetime big) ---
   const watchTotal = Number(data.watch.totalHours || 0);
-  const watchLast = Number(data.watch.last28Hours || 0);
-  const watchPrev = Number(data.watch.prev28Hours || 0);
-  const watchBase = Number(data.watch.baselineMedian || 0);
+  const watchWeek = Number(data.watch.thisWeekHours || 0);
+  const watchAvg = Number(data.watch.avg6mHours || 0);
 
-  const watchTier = tierFromBaseline(watchLast, watchBase, 5, 0.12);
+  const watchTier = tierFromAvg(watchWeek, watchAvg, 3, 0.12);
   setChip("watchDot", "watchChipText", watchTier, FEEDBACK.watch[watchTier]);
-  document.getElementById("watchLast").textContent = fmt(watchLast) + "h";
-  document.getElementById("watchPrev").textContent = fmt(watchPrev) + "h";
-  setDelta("watchDelta", watchLast, watchPrev, "h");
-  document.getElementById("watchBase").textContent =
-    `Baseline (median of prev 6×28D): ${fmt(watchBase)}h`;
+  setMainArrow("watchMainArrow", watchTier);
+
+  document.getElementById("watchWeek").textContent = `This week: ${fmt(watchWeek)}h`;
+  document.getElementById("watchLast28").textContent = `${fmt(last28.watchHours)}h`;
+  document.getElementById("watchPrev28").textContent = `${fmt(prev28.watchHours)}h`;
+
+  setVs("watchVsNum", "watchVsArrow", watchWeek - watchAvg, 0.2, 1, "h");
+
   animateNumber(
     document.getElementById("watchNow"),
     isFirst ? 0 : state.watchTotal,
     watchTotal,
     { duration: isFirst ? 950 : 650, decimals: watchTotal < 100 ? 1 : 0, suffix: "h" }
   );
-  setSpark(document.getElementById("watchSparkPath"), histWatch, COLORS[watchTier]);
+  setSpark(document.getElementById("watchSparkPath"), sparkWatch, COLORS[watchTier]);
   state.watchTotal = watchTotal;
 
   document.getElementById("updated").textContent = `Updated: ${nowStamp()} • Auto-refresh: 1 min`;
@@ -265,5 +330,5 @@ async function load(isFirst) {
 
 (async function init() {
   await load(true);
-  setInterval(() => load(false), 60 * 1000); // ✅ 1 minute
+  setInterval(() => load(false), 60 * 1000);
 })();
