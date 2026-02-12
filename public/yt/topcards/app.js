@@ -234,7 +234,6 @@ function render(data, isFirst) {
 
   const weekly = data.weekly || {}, last28 = data.m28?.last28 || {}, prev28 = data.m28?.prev28 || {}, med6m = data.m28?.median6m || {}, hist = data.history28d || [];
 
-  // TOP 3 CARDS LOGIC (UNCHANGED)
   const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
   setCardTheme("cardSubs", tSubs); setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]); setMainArrow("subsMainArrow", tSubs);
   setSpark("subsSparkFill", "subsSparkPath", hist.map(x => x.netSubs), tSubs);
@@ -287,16 +286,7 @@ async function load(isFirst) {
   catch (e) { document.getElementById("updated").textContent = "FETCH ERROR: " + e.message; }
 }
 
-document.querySelectorAll(".card").forEach(card => {
-  card.addEventListener("mousemove", (e) => { const r = card.getBoundingClientRect(), x = ((e.clientY - r.top) / r.height - 0.5) * -10, y = ((e.clientX - r.left) / r.width - 0.5) * 10; card.style.transform = `perspective(1000px) rotateX(${x}deg) rotateY(${y}deg) scale(1.02)`; });
-  card.addEventListener("mouseleave", () => { card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`; });
-});
-
-/* ===========================
-   HUD ENGINE (SCI-FI V4 TRACE)
-   =========================== */
-
-// SAFELY LOAD STORAGE
+// --- HUD ENGINE ---
 let shownAt = {};
 try { shownAt = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"); } catch(e) { console.warn("HUD Mem Reset"); }
 
@@ -320,153 +310,100 @@ const HUD_ICONS = {
 };
 
 const KB = {
-  facts: [
-    "YouTube is the 2nd most visited site in existence.", "The first video 'Me at the zoo' has over 200M views.", "Mobile users visit YouTube twice as often as desktop users.",
-    "Comedy, Music, and Entertainment are top genres.", "YouTube supports 80+ languages.", "More than 500 hours of video are uploaded every minute.",
-    "Algorithm favors Watch Time over View Count.", "Bright thumbnails tend to have higher CTR.", "60% of people prefer online video to TV.",
-    "Videos that keep viewers watching often get recommended more."
-  ],
-  tips: [
-    "Audio is King: Bad video is forgiveable, bad audio is not.", "Hook 'em: The first 5 seconds determine retention.", "Metadata: Keywords in first sentence of description help.",
-    "Hearting comments brings viewers back.", "Use End Screens to link best videos.", "Playlists increase Session Time.", "Use Shorts as a funnel.",
-    "Rule of Thirds works for thumbnails.", "Cut the silence to keep energy up."
-  ],
-  motivation: [
-    "Creation is a marathon. Pace yourself.", "Your next video could change everything.", "Don't compare your Ch 1 to their Ch 20.",
-    "1,000 true fans beats 100,000 ghosts.", "Consistency is the cheat code.", "Focus on the 1 viewer watching."
-  ],
-  nostalgia: [
-    "Remember why you started? Keep that spark.", "Look at your first video. Progress.", "Every big channel started with 0 subs."
-  ]
+  facts: [ "YouTube is the 2nd most visited site in existence.", "The first video 'Me at the zoo' has over 200M views.", "Mobile users visit YouTube twice as often as desktop users.", "Comedy, Music, and Entertainment are top genres.", "YouTube supports 80+ languages.", "More than 500 hours of video are uploaded every minute.", "Algorithm favors Watch Time over View Count.", "Bright thumbnails tend to have higher CTR.", "60% of people prefer online video to TV.", "Videos that keep viewers watching often get recommended more." ],
+  tips: [ "Audio is King: Bad video is forgiveable, bad audio is not.", "Hook 'em: The first 5 seconds determine retention.", "Metadata: Keywords in first sentence of description help.", "Hearting comments brings viewers back.", "Use End Screens to link best videos.", "Playlists increase Session Time.", "Use Shorts as a funnel.", "Rule of Thirds works for thumbnails.", "Cut the silence to keep energy up." ],
+  motivation: [ "Creation is a marathon. Pace yourself.", "Your next video could change everything.", "Don't compare your Ch 1 to their Ch 20.", "1,000 true fans beats 100,000 ghosts.", "Consistency is the cheat code.", "Focus on the 1 viewer watching." ],
+  nostalgia: [ "Remember why you started? Keep that spark.", "Look at your first video. Progress.", "Every big channel started with 0 subs." ]
 };
 
 function daysBetweenISO(aIso, bIso) { try { return Math.floor((new Date(bIso) - new Date(aIso)) / 86400000); } catch { return null; } }
-function secondsToMinSec(s) { const n = Math.floor(Number(s||0)); return `${Math.floor(n/60)}m ${String(n%60).padStart(2,"0")}s`; }
 function pick(arr) { return arr && arr.length ? arr[Math.floor(Math.random() * arr.length)] : null; }
-function uniqPush(arr, s) { if (!arr.includes(s)) arr.push(s); }
 
-// --- HUD BORDER ANIMATION (Counter Clockwise from Top-Left) ---
-function initHudBorder() {
+function resetHudBorderAnimation(color) {
   const path = document.getElementById("hudTracePath");
   const box = document.getElementById("hudBox");
   if (!path || !box) return;
 
-  const w = box.offsetWidth - 2; // -2 for stroke width calc offset
+  const w = box.offsetWidth - 2;
   const h = box.offsetHeight - 2;
-  
-  // Path: Start Top-Left(0,0) -> Down(0,H) -> Right(W,H) -> Up(W,0) -> Left(0,0)
-  // This is CCW direction.
   const d = `M 1 1 L 1 ${h} L ${w} ${h} L ${w} 1 L 1 1`;
-  
   path.setAttribute("d", d);
+  
   const len = path.getTotalLength() || 1000;
   
-  // Reset style for animation start
-  path.style.transition = "none";
-  path.style.strokeDasharray = len;
-  path.style.strokeDashoffset = len; // Hidden start
-}
-
-function animateHudBorder(color) {
-  const path = document.getElementById("hudTracePath");
-  if (!path) return;
-  const len = path.getTotalLength() || 1000;
-
   path.style.stroke = color;
-  
-  // 1. Reset to empty (hidden) with NO transition
-  path.style.transition = "none";
+  path.style.transition = 'none';
+  path.style.strokeDasharray = len;
   path.style.strokeDashoffset = len;
 
-  // 2. Force reflow + Start animation
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      path.style.transition = "stroke-dashoffset 16s linear";
-      path.style.strokeDashoffset = "0";
+      path.style.transition = `stroke-dashoffset ${HUD_CONFIG.interval}ms linear`;
+      path.style.strokeDashoffset = 0;
     });
   });
 }
 
 function buildIntel(data) {
-  const out = []; const ch = data.channel || {}, w = data.weekly || {}, m28 = data.m28 || {}, hud = data.hud || {}, hist = data.history28d || [];
+  const out = []; const ch = data.channel || {}, w = data.weekly || {}, hud = data.hud || {};
   const weekViews = Number(w.views || 0), weekG = Number(w.subscribersGained || 0), weekL = Number(w.subscribersLost || 0), weekNet = Number(w.netSubs || 0);
-  const churnPct = weekG > 0 ? Math.round((weekL / weekG) * 100) : (weekL > 0 ? 100 : 0);
   const subsPer1k = weekViews > 0 ? (weekNet / weekViews) * 1000 : 0;
   
   const uploadDaysAgo = (hud.uploads?.latest?.publishedAt && hud.statsThrough) ? daysBetweenISO(hud.uploads.latest.publishedAt, hud.statsThrough) : null;
-  if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ key: "warn_gap", cat: "warning", weight: 3, icon: HUD_ICONS.warn, tag: "WARNING", type: "red", text: `UPLOAD BUFFER EMPTY. LAST UPLOAD WAS ${uploadDaysAgo} DAYS AGO.` });
-  else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) out.push({ key: "good_gap", cat: "good", weight: 2, icon: HUD_ICONS.up, tag: "RISING", type: "green", text: `CONSISTENCY DETECTED. LAST UPLOAD ${uploadDaysAgo} DAYS AGO.` });
+  if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ tag: "WARNING", type: "red", icon: HUD_ICONS.warn, text: `UPLOAD BUFFER EMPTY. LAST UPLOAD WAS ${uploadDaysAgo} DAYS AGO.` });
+  else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) out.push({ tag: "RISING", type: "green", icon: HUD_ICONS.up, text: `CONSISTENCY DETECTED. LAST UPLOAD ${uploadDaysAgo} DAYS AGO.` });
 
-  if (weekG > 0 || weekL > 0) out.push({ key: "churn", cat: "subs", weight: 3.2, icon: weekL>weekG?HUD_ICONS.down:HUD_ICONS.up, tag: weekL>weekG?"DROPPING":"GROWTH", type: weekL>weekG?"red":"green", text: `NET SUBS: ${weekNet}. GAINED ${weekG}, LOST ${weekL}.` });
-
-  if (weekViews > 0) out.push({ key: "conv", cat: "conversion", weight: 2.6, icon: HUD_ICONS.target, tag: "CONVERSION", type: subsPer1k>=2?"green":"yellow", text: `CONVERSION RATE: ${subsPer1k.toFixed(2)} NET SUBS PER 1K VIEWS.` });
+  if (weekG > 0 || weekL > 0) out.push({ tag: weekL>weekG?"DROPPING":"GROWTH", type: weekL>weekG?"red":"green", icon: weekL>weekG?HUD_ICONS.down:HUD_ICONS.up, text: `NET SUBS: ${weekNet}. GAINED ${weekG}, LOST ${weekL}.` });
+  if (weekViews > 0) out.push({ tag: "CONVERSION", type: subsPer1k>=2?"green":"yellow", icon: HUD_ICONS.target, text: `CONVERSION RATE: ${subsPer1k.toFixed(2)} NET SUBS PER 1K VIEWS.` });
 
   const thumb = hud.thumb28;
-  if (thumb && thumb.ctr) {
-    const ctr = thumb.ctr;
-    out.push({ key: "ctr", cat: "packaging", weight: 2.1, icon: ctr<2?HUD_ICONS.warn:HUD_ICONS.bulb, tag: ctr<2?"WARNING":"PACKAGING", type: ctr<2?"red":(ctr>8?"green":"yellow"), text: `AVG CTR IS ${ctr.toFixed(1)}%. ${ctr<2?"OPTIMIZE THUMBNAILS.":"HEALTHY METRIC."}` });
-  }
-
+  if (thumb && thumb.ctr) { const ctr = thumb.ctr; out.push({ tag: ctr<2?"WARNING":"PACKAGING", type: ctr<2?"red":(ctr>8?"green":"yellow"), icon: ctr<2?HUD_ICONS.warn:HUD_ICONS.bulb, text: `AVG CTR IS ${ctr.toFixed(1)}%. ${ctr<2?"OPTIMIZE THUMBNAILS.":"HEALTHY METRIC."}` }); }
+  
   const ret = hud.retention28;
-  if (ret && ret.avgViewPercentage) {
-    const r = ret.avgViewPercentage;
-    out.push({ key: "ret", cat: "retention", weight: 2, icon: r<35?HUD_ICONS.warn:HUD_ICONS.up, tag: r<35?"WARNING":"RETENTION", type: r<35?"red":"green", text: `AVG VIEW PERCENTAGE IS ${r.toFixed(0)}%. ${r<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}` });
-  }
-
+  if (ret && ret.avgViewPercentage) { const r = ret.avgViewPercentage; out.push({ tag: r<35?"WARNING":"RETENTION", type: r<35?"red":"green", icon: r<35?HUD_ICONS.warn:HUD_ICONS.up, text: `AVG VIEW PERCENTAGE IS ${r.toFixed(0)}%. ${r<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}` }); }
+  
   const lv = hud.latestVideo;
-  if (lv && lv.title) {
-    const vViews = Number(lv.views||0);
-    out.push({ key: "lv_stat", cat: "video", weight: 2.8, icon: HUD_ICONS.rocket, tag: "LATEST", type: "purple", text: `LATEST UPLOAD: "${lv.title.toUpperCase()}" — ${fmt(vViews)} VIEWS.` });
-  }
-
+  if (lv && lv.title) { const vViews = Number(lv.views||0); out.push({ tag: "LATEST", type: "purple", icon: HUD_ICONS.rocket, text: `LATEST UPLOAD: "${lv.title.toUpperCase()}" — ${fmt(vViews)} VIEWS.` }); }
+  
   const nextSub = getMilestone(Number(ch.subscribers||0), "subs");
-  if (nextSub > Number(ch.subscribers||0)) out.push({ key: "goal", cat: "goal", weight: 1.4, icon: HUD_ICONS.target, tag: "MILESTONE", type: "blue", text: `${fmt(nextSub - Number(ch.subscribers))} SUBS REMAINING TO REACH ${fmt(nextSub)}.` });
+  if (nextSub > Number(ch.subscribers||0)) out.push({ tag: "MILESTONE", type: "blue", icon: HUD_ICONS.target, text: `${fmt(nextSub - Number(ch.subscribers))} SUBS REMAINING TO REACH ${fmt(nextSub)}.` });
 
-  const tip = pick(KB.tips); if (tip) out.push({ key: "tip", cat: "tip", weight: 0.4, icon: HUD_ICONS.bulb, tag: "TIP", type: "yellow", text: tip.toUpperCase() });
-  const fact = pick(KB.facts); if (fact) out.push({ key: "fact", cat: "trivia", weight: 0.3, icon: HUD_ICONS.bulb, tag: "FACT", type: "pink", text: fact.toUpperCase() });
-  const mot = pick(KB.motivation); if (mot) out.push({ key: "mot", cat: "motivation", weight: 0.2, icon: HUD_ICONS.live, tag: "INSIGHT", type: "purple", text: mot.toUpperCase() });
+  const tip = pick(KB.tips); if (tip) out.push({ tag: "TIP", type: "yellow", icon: HUD_ICONS.bulb, text: tip.toUpperCase() });
+  const fact = pick(KB.facts); if (fact) out.push({ tag: "FACT", type: "pink", icon: HUD_ICONS.bulb, text: fact.toUpperCase() });
+  const mot = pick(KB.motivation); if (mot) out.push({ tag: "INSIGHT", type: "purple", icon: HUD_ICONS.live, text: mot.toUpperCase() });
 
   return out;
 }
+
+let intelQueue = [];
+let resizeTimer;
 
 function showNextIntel() {
   const item = intelQueue.length ? intelQueue[Math.floor(Math.random() * intelQueue.length)] : null;
   if (!item) return;
 
-  const msg = document.getElementById("hudMessage");
-  const tag = document.getElementById("hudTag");
-  const icon = document.getElementById("hudIcon");
   const box = document.getElementById("hudBox");
   
   // Glitch Out
   box.classList.remove("glitch-active");
-  msg.style.opacity = "0"; 
-  tag.style.opacity = "0";
-  icon.style.opacity = "0";
-
+  
   setTimeout(() => {
     // Update
-    msg.textContent = item.text;
-    tag.textContent = item.tag;
-    icon.innerHTML = item.icon || "⚡";
+    safeSetText("hudTag", item.tag);
+    safeSetHTML("hudIcon", item.icon || "⚡");
+    safeSetText("hudMessage", item.text);
 
     const c = COLORS[item.type] || COLORS.orange;
     
     box.style.setProperty("--hud-accent", c);
-    tag.style.color = c;
-    tag.style.textShadow = `0 0 10px ${c}`;
-    icon.style.color = c; // for fill="currentColor"
 
     // Restart Trace
-    animateHudBorder(c);
+    resetHudBorderAnimation(c);
 
     // Glitch In
-    msg.style.opacity = "1";
-    tag.style.opacity = "1";
-    icon.style.opacity = "1";
     box.classList.add("glitch-active");
     
-  }, 200);
+  }, 300); // Small delay for visual separation
 }
 
 function updateHud(data) {
@@ -474,9 +411,17 @@ function updateHud(data) {
   if (!HUD_CONFIG.started) {
     HUD_CONFIG.started = true;
     setTimeout(() => {
-      initHudBorder();
       showNextIntel();
       HUD_CONFIG.timer = setInterval(showNextIntel, 16000);
+
+      // Add debounced resize listener
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const accent = document.getElementById('hudBox').style.getPropertyValue("--hud-accent");
+          resetHudBorderAnimation(accent || COLORS.blue);
+        }, 150);
+      });
     }, 1200);
   }
 }
