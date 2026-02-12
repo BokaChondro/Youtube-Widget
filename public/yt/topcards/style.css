@@ -1,37 +1,29 @@
-
-### public/yt/topcards/style.css
-
-```css
 /* =========================================================
-   public/yt/topcards/style.css — CYBERPUNK UPGRADE
-   ---------------------------------------------------------
-   Updates:
-   - Task A: Sci-Fi Fonts, Neon Borders, Scanlines
-   - Task B: Responsive Grid (minmax/clamp)
-   - Task D: Glitch Animations
+   public/yt/topcards/style.css — Sci-Fi High End Theme
    ========================================================= */
 
 :root {
   --bg-dark: #050505;
-  --card-bg: #000000;
+  --card-bg: rgba(10, 10, 12, 0.95);
   
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-highlight: rgba(255, 255, 255, 0.05);
 
+  /* Neon Tiers */
   --c-red: #ff003c;
   --c-green: #00ff9d;
-  --c-blue: #00f0ff;
+  --c-blue: #00e0ff;
   --c-yellow: #fcee0a;
-  --c-purple: #d600ff;
-  --c-pink: #ff00aa;
-  --c-orange: #ff7b00;
+  --c-purple: #d500f9;
+  --c-pink: #ff007f;
+  --c-orange: #ff9100;
 
-  --c-tier: var(--c-yellow);
+  --c-tier: var(--c-yellow); /* Dynamic */
   
-  /* Task A: Font Stack Update */
-  --font-main: 'Orbitron', sans-serif; 
-  --font-data: 'JetBrains Mono', monospace;
-
+  /* Sci-Fi Fonts */
+  --font-display: 'Orbitron', sans-serif;
+  --font-data: 'Rajdhani', sans-serif;
+  
   --hud-time: 16s;
 }
 
@@ -39,313 +31,253 @@
 
 body {
   background-color: var(--bg-dark);
-  color: #191919;
-  font-family: var(--font-data); /* Default to mono for clean look */
-  overflow-x: hidden;
-  min-height: 100vh;
-  display: flex; justify-content: center; align-items: center;
-  /* Task A: Subtle grid background */
   background-image: 
     linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
+  background-size: 50px 50px;
+  color: #fff;
+  font-family: var(--font-data);
+  overflow: hidden;
+  height: 100vh;
+  display: flex; justify-content: center; align-items: center;
 }
 
-/* Task B: Responsive Wrap */
+/* Fluid Layout: Full Width, shrinks to fit */
 .wrap { 
-  width: 100%; 
-  max-width: 1600px; /* Increased max width */
-  padding: 20px; 
+  width: 98%; 
+  height: 96vh;
+  display: flex; 
+  flex-direction: column; 
+  justify-content: center;
 }
 
-/* Task B: Responsive Grid using auto-fit + minmax */
+/* =========================================================
+   Grid: Responsive, Auto-Fit, No 3D Perspective
+   ========================================================= */
 .grid { 
   display: grid; 
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
   gap: 16px; 
+  width: 100%;
+  margin-bottom: 20px;
 } 
 
 /* =========================================================
-   CARD STYLES (CYBERPUNK)
-   ---------------------------------------------------------
-   Removed 3D tilt perspective. Added neon hover glow.
+   Sci-Fi Card Style
    ========================================================= */
 .card {
   position: relative;
-  background: rgba(10, 10, 10, 0.7);
-  border: 1px solid var(--glass-border);
-  border-radius: 4px; /* Sharper corners */
+  background: var(--card-bg);
+  border: 1px solid rgba(255,255,255,0.08);
+  /* Technical Corners */
+  clip-path: polygon(
+    0 0, 
+    100% 0, 
+    100% calc(100% - 15px), 
+    calc(100% - 15px) 100%, 
+    0 100%
+  );
   padding: 20px;
   overflow: hidden;
-  box-shadow: 0 4px 30px rgba(0,0,0,0.5);
-  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Neon Glow Border Effect (simulated via box-shadow) */
+  box-shadow: inset 0 0 20px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  
   --logo-url: none;
   opacity: 1;
-  border-left: 2px solid rgba(255,255,255,0.1);
-  backdrop-filter: blur(12px);
+  text-transform: uppercase; /* ALL CAPS */
 }
 
-.card-enter { animation: cardFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
-@keyframes cardFadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-/* Task A: Neon Hover Effect */
-.card:hover { 
-  z-index: 10; 
-  transform: translateY(-2px);
-  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.8), 0 0 15px color-mix(in srgb, var(--c-tier) 30%, transparent);
-  border-color: color-mix(in srgb, var(--c-tier) 50%, transparent);
-  border-left-color: var(--c-tier);
+/* Simple Hover Effect (No Tilt) */
+.card:hover {
+  transform: translateY(-4px);
+  border-color: var(--c-tier);
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 0 15px var(--c-tier);
+  z-index: 10;
 }
 
-/* Pulsing Logo Bg */
+/* Scan line decoration */
+.scan-line {
+  position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+  background: var(--c-tier);
+  opacity: 0.3;
+  animation: scanDown 4s linear infinite;
+  pointer-events: none; z-index: 1;
+}
+@keyframes scanDown { 0% { top: -10%; opacity:0; } 10% { opacity: 0.5; } 90% { opacity: 0.5; } 100% { top: 110%; opacity: 0; } }
+
+/* Logo Pulse */
 .card::before {
-  content: ""; position: absolute; top: 50%; left: 50%; width: 60%; height: 60%;
+  content: ""; position: absolute; top: 50%; left: 50%; width: 70%; height: 70%;
   transform: translate(-50%, -50%); background-color: #000; background-image: var(--logo-url);
   background-size: contain; background-repeat: no-repeat; background-position: center;
-  opacity: 0.3; mix-blend-mode: screen; filter: grayscale(100%) contrast(1.2); z-index: 0; pointer-events: none;
+  opacity: 0.3; mix-blend-mode: screen; filter: grayscale(100%) contrast(1.5) drop-shadow(0 0 10px var(--c-tier)); 
+  z-index: 0; pointer-events: none;
   animation: logoBreath 10s ease-in-out infinite;
 }
-@keyframes logoBreath { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; } 50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.4; } }
+@keyframes logoBreath { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.2; } 50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.4; } }
 
-/* Glare (kept from original) */
 .glare {
-  position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
+  position: absolute; top: 0; left: -150%; width: 100%; height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.02) 60%, transparent);
-  transform: skewX(-25deg); pointer-events: none; z-index: 1; animation: glareSweep 8s infinite ease-in-out;
+  transform: skewX(-30deg); pointer-events: none; z-index: 1; animation: glareSweep 6s infinite ease-in-out;
 }
-@keyframes glareSweep { 0%, 40% { left: -100%; } 100% { left: 200%; } }
+@keyframes glareSweep { 0%, 50% { left: -150%; } 100% { left: 250%; } }
 
-/* Scanline Overlay (New) */
-.card::after {
-  content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-  z-index: 2; background-size: 100% 2px, 3px 100%; pointer-events: none;
-}
-
-.cardTop, .midRow, .weekLine, .metaRow, .milestoneBox { position: relative; z-index: 3; }
-.cardTop { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+/* Layout Internals */
+.cardTop, .midRow, .weekLine, .metaRow, .milestoneBox { position: relative; z-index: 2; }
+.cardTop { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
 .left { display: flex; align-items: center; gap: 12px; }
 
-/* Icon Box Upgrade */
 .iconBox { 
   width: 40px; height: 40px; 
   background: rgba(255,255,255,0.03); 
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 4px; /* Square sci-fi look */
+  border: 1px solid rgba(255,255,255,0.2); 
   display: flex; align-items: center; justify-content: center; 
   color: var(--c-tier); 
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
-  transition: all 0.3s ease; 
+  clip-path: polygon(10% 0, 100% 0, 100% 90%, 90% 100%, 0 100%, 0 10%);
 }
 .icon { width: 22px; height: 22px; fill: currentColor; filter: drop-shadow(0 0 5px currentColor); }
 
-/* Typography Upgrades */
 .titles { display: flex; flex-direction: column; }
-.title { 
-  font-family: var(--font-main); 
-  font-size: 14px; 
-  font-weight: 700; 
-  color: #fff; 
-  letter-spacing: 1px; 
-  text-transform: uppercase; 
-}
-.subtitle { 
-  font-family: var(--font-data); 
-  font-size: 10px; 
-  font-weight: 400; 
-  color: rgba(255,255,255,0.5); 
-  text-transform: uppercase; 
-  letter-spacing: 1px; 
-}
+.title { font-family: var(--font-display); font-size: 14px; letter-spacing: 1px; color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.3); }
+.subtitle { font-family: var(--font-data); font-size: 11px; color: var(--c-tier); opacity: 0.8; letter-spacing: 2px; margin-top: 2px; }
 
 .chip { 
-  display: flex; align-items: center; gap: 6px; 
+  display: flex; align-items: center; gap: 8px; 
   background: rgba(0,0,0,0.6); 
-  padding: 4px 10px; 
-  border-radius: 2px; /* Tech corners */
-  border: 1px solid rgba(255,255,255,0.15); 
+  padding: 4px 12px; 
+  border: 1px solid var(--c-tier); 
+  box-shadow: 0 0 5px var(--c-tier);
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
 }
-.dot { width: 6px; height: 6px; border-radius: 0; /* Square dot */ background: #555; box-shadow: 0 0 8px currentColor; }
-.chipText { font-family: var(--font-data); font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.9); text-transform: uppercase; }
+.dot { width: 6px; height: 6px; background: var(--c-tier); box-shadow: 0 0 8px var(--c-tier); }
+.chipText { font-family: var(--font-display); font-size: 10px; font-weight: 700; color: #fff; letter-spacing: 1px; }
 
-.midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 46px; }
+.midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 44px; }
 .bigNumber { 
-  display: flex; align-items: baseline; gap: 6px; 
-  font-family: var(--font-main); /* Sci-Fi Number */
+  font-family: var(--font-display); 
   font-size: 32px; font-weight: 700; 
-  color: #fff; 
-  text-shadow: 0 0 15px rgba(255,255,255,0.1); 
-  font-feature-settings: "tnum"; 
+  color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.5); 
+  display: flex; align-items: baseline; gap: 6px; 
 }
-.mainArrow { font-size: 20px; transform: translateY(-4px); }
-.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 5px var(--c-tier)); }
+.mainArrow { font-size: 20px; color: var(--c-tier); }
+
+.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 2px var(--c-tier)); opacity: 0.8; }
 .spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 
-.milestoneBox { margin-bottom: 12px; }
-.milestoneText { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.6); margin-bottom: 4px; text-transform: uppercase; font-family: var(--font-data); }
-.milestoneText b { color: #fff; font-weight: 700; }
-.progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); overflow: hidden; }
-.progressFill { height: 100%; width: 0%; background: var(--c-tier); box-shadow: 0 0 8px var(--c-tier); transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
+.milestoneBox { margin-bottom: 15px; }
+.milestoneText { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 5px; font-family: var(--font-data); font-weight: 600; letter-spacing: 1px;}
+.milestoneText b { color: var(--c-tier); text-shadow: 0 0 5px var(--c-tier); }
+.progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); }
+.progressFill { height: 100%; width: 0%; background: var(--c-tier); box-shadow: 0 0 10px var(--c-tier); transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
 
 .weekLine { 
-  font-family: var(--font-data);
-  font-size: 11px; 
+  font-family: var(--font-data); font-size: 14px; font-weight: 600; 
   color: rgba(255,255,255,0.8); 
-  padding-bottom: 12px; 
-  margin-bottom: 12px; 
-  border-bottom: 1px dashed rgba(255,255,255,0.15); 
-  display: flex; justify-content: space-between; 
-  text-transform: uppercase;
+  padding-bottom: 12px; margin-bottom: 12px; 
+  border-bottom: 1px solid rgba(255,255,255,0.1); 
+  display: flex; justify-content: space-between; letter-spacing: 0.5px;
 }
 
-.metaRow { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
-.metaItem { display: flex; flex-direction: column; gap: 2px; }
-.metaLabel { font-size: 9px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px; }
-.metaValue { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.9); font-feature-settings: "tnum"; font-family: var(--font-data); }
+.metaRow { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; }
+.metaItem { display: flex; flex-direction: column; gap: 4px; }
+.metaLabel { font-family: var(--font-display); font-size: 9px; color: rgba(255,255,255,0.4); letter-spacing: 1px; }
+.metaValue { font-family: var(--font-data); font-size: 14px; font-weight: 700; color: #fff; }
 
-.vsNum.pos { color: var(--c-green); text-shadow: 0 0 5px rgba(0,255,157,0.3); } 
-.vsNum.neg { color: var(--c-red); text-shadow: 0 0 5px rgba(255,0,60,0.3); } 
+.vsNum.pos { color: var(--c-green); text-shadow: 0 0 5px var(--c-green); } 
+.vsNum.neg { color: var(--c-red); text-shadow: 0 0 5px var(--c-red); } 
 .vsNum.neu { color: #888; }
 .vsArrow.pos { color: var(--c-green); } .vsArrow.neg { color: var(--c-red); }
 
-.foot { margin-top: 20px; text-align: right; font-size: 10px; color: rgba(255,255,255,0.2); font-family: var(--font-data); letter-spacing: 1px; }
+/* =========================================================
+   HUD: Cyberpunk Dashboard
+   ========================================================= */
+.hud-box {
+  position: relative; 
+  width: 100%;
+  background: rgba(5, 5, 8, 0.9);
+  padding: 18px 24px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  --hud-accent: var(--c-blue);
+  /* Cut corners for HUD */
+  clip-path: polygon(
+    20px 0, 100% 0, 
+    100% calc(100% - 20px), 
+    calc(100% - 20px) 100%, 
+    0 100%, 0 20px
+  );
+  border: 1px solid rgba(255,255,255,0.05);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
 
+.hud-grid-bg {
+  position: absolute; top:0; left:0; width:100%; height:100%;
+  background-image: 
+    linear-gradient(rgba(var(--hud-accent), 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--hud-accent), 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+  opacity: 0.1; pointer-events: none;
+}
+
+.hud-border-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+.hud-border-svg path {
+  fill: none; stroke: var(--hud-accent); stroke-width: 2px;
+  filter: drop-shadow(0 0 5px var(--hud-accent));
+}
+
+.hud-content { display: flex; align-items: center; gap: 20px; position: relative; z-index: 2; }
+.hud-icon-box {
+  width: 48px; height: 48px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid var(--hud-accent);
+  box-shadow: inset 0 0 10px var(--hud-accent);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--hud-accent);
+  clip-path: polygon(25% 0, 100% 0, 100% 75%, 75% 100%, 0 100%, 0 25%);
+}
+.hud-icon svg { width: 24px; height: 24px; fill: currentColor; filter: drop-shadow(0 0 5px currentColor); }
+
+.hud-text-area { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.hud-header { display: flex; align-items: center; gap: 10px; }
+.hud-sys { font-family: var(--font-display); font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 2px; }
+.hud-tag { font-family: var(--font-display); font-size: 12px; font-weight: 700; color: var(--hud-accent); text-shadow: 0 0 8px var(--hud-accent); letter-spacing: 2px; }
+.hud-message { font-family: var(--font-data); font-size: 18px; font-weight: 700; color: #fff; line-height: 1.2; text-shadow: 0 2px 5px rgba(0,0,0,0.8); text-transform: uppercase; letter-spacing: 1px; }
+
+/* Foot & Utilities */
+.foot { margin-top: 10px; text-align: center; font-family: var(--font-display); font-size: 9px; color: rgba(255,255,255,0.2); letter-spacing: 2px; }
 .toast { 
   position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px); 
-  background: rgba(0,0,0,0.8); border: 1px solid var(--c-green); 
-  color: var(--c-green); padding: 6px 16px; font-family: var(--font-data);
-  font-size: 12px; font-weight: 600; opacity: 0; transition: all 0.3s ease; 
-  pointer-events: none; z-index: 100; letter-spacing: 1px;
+  background: rgba(0,0,0,0.8); border: 1px solid #00ff99; color: #00ff99; 
+  padding: 8px 20px; font-family: var(--font-display); font-size: 12px; letter-spacing: 2px;
+  box-shadow: 0 0 15px rgba(0,255,153,0.3);
+  opacity: 0; transition: all 0.3s ease; pointer-events: none; z-index: 100; clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
 }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
-/* Float Icons */
-.floatIcon { position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff; filter: drop-shadow(0 0 10px #fff); pointer-events: none; z-index: 20; transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards; }
-@keyframes floatSequence { 0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); } 20%, 80% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); } 100% { opacity: 0; transform: translate(-50%, -60px) scale(1); } }
+/* =========================================================
+   Glitch Animation Class
+   ========================================================= */
+.glitch-skew { animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both infinite; color: var(--c-red); text-shadow: 2px 0 var(--c-blue), -2px 0 var(--c-yellow); }
+@keyframes glitch-skew {
+  0% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(2px, -2px); }
+  60% { transform: translate(0); }
+  80% { transform: translate(2px, 0); }
+  100% { transform: translate(0); }
+}
 
-/* Roll Animation */
+/* Float Icon */
+.floatIcon { position: absolute; bottom: 50%; left: 50%; width: 32px; height: 32px; fill: #fff; filter: drop-shadow(0 0 10px var(--c-tier)); pointer-events: none; z-index: 20; animation: floatSequence 4s ease-in-out forwards; }
+@keyframes floatSequence { 0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); } 20% { opacity: 1; transform: translate(-50%, -10px) scale(1.5); } 100% { opacity: 0; transform: translate(-50%, -80px) scale(1); } }
+
+/* Roll Styles */
 .rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
 .rollCol { display: flex; flex-direction: column; }
 .rollLine { height: 1.1em; line-height: 1.1em; display: block; }
 
-/* Glow Once (Flash update) */
-@keyframes glowOnceBox { 0%, 100% { box-shadow: inset 0 0 10px rgba(0,0,0,0.5); color: var(--c-tier); } 50% { box-shadow: 0 0 20px var(--c-tier), inset 0 0 10px var(--c-tier); color: #fff; } }
-@keyframes glowOnceChip { 0%, 100% { box-shadow: none; border-color: rgba(255,255,255,0.15); } 50% { box-shadow: 0 0 15px var(--c-tier); border-color: var(--c-tier); } }
-.card.glow-once .iconBox { animation: glowOnceBox 2s cubic-bezier(0.22, 1, 0.36, 1) 1; }
-.card.glow-once .chip { animation: glowOnceChip 2s cubic-bezier(0.22, 1, 0.36, 1) 1; }
-
-/* =========================================================
-   TASK D: RANDOM GLITCH EFFECTS
-   ---------------------------------------------------------
-   Classes applied by JS to random elements.
-   ========================================================= */
-.cyber-glitch {
-  position: relative;
-  animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both infinite;
-  color: #fff;
-}
-.cyber-glitch::before, .cyber-glitch::after {
-  content: attr(data-text);
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-}
-.cyber-glitch::before {
-  left: 2px; text-shadow: -1px 0 #ff00c1; clip: rect(44px, 450px, 56px, 0);
-  animation: glitch-anim 2s infinite linear alternate-reverse;
-}
-.cyber-glitch::after {
-  left: -2px; text-shadow: -1px 0 #00fff9; clip: rect(44px, 450px, 56px, 0);
-  animation: glitch-anim2 2s infinite linear alternate-reverse;
-}
-
-@keyframes glitch-skew {
-  0% { transform: skew(0deg); }
-  20% { transform: skew(-2deg); }
-  40% { transform: skew(2deg); }
-  60% { transform: skew(-1deg); }
-  80% { transform: skew(1deg); }
-  100% { transform: skew(0deg); }
-}
-@keyframes glitch-anim {
-  0% { clip: rect(12px, 9999px, 32px, 0); }
-  50% { clip: rect(65px, 9999px, 80px, 0); }
-  100% { clip: rect(3px, 9999px, 15px, 0); }
-}
-@keyframes glitch-anim2 {
-  0% { clip: rect(82px, 9999px, 99px, 0); }
-  50% { clip: rect(2px, 9999px, 40px, 0); }
-  100% { clip: rect(55px, 9999px, 68px, 0); }
-}
-
-/* =========================================================
-   HUD (Cyberpunk Trace)
-   ========================================================= */
-.hud-box {
-  position: relative; margin-top: 24px; width: 100%;
-  background: rgba(5, 5, 5, 0.9);
-  border-radius: 4px;
-  padding: 24px 30px;
-  overflow: hidden;
-  box-shadow: 0 20px 50px -10px rgba(0,0,0,0.9);
-  display: flex; flex-direction: column;
-  --hud-accent: var(--c-blue);
-  border-left: 4px solid var(--hud-accent); /* Solid anchor */
-}
-
-.hud-border-svg {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  pointer-events: none; z-index: 10;
-}
-.hud-border-svg path {
-  fill: none;
-  stroke: var(--hud-accent);
-  stroke-width: 2px;
-  stroke-linecap: square;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 0 8px var(--hud-accent));
-}
-
-.hud-content { display: flex; align-items: center; gap: 24px; position: relative; z-index: 2; }
-
-.hud-icon-box {
-  width: 48px; height: 48px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.1);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--hud-accent);
-  box-shadow: 0 0 15px rgba(0,0,0,0.5);
-}
-.hud-icon svg { width: 28px; height: 28px; fill: currentColor; filter: drop-shadow(0 0 8px currentColor); }
-
-.hud-text-area { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
-
-.hud-header { display: flex; align-items: center; gap: 12px; }
-.hud-sys { font-family: var(--font-data); font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 2px; }
-.hud-tag { font-family: var(--font-main); font-size: 12px; font-weight: 700; color: var(--hud-accent); text-shadow: 0 0 10px var(--hud-accent); letter-spacing: 2px; }
-
-.hud-message-mask { overflow: hidden; }
-.hud-message {
-  font-family: var(--font-data);
-  font-size: 14px;
-  font-weight: 400;
-  color: #fff;
-  line-height: 1.4;
-  text-shadow: 0 2px 10px rgba(0,0,0,0.8);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
-
-/* Glitch Animation for Message Swap (Existing) */
-.glitch-active .hud-tag, .glitch-active .hud-message, .glitch-active .hud-icon { animation: glitchMsg 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
-@keyframes glitchMsg {
-  0% { transform: translate(0); opacity: 0; }
-  20% { transform: translate(-3px, 3px); opacity: 1; }
-  40% { transform: translate(3px, -3px); }
-  60% { transform: translate(0); }
-  100% { transform: translate(0); opacity: 1; }
-}
-
-@media (max-width: 600px) {
-  .hud-box { padding: 16px; }
-  .hud-message { font-size: 12px; }
-  .hud-icon-box { width: 36px; height: 36px; }
-}
+/* Glow Once */
+@keyframes glowOnceBox { 0%, 100% { box-shadow: inset 0 0 10px rgba(0,0,0,0); border-color: rgba(255,255,255,0.2); } 50% { box-shadow: inset 0 0 30px var(--c-tier), 0 0 20px var(--c-tier); border-color: var(--c-tier); } }
+.card.glow-once { animation: glowOnceBox 2s cubic-bezier(0.22, 1, 0.36, 1) 1; }
