@@ -2,7 +2,7 @@
    public/yt/topcards/app.js — Front-end runtime (NO UI redesign here)
    ---------------------------------------------------------
        Purpose:
-         - Fetch KPI JSON from /api/yt-kpis every 60s and paint the 4 Top Cards + Sci-Fi HUD.
+         - Fetch KPI JSON from /api/yt-kpis every 60s and paint the 4 Top Cards + Sci‑Fi HUD.
          - All DOM updates are "safe" helpers (safeSetText / safeSetHTML / safeSetStyle).
          - Visual behaviors (rolling numbers, glow, float icons) are triggered only on value deltas.
 
@@ -70,12 +70,97 @@ const FEEDBACK = {
 };
 
 /* =========================================================
-   DOM write helpers (safe updates only)
+   Tier arrow glyphs
    ---------------------------------------------------------
-       Every DOM update goes through these so:
-         - Missing element IDs fail silently (no hard crash)
-         - render() can stay readable
+       Converts tier to an arrow symbol placed beside the big number.
+       This is separate from the chip label (FEEDBACK) and the dot color (COLORS).
    ========================================================= */
+function tierArrow(tier) {
+  if (tier === "red") return "↓↓";
+  if (tier === "orange") return "↓";
+  if (tier === "yellow") return "-";
+  if (tier === "green") return "↑";
+  if (tier === "blue") return "↑↑";
+  return "⟰";
+}
+
+/* =========================================================
+   Tiering: compare 'current window' vs 'baseline window'
+   ---------------------------------------------------------
+       Used by the 'Last 28D vs 6M Avg' style comparisons.
+       Inputs:
+         - last28: the active window value (what user sees as the main period)
+         - median6m: the baseline (computed server-side from rolling history)
+         - absMin: fallback threshold when baseline is 0 / unavailable
+       Output: one of {red, orange, yellow, green, blue, purple}.
+   ========================================================= */
+function tierFromBaseline(last28, median6m, absMin) {
+  const L = Number(last28 || 0);
+  const B = Number(median6m || 0);
+  if (B <= 0) return L > absMin ? "green" : "orange";
+  const ratio = L / B;
+  if (ratio < 0.7) return "red";
+  if (ratio < 0.85) return "orange";
+  if (ratio < 1.15) return "yellow";
+  if (ratio < 1.3) return "green";
+  if (ratio < 1.6) return "blue";
+  return "purple";
+}
+
+// Special tier logic for Realtime (Last 24H vs Prev 6D Avg)
+function tierRealtime(last24, prev6Avg, absMin = 100) {
+  const L = Number(last24 || 0);
+  const B = Number(prev6Avg || 0);
+  if (B <= 0) return L > absMin ? "green" : "orange"; // fallback if no history
+  const ratio = L / B;
+  
+  if (ratio < 0.5) return "red";      // Big Drop
+  if (ratio < 0.9) return "orange";   // Drop Alert
+  if (ratio < 1.1) return "yellow";  // Going Flat
+  if (ratio < 1.5) return "green";    // Good Pace
+  if (ratio < 2.0) return "blue";     // Uptrend
+  return "purple";                    // On Fire
+}
+
+// Updated Milestone Logic: Returns Range { min, max }
+function getMilestoneLimits(val, type) {
+  const v = Number(val || 0);
+  if (v < 0) return { min: 0, max: 100 };
+
+  // Watch Hours (Specific YT Milestones)
+  if (type === "watch") {
+    if (v < 100) return { min: 0, max: 100 };
+    if (v < 4000) return { min: 100, max: 4000 }; // Monetization jump
+    if (v < 10000) {
+      const step = 1000;
+      const min = Math.floor(v / step) * step;
+      return { min, max: min + step };
+    }
+    const step = 5000;
+    const min = Math.floor(v / step) * step;
+    return { min, max: min + step };
+  }
+
+// Standard (Subs, Views, Realtime)
+  let step = 100;
+  
+  if (v >= 10000000) step = 10000000;      // 10M -> 20M
+  else if (v >= 1000000) step = 1000000;   // 1M -> 2M
+  else if (v >= 100000) step = 100000;     // 100k -> 200k
+  else if (v >= 10000) step = 10000;       // 10k -> 20k
+  else if (v >= 1000) step = 1000;         // 1k -> 2k
+  else step = 100;                         // 0 -> 100
+
+  const min = Math.floor(v / step) * step;
+  return { min, max: min + step };
+}
+
+async function fetchJSON(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
 // --- DOM HELPERS ---
 function safeSetText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 function safeSetStyle(id, prop, val) { const el = document.getElementById(id); if (el) el.style[prop] = val; }
@@ -126,7 +211,7 @@ function tierRealtime(last24, prev6Avg, absMin = 100) {
   const B = Number(prev6Avg || 0);
   if (B <= 0) return L > absMin ? "green" : "orange"; // fallback if no history
   const ratio = L / B;
-
+  
   if (ratio < 0.5) return "red";      // Big Drop
   if (ratio < 0.9) return "orange";   // Drop Alert
   if (ratio < 1.1) return "yellow";  // Going Flat
@@ -154,9 +239,9 @@ function getMilestoneLimits(val, type) {
     return { min, max: min + step };
   }
 
-  // Standard (Subs, Views, Realtime)
+// Standard (Subs, Views, Realtime)
   let step = 100;
-
+  
   if (v >= 10000000) step = 10000000;      // 10M -> 20M
   else if (v >= 1000000) step = 1000000;   // 1M -> 2M
   else if (v >= 100000) step = 100000;     // 100k -> 200k
@@ -217,467 +302,211 @@ function ensureSparkGradient(svgEl, gradId, tierHex) {
     defs.appendChild(grad);
   }
   const stops = grad.querySelectorAll("stop");
-  if (stops[0]) stops[0].setAttribute("stop-color", rgbaFromHex(tierHex, 0.22));
-  if (stops[1]) stops[1].setAttribute("stop-color", "rgba(255,255,255,0.10)");
-  if (stops[2]) stops[2].setAttribute("stop-color", "rgba(255,255,255,0.02)");
-  return `url(#${gradId})`;
+  stops[0].setAttribute("stop-color", rgbaFromHex(tierHex, 0.3));
+  stops[1].setAttribute("stop-color", rgbaFromHex(tierHex, 0.15));
+  stops[2].setAttribute("stop-color", rgbaFromHex(tierHex, 0.0));
+  return gradId;
 }
 
-/* =========================================================
-   Sparkline rendering (SVG path + gradient fill)
-   ---------------------------------------------------------
-       setSpark(fillId, pathId, values, tier):
-         - Transforms an array of numbers into an SVG quadratic curve path.
-         - Sets stroke color to COLORS[tier] and fill to a per-card gradient.
-         - Called from render() per card to visualize short-term pacing.
-   ========================================================= */
-function setSpark(fillId, pathId, values, tier) {
-  const fillEl = document.getElementById(fillId);
-  const pathEl = document.getElementById(pathId);
+function paintSpark(idFill, idPath, gradId, points, tierHex, w = 120, h = 40) {
+  const fillEl = document.getElementById(idFill);
+  const pathEl = document.getElementById(idPath);
   if (!fillEl || !pathEl) return;
-  const vals = (values || []).map(Number);
-  if (vals.length < 2) return;
-  const w = 120, h = 40;
-  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
-  const pts = vals.map((v, i) => ({ x: (i / (vals.length - 1)) * w, y: h - ((v - min) / span) * h }));
-  let dLine = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
-  for (let i = 1; i < pts.length; i++) {
-    const p = pts[i - 1], c = pts[i], cx = ((p.x + c.x) / 2).toFixed(1), cy = ((p.y + c.y) / 2).toFixed(1);
-    dLine += ` Q ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${cx} ${cy}`;
+  if (!points.length) { fillEl.setAttribute("d", ""); pathEl.setAttribute("d", ""); return; }
+  const maxY = Math.max(...points);
+  const minY = Math.min(...points);
+  const range = maxY - minY || 1;
+  const norm = points.map((y, i) => ({ x: (i / (points.length - 1)) * w, y: h - ((y - minY) / range) * h }));
+  let dFill = `M0,${h} L${norm[0].x},${norm[0].y}`;
+  let dPath = `M${norm[0].x},${norm[0].y}`;
+  for (let i = 1; i < norm.length; i++) {
+    dFill += ` L${norm[i].x},${norm[i].y}`;
+    dPath += ` L${norm[i].x},${norm[i].y}`;
   }
-  dLine += ` T ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
-  pathEl.setAttribute("d", dLine); pathEl.style.stroke = COLORS[tier]; pathEl.style.strokeWidth = "2.4";
-  fillEl.setAttribute("d", `${dLine} L ${w} ${h} L 0 ${h} Z`);
-  const svgEl = fillEl.closest("svg");
-  const gradUrl = ensureSparkGradient(svgEl, `grad-${fillId}`, COLORS[tier]);
-  if (gradUrl) fillEl.style.fill = gradUrl;
+  dFill += ` L${w},${h} Z`;
+  fillEl.setAttribute("d", dFill);
+  fillEl.setAttribute("fill", `url(#${gradId})`);
+  pathEl.setAttribute("d", dPath);
+  pathEl.setAttribute("stroke", tierHex);
+  pathEl.setAttribute("stroke-width", "2");
 }
 
-/* =========================================================
-   Bottom 'pacing' row (Last vs Prev period)
-   ---------------------------------------------------------
-       Renders a compact left/right row like:
-         Left:  Last 7D: <cur> (+/- pct)
-         Right: Prev:    <prev>
-       safeSetHTML() is used because we embed colored spans for +/-.
-   ========================================================= */
-function renderPacing(elId, cur, prev, suffix = "") {
-  const c = Number(cur || 0), p = Number(prev || 0);
-  const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
-  let pctHtml = pct > 0 ? `<span style="color:var(--c-green); font-size:0.9em;">(+${pct}%)</span>` : (pct < 0 ? `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>` : `<span style="color:#666; font-size:0.9em;">(—)</span>`);
-  const left = `<div><span style="opacity:0.6; margin-right:4px;">Last 7D:</span><b>${fmt(c)}${suffix}</b> ${pctHtml}</div>`;
-  const right = `<div><span style="opacity:0.4; margin-right:4px;">Prev:</span><span style="opacity:0.8">${fmt(p)}${suffix}</span></div>`;
-  safeSetHTML(elId, left + right);
+function setProgressFill(id, pct) {
+  const el = document.getElementById(id);
+  if (el) el.style.width = `${clamp(pct, 0, 100)}%`;
 }
 
-// Special Pacing for Hourly Realtime
-function renderHourlyPacing(elId, cur, prev) {
-  const c = Number(cur || 0), p = Number(prev || 0);
-  const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
-  let pctHtml = pct > 0 ? `<span style="color:var(--c-green); font-size:0.9em;">(+${pct}%)</span>` : (pct < 0 ? `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>` : `<span style="color:#666; font-size:0.9em;">(—)</span>`);
-  const left = `<div><span style="opacity:0.6; margin-right:4px;">Last Hour:</span><b>${fmt(c)}</b> ${pctHtml}</div>`;
-  const right = `<div><span style="opacity:0.4; margin-right:4px;">Prev Hour:</span><span style="opacity:0.8">${fmt(p)}</span></div>`;
-  safeSetHTML(elId, left + right);
+function setMilestoneText(nextId, pctId, nextGoal, pct) {
+  safeSetText(nextId, fmt(nextGoal));
+  safeSetText(pctId, `${Math.round(pct)}%`);
 }
 
-// --- CASINO ROLL ---
-/* =========================================================
-   Rolling number engine: build the DOM structure once
-   ---------------------------------------------------------
-       The 'casino roll' animation needs a specific structure:
-
-         <div class="rollWrap">
-           <div class="rollCol"> <div class="rollLine">0</div> ... </div>
-           ...
-         </div>
-
-       ensureRoll(el, {decimals, suffix}) creates it inside the target element if missing.
-       The animation later manipulates translateY on each .rollCol to simulate digit rolling.
-   ========================================================= */
-function ensureRoll(el) {
-  if (!el || (el._rollWrap && el._rollCol)) return;
-  el.textContent = "";
-  const wrap = document.createElement("span"); wrap.className = "rollWrap";
-  const col = document.createElement("span"); col.className = "rollCol";
-  wrap.appendChild(col); el.appendChild(wrap);
-  el._rollWrap = wrap; el._rollCol = col;
+function setMilestone(cardId, curVal, type) {
+  const { max } = getMilestoneLimits(curVal, type);
+  const pct = (curVal / max) * 100;
+  setMilestoneText(`${cardId}NextGoal`, `${cardId}NextPct`, max, pct);
+  setProgressFill(`${cardId}ProgressFill`, pct);
 }
-function setRollInstant(el, text) {
-  if (!el) return; ensureRoll(el);
-  const col = el._rollCol; col.style.transition = "none"; col.style.transform = "translateY(0)";
-  col.innerHTML = `<span class="rollLine">${text}</span>`;
+
+function setPrev28(id, val) { safeSetText(id, fmt(val)); }
+
+function setVs6M(numId, arrowId, last28, median6m, absMin) {
+  const tier = tierFromBaseline(last28, median6m, absMin);
+  const delta = Number(last28) - Number(median6m);
+  setVsRG(numId, arrowId, delta / Number(median6m || absMin || 1), 2, "%");
+  return tier;
 }
-/* =========================================================
-   Rolling number animation (delta-driven)
-   ---------------------------------------------------------
-       animateCasinoRoll(el, from, to, opts):
-         - Uses ensureRoll() to guarantee roll DOM exists.
-         - Computes per-digit 'to' positions (with optional decimals/suffix).
-         - Animates each column with easing, duration, and stagger.
-       In render(): we only call this when the rounded value changed.
-   ========================================================= */
-function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
+
+function setWeekLine(id, val) { safeSetText(id, fmt(val)); }
+
+function setRollingNumber(id, newVal, isFirst) {
+  const el = document.getElementById(id);
   if (!el) return;
-  const decimals = opts.decimals ?? 0, suffix = opts.suffix ?? "", duration = opts.duration ?? 1600;
-  const start = Number(fromVal || 0), end = Number(toVal || 0);
-  ensureRoll(el); const col = el._rollCol;
-  const scale = Math.pow(10, decimals);
-  const a = Math.round(start * scale), b = Math.round(end * scale);
-  const txt = (val) => (decimals ? fmt1(val / scale) : fmt(Math.round(val / scale))) + suffix;
-  if (a === b) { setRollInstant(el, txt(b)); return; }
-  const diff = b - a, absDiff = Math.abs(diff);
-  let steps = [];
-  if (absDiff <= 28) {
-    const dir = diff > 0 ? 1 : -1;
-    for (let i = 0; i <= absDiff; i++) steps.push(a + (i * dir));
-  } else { steps = [a, a + Math.round(diff / 2), b]; }
-  col.style.transition = "none"; col.style.transform = "translateY(0)";
-  col.innerHTML = steps.map((v, i) => `<span class="rollLine" ${(steps.length === 3 && i === 1) ? 'style="filter:blur(2px)"' : ''}>${txt(v)}</span>`).join("");
-  void col.offsetHeight;
-  col.style.transition = `transform ${duration}ms cubic-bezier(0.18, 0.9, 0.2, 1)`;
-  col.style.transform = `translateY(${-1.1 * (steps.length - 1)}em)`;
+  if (isFirst) { el.textContent = fmt(newVal); return; }
+  ensureRoll(el, newVal);
+  animateCasinoRoll(el, newVal);
 }
 
-// --- SPEEDOMETER ---
-function animateSpeedometer(el, toVal, opts = {}) {
-  if (!el) return;
-  const decimals = opts.decimals ?? 0, suffix = opts.suffix ?? "", duration = opts.duration ?? 650;
-  const endVal = Number(toVal || 0);
-  if (el._spdRaf) cancelAnimationFrame(el._spdRaf);
-  const t0 = performance.now();
-  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-  const renderText = (v) => (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
-  const tick = (now) => {
-    const p = Math.min(1, (now - t0) / duration);
-    el.textContent = renderText(endVal * easeOutCubic(p));
-    if (p < 1) el._spdRaf = requestAnimationFrame(tick);
-  };
-  el._spdRaf = requestAnimationFrame(tick);
-}
-
-// --- FLOAT ICON ---
-const SVGS = {
-  subs: `<svg viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>`,
-  views: `<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
-  watch: `<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 5h-2v6l5 3 .9-1.5-3.9-2.3V7Zm7-3h-5v2h2.59l-3.06 3.06 1.42 1.42L19 7.41V10h2V4Z"/></svg>`,
-};
-/* =========================================================
-   Floating icon burst (positive reinforcement)
-   ---------------------------------------------------------
-       spawnFloatIcon(cardId, type):
-         - Injects a temporary SVG element positioned inside the card.
-         - CSS keyframes float it upward with fade/scale.
-         - Triggered only on *increase* of the metric (subs/views/watch/realtime).
-   ========================================================= */
-function spawnFloatIcon(cardId, type) {
-  const card = document.getElementById(cardId); if (!card) return;
-  const el = document.createElement("div"); el.className = "floatIcon"; el.innerHTML = SVGS[type] || "";
-  card.appendChild(el); setTimeout(() => el.remove(), 7000);
-}
-
-/* =========================================================
-   One-shot glow pulse after updates
-   ---------------------------------------------------------
-       Adds a CSS class (e.g., .glow-once) to the card briefly,
-       so the card 'pops' when new data arrives. render() triggers on refresh
-       and again after 30s to keep the UI feeling alive.
-   ========================================================= */
 function triggerGlowOnce(cardId) {
-  const card = document.getElementById(cardId); if (!card) return;
-  card.classList.remove("glow-once"); void card.offsetWidth; card.classList.add("glow-once");
-  setTimeout(() => card.classList.remove("glow-once"), 4000);
-}
-let glowTimer = null;
-
-let state = { subs: 0, views: 0, watch: 0, rt: 0 };
-/* =========================================================
-   RANDOM GLITCH ENGINE (Counters + Insight values + HUD message)
-   ---------------------------------------------------------
-     - Applies short cyber-glitch bursts to key numeric fields.
-     - Uses CSS class `.glitching` + `data-glitch` for pseudo-layer effect.
-     - Low frequency by design (occasional, not constant).
-   ========================================================= */
-
-const GLITCH_CFG = {
-  minDelayMs: 4500,
-  maxDelayMs: 9000,
-  chance: 0.22,
-  durMs: 260,
-  hudChance: 0.14
-};
-
-const GLITCH_IDS = [
-  // Main counters
-  "subsNow", "rtNow", "viewsTotal", "watchNow",
-  // Insight values (meta row + vs)
-  "subsLast28", "subsPrev28", "subsVsNum",
-  "rtLast24", "rtPrev24", "rtVsNum",
-  "viewsLast28", "viewsPrev28", "viewsVsNum",
-  "watchLast28", "watchPrev28", "watchVsNum",
-  // HUD message (handled too)
-  "hudMessage"
-];
-
-function setGlitchDataById(id, txt) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.classList.add("glitchable");
-  el.dataset.glitch = String(txt ?? el.textContent ?? "");
-}
-
-function pulseGlitchById(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.classList.add("glitchable");
-  el.dataset.glitch = String(el.dataset.glitch ?? el.textContent ?? "");
-  el.classList.remove("glitching");
-  void el.offsetHeight;
-  el.classList.add("glitching");
-  setTimeout(() => el.classList.remove("glitching"), GLITCH_CFG.durMs);
-}
-
-function randInt(a, b) { return Math.floor(a + Math.random() * (b - a + 1)); }
-
-let _glitchLoopStarted = false;
-function startGlitchLoop() {
-  if (_glitchLoopStarted) return;
-  _glitchLoopStarted = true;
-
-  // Prime class + dataset once (safe even before first render)
-  GLITCH_IDS.forEach(id => setGlitchDataById(id, ""));
-
-  const tick = () => {
-    const delay = randInt(GLITCH_CFG.minDelayMs, GLITCH_CFG.maxDelayMs);
-    setTimeout(() => {
-      // Pick: mostly counters/insights, occasionally HUD message.
-      const doHud = Math.random() < GLITCH_CFG.hudChance;
-      if (Math.random() < GLITCH_CFG.chance) {
-        if (doHud) {
-          pulseGlitchById("hudMessage");
-        } else {
-          const pickPool = GLITCH_IDS.filter(x => x !== "hudMessage");
-          pulseGlitchById(pickPool[Math.floor(Math.random() * pickPool.length)]);
-        }
-      }
-      tick();
-    }, delay);
-  };
-  tick();
-}
-
-/* =========================================================
-   render(data, isFirst) — MAIN painter for the 4 Top Cards + HUD
-   ---------------------------------------------------------
-       Responsibilities:
-         - Read server response JSON (data) and compute per-card tiers.
-         - Update: big numbers, tier dots, chip labels, milestone bar, sparklines, and bottom meta rows.
-         - If not first load: animate digit rolls when values changed.
-         - Trigger float icons on positive deltas.
-         - Call updateHud(data) to refresh message queue.
-
-       NOTE: This is the file's 'hot path' every 60 seconds.
-   ========================================================= */
-function render(data, isFirst) {
-  const ch = data.channel || {};
-  if (ch.logo) { const v = `url("${ch.logo}")`; document.querySelectorAll(".card").forEach(c => c.style.setProperty("--logo-url", v)); }
-  const rt = data.realtime || {};
-  const cur = {
-    subs: Number(ch.subscribers || 0),
-    views: Number(ch.totalViews || 0),
-    watch: Number(data.lifetime?.watchHours || 0),
-    rt: Number(rt.views48h || 0)
-  };
-
-  if (isFirst) { document.querySelectorAll(".card").forEach((c, i) => { c.style.animationDelay = `${i * 100}ms`; c.classList.add("card-enter"); }); }
-
-  const weekly = data.weekly || {}, last28 = data.m28?.last28 || {}, prev28 = data.m28?.prev28 || {}, med6m = data.m28?.median6m || {}, hist = data.history28d || [];
-
-  // 1. SUBS
-  const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
-  setCardTheme("cardSubs", tSubs); setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]); setMainArrow("subsMainArrow", tSubs);
-  setSpark("subsSparkFill", "subsSparkPath", hist.map(x => x.netSubs), tSubs);
-  renderPacing("subsWeek", weekly.netSubs, weekly.prevNetSubs);
-  setVsRG("subsVsNum", "subsVsArrow", (last28.netSubs || 0) - (data.m28?.avg6m?.netSubs || 0));
-  safeSetText("subsLast28", (Number(last28.netSubs) >= 0 ? "+" : "") + fmt(last28.netSubs)); safeSetText("subsPrev28", (Number(prev28.netSubs) >= 0 ? "+" : "") + fmt(prev28.netSubs));
-
-  // MILESTONE SUBS
-  const mSubs = getMilestoneLimits(cur.subs, "subs");
-  const pSubs = Math.min(100, Math.max(0, ((cur.subs - mSubs.min) / (mSubs.max - mSubs.min)) * 100)).toFixed(1);
-  safeSetText("subsNextGoal", fmt(mSubs.max));
-  safeSetText("subsNextPct", pSubs + "%");
-  safeSetStyle("subsProgressFill", "width", pSubs + "%");
-
-  // 2. REALTIME (SOLID DATA)
-  const rtLast24 = Number(rt.last24h || 0);
-  const rtPrev6Avg = Number(rt.avgPrior6d || 0);
-  const vsDelta = Number(rt.vs7dAvgDelta || 0);
-
-  const tRt = tierRealtime(rtLast24, rtPrev6Avg, 500);
-  setCardTheme("cardRealtime", tRt);
-  setChip("rtDot", "rtChipText", tRt, FEEDBACK.realtime[tRt]);
-  setMainArrow("rtMainArrow", tRt);
-
-  setSpark("rtSparkFill", "rtSparkPath", rt.sparkline || [], tRt);
-  renderHourlyPacing("rtPacing", rt.lastHour, rt.prevHour);
-  setVsRG("rtVsNum", "rtVsArrow", vsDelta);
-  safeSetText("rtLast24", fmt(rt.last24h));
-  safeSetText("rtPrev24", fmt(rt.prev24h));
-
-  // MILESTONE REALTIME
-  const mRt = getMilestoneLimits(cur.rt, "views");
-  const pRt = Math.min(100, Math.max(0, ((cur.rt - mRt.min) / (mRt.max - mRt.min)) * 100)).toFixed(1);
-  safeSetText("rtNextGoal", fmt(mRt.max));
-  safeSetText("rtNextPct", pRt + "%");
-  safeSetStyle("rtProgressFill", "width", pRt + "%");
-
-  // 3. VIEWS (LIFETIME)
-  const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
-  setCardTheme("cardViews", tViews); setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]); setMainArrow("viewsMainArrow", tViews);
-  setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x => x.views), tViews);
-  renderPacing("viewsWeek", weekly.views, weekly.prevViews);
-  setVsRG("viewsVsNum", "viewsVsArrow", (last28.views || 0) - (data.m28?.avg6m?.views || 0));
-  safeSetText("viewsLast28", fmt(last28.views)); safeSetText("viewsPrev28", fmt(prev28.views));
-
-  // MILESTONE VIEWS
-  const mViews = getMilestoneLimits(cur.views, "views");
-  const pViews = Math.min(100, Math.max(0, ((cur.views - mViews.min) / (mViews.max - mViews.min)) * 100)).toFixed(1);
-  safeSetText("viewsNextGoal", fmt(mViews.max));
-  safeSetText("viewsNextPct", pViews + "%");
-  safeSetStyle("viewsProgressFill", "width", pViews + "%");
-
-  // 4. WATCH HOURS
-  const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
-  setCardTheme("cardWatch", tWatch); setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]); setMainArrow("watchMainArrow", tWatch);
-  setSpark("watchSparkFill", "watchSparkPath", hist.map(x => x.watchHours), tWatch);
-  renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
-  setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (data.m28?.avg6m?.watchHours || 0), 1, "h");
-  safeSetText("watchLast28", fmt(last28.watchHours) + "h"); safeSetText("watchPrev28", fmt(prev28.watchHours) + "h");
-
-  // MILESTONE WATCH
-  const mWatch = getMilestoneLimits(cur.watch, "watch");
-  const pWatch = Math.min(100, Math.max(0, ((cur.watch - mWatch.min) / (mWatch.max - mWatch.min)) * 100)).toFixed(1);
-  safeSetText("watchNextGoal", fmt(mWatch.max));
-  safeSetText("watchNextPct", pWatch + "%");
-  safeSetStyle("watchProgressFill", "width", pWatch + "%");
-
-  // ANIMATIONS
-  const subsEl = document.getElementById("subsNow"), rtEl = document.getElementById("rtNow"), viewsEl = document.getElementById("viewsTotal"), watchEl = document.getElementById("watchNow");
-  if (isFirst) {
-    animateSpeedometer(subsEl, cur.subs, { duration: 650 });
-    animateSpeedometer(rtEl, cur.rt, { duration: 650 });
-    animateSpeedometer(viewsEl, cur.views, { duration: 650 });
-    animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: cur.watch < 100 ? 1 : 0, suffix: "h" });
-  } else {
-    // Subs Roll
-    if (Math.round(cur.subs) !== Math.round(state.subs)) { animateCasinoRoll(subsEl, state.subs, cur.subs, { duration: 1800 }); if (cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs"); } else setRollInstant(subsEl, fmt(cur.subs));
-
-    // RT Roll
-    if (Math.round(cur.rt) !== Math.round(state.rt)) { animateCasinoRoll(rtEl, state.rt, cur.rt, { duration: 1800 }); if (cur.rt > state.rt) spawnFloatIcon("cardRealtime", "views"); } else setRollInstant(rtEl, fmt(cur.rt));
-
-    // Views Roll
-    if (Math.round(cur.views) !== Math.round(state.views)) { animateCasinoRoll(viewsEl, state.views, cur.views, { duration: 1800 }); if (cur.views > state.views) spawnFloatIcon("cardViews", "views"); } else setRollInstant(viewsEl, fmt(cur.views));
-
-    // Watch Roll
-    const wDec = cur.watch < 100 ? 1 : 0, scale = wDec ? 10 : 1;
-    if (Math.round(state.watch * scale) !== Math.round(cur.watch * scale)) { animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h", duration: 1800 }); if (cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch"); } else setRollInstant(watchEl, (wDec ? fmt1(cur.watch) : fmt(Math.round(cur.watch))) + "h");
+  const card = document.getElementById(cardId);
+  if (card) {
+    card.classList.add("glow-once");
+    setTimeout(() => card.classList.remove("glow-once"), 4200);
   }
-
-  // Sync glitch overlays with the *final* target strings (so overlays stay clean even during roll).
-  setGlitchDataById("subsNow", fmt(cur.subs));
-  setGlitchDataById("rtNow", fmt(cur.rt));
-  setGlitchDataById("viewsTotal", fmt(cur.views));
-  const wTxt = (cur.watch < 100 ? fmt1(cur.watch) : fmt(Math.round(cur.watch))) + "h";
-  setGlitchDataById("watchNow", wTxt);
-
-  setGlitchDataById("subsLast28", (Number(last28.netSubs) >= 0 ? "+" : "") + fmt(last28.netSubs));
-  setGlitchDataById("subsPrev28", (Number(prev28.netSubs) >= 0 ? "+" : "") + fmt(prev28.netSubs));
-  setGlitchDataById("subsVsNum", document.getElementById("subsVsNum")?.textContent || "");
-
-  setGlitchDataById("rtLast24", fmt(rt.last24h));
-  setGlitchDataById("rtPrev24", fmt(rt.prev24h));
-  setGlitchDataById("rtVsNum", document.getElementById("rtVsNum")?.textContent || "");
-
-  setGlitchDataById("viewsLast28", fmt(last28.views));
-  setGlitchDataById("viewsPrev28", fmt(prev28.views));
-  setGlitchDataById("viewsVsNum", document.getElementById("viewsVsNum")?.textContent || "");
-
-  setGlitchDataById("watchLast28", fmt(last28.watchHours) + "h");
-  setGlitchDataById("watchPrev28", fmt(prev28.watchHours) + "h");
-  setGlitchDataById("watchVsNum", document.getElementById("watchVsNum")?.textContent || "");
-
-  // Ensure the glitch loop is running.
-  startGlitchLoop();
-
-  state = cur;
-  if (!isFirst) { triggerGlowOnce("cardSubs"); triggerGlowOnce("cardRealtime"); triggerGlowOnce("cardViews"); triggerGlowOnce("cardWatch"); }
-
-  clearTimeout(glowTimer);
-  glowTimer = setTimeout(() => {
-    triggerGlowOnce("cardSubs");
-    triggerGlowOnce("cardRealtime");
-    triggerGlowOnce("cardViews");
-    triggerGlowOnce("cardWatch");
-  }, 30000);
-
-  updateHud(data);
-
-  document.getElementById("updated").textContent = `SYSTEM ONLINE • ${nowStamp()}`;
-  document.getElementById("toast").classList.add("show"); setTimeout(() => document.getElementById("toast").classList.remove("show"), 2000);
 }
 
-/* =========================================================
-   load(isFirst) — fetch + error handling wrapper
-   ---------------------------------------------------------
-       - Calls fetchJSON('/api/yt-kpis')
-       - On success -> render(data, isFirst)
-       - On failure -> prints 'FETCH ERROR:' in footer
-   ========================================================= */
-async function load(isFirst) {
-  try { const data = await fetchJSON("/api/yt-kpis"); if (data.error) throw new Error(data.error); render(data, isFirst); }
-  catch (e) { document.getElementById("updated").textContent = "FETCH ERROR: " + e.message; }
+function spawnFloatIcon(cardId, iconSvg = "↑") {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const float = document.createElement("div");
+  float.className = "floatIcon";
+  float.innerHTML = iconSvg;
+  card.appendChild(float);
+  setTimeout(() => float.remove(), 5200);
 }
 
-/* =========================================================
-   HUD Engine — sci-fi message rotation + border trace
-   ---------------------------------------------------------
-       updateHud(data):
-         - Builds a weighted queue of messages (buildIntel)
-         - Boots HUD once, then rotates message every HUD_CONFIG.interval (16s)
+function renderSubs(cardId, data, isFirst) {
+  const cur = Number(data.channel.subscribers || 0);
+  const last28 = Number(data.m28.last28.netSubs || 0);
+  const prev28 = Number(data.m28.prev28.netSubs || 0);
+  const median6m = Number(data.m28.median6m.netSubs || 0);
+  const week = Number(data.weekly.netSubs || 0);
+  const tier = tierFromBaseline(last28, median6m, 100);
+  setCardTheme(cardId, tier);
+  setChip(`${cardId}Dot`, `${cardId}ChipText`, tier, FEEDBACK.subs[tier]);
+  setMainArrow(`${cardId}MainArrow`, tier);
+  setRollingNumber(`${cardId}Now`, cur, isFirst);
+  paintSpark(`${cardId}SparkFill`, `${cardId}SparkPath`, `${cardId}Grad`, data.history28d.map(w => w.netSubs), COLORS[tier]);
+  setMilestone(cardId, cur, "subs");
+  setWeekLine(`${cardId}Week`, week);
+  setPrev28(`${cardId}Last28`, last28);
+  setPrev28(`${cardId}Prev28`, prev28);
+  setVs6M(`${cardId}VsNum`, `${cardId}VsArrow`, last28, median6m, 100);
+  if (!isFirst && week > 0) {
+    spawnFloatIcon(cardId, HUD_ICONS.up);
+    triggerGlowOnce(cardId);
+  }
+}
 
-       showNextIntel():
-         - Fades out
-         - Swaps text + tag + icon
-         - Recalculates border geometry for the new text size
-         - Restarts the animated border trace
-   ========================================================= */
-/* ===========================
-   HUD ENGINE (SCI-FI V4 TRACE)
-   =========================== */
+function renderRealtime(cardId, data, isFirst) {
+  const cur = Number(data.realtime.views48h || 0);
+  const last24 = Number(data.realtime.last24h || 0);
+  const prev24 = Number(data.realtime.prev24h || 0);
+  const vs7d = Number(data.realtime.vs7dAvgDelta || 0);
+  const avg6d = Number(data.realtime.avgPrior6d || 0);
+  const pacing = Number(data.realtime.lastHour || 0);
+  const tier = tierRealtime(last24, avg6d, 1000);
+  setCardTheme(cardId, tier);
+  setChip(`${cardId}Dot`, `${cardId}ChipText`, tier, FEEDBACK.realtime[tier]);
+  setMainArrow(`${cardId}MainArrow`, tier);
+  setRollingNumber(`${cardId}Now`, cur, isFirst);
+  paintSpark(`${cardId}SparkFill`, `${cardId}SparkPath`, `${cardId}Grad`, data.realtime.sparkline, COLORS[tier]);
+  setMilestone(cardId, cur, "realtime");
+  safeSetText(`${cardId}Pacing`, fmt(pacing));
+  setPrev28(`${cardId}Last24`, fmt(last24));
+  setPrev28(`${cardId}Prev24`, fmt(prev24));
+  setVsRG(`${cardId}VsNum`, `${cardId}VsArrow`, vs7d, 0, "");
+  if (!isFirst && pacing > 0) {
+    spawnFloatIcon(cardId, HUD_ICONS.up);
+    triggerGlowOnce(cardId);
+  }
+}
 
-// SAFELY LOAD STORAGE
-let shownAt = {};
-try { shownAt = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"); } catch(e) { console.warn("HUD Mem Reset"); }
+function renderViews(cardId, data, isFirst) {
+  const cur = Number(data.channel.totalViews || 0);
+  const last28 = Number(data.m28.last28.views || 0);
+  const prev28 = Number(data.m28.prev28.views || 0);
+  const median6m = Number(data.m28.median6m.views || 0);
+  const week = Number(data.weekly.views || 0);
+  const tier = tierFromBaseline(last28, median6m, 1000);
+  setCardTheme(cardId, tier);
+  setChip(`${cardId}Dot`, `${cardId}ChipText`, tier, FEEDBACK.views[tier]);
+  setMainArrow(`${cardId}MainArrow`, tier);
+  setRollingNumber(`${cardId}Total`, cur, isFirst);
+  paintSpark(`${cardId}SparkFill`, `${cardId}SparkPath`, `${cardId}Grad`, data.history28d.map(w => w.views), COLORS[tier]);
+  setMilestone(cardId, cur, "views");
+  setWeekLine(`${cardId}Week`, fmt(week));
+  setPrev28(`${cardId}Last28`, fmt(last28));
+  setPrev28(`${cardId}Prev28`, fmt(prev28));
+  setVs6M(`${cardId}VsNum`, `${cardId}VsArrow`, last28, median6m, 1000);
+  if (!isFirst && week > 0) {
+    spawnFloatIcon(cardId, HUD_ICONS.up);
+    triggerGlowOnce(cardId);
+  }
+}
 
-/* =========================================================
-   HUD_CONFIG — rotation + cooldown memory
-   ---------------------------------------------------------
-       - cooldownMs: per-category cooldown to avoid repeating the same type too often.
-       - shownAt persisted in localStorage (aihud_shownAt) so refresh doesn't spam repeats.
-   ========================================================= */
-const HUD_CONFIG = {
-  interval: 16000,
-  timer: null, started: false, bootAt: Date.now(),
-  lastKey: null, recentKeys: [], shownAt: shownAt,
-  cooldownMs: { freshness: 600000, birthday: 900000, status: 480000, trivia: 60000, tip: 60000, motivation: 90000 }
-};
+function renderWatch(cardId, data, isFirst) {
+  const cur = Number(data.lifetime.watchHours || 0);
+  const last28 = Number(data.m28.last28.watchHours || 0);
+  const prev28 = Number(data.m28.prev28.watchHours || 0);
+  const median6m = Number(data.m28.median6m.watchHours || 0);
+  const week = Number(data.weekly.watchHours || 0);
+  const tier = tierFromBaseline(last28, median6m, 10);
+  setCardTheme(cardId, tier);
+  setChip(`${cardId}Dot`, `${cardId}ChipText`, tier, FEEDBACK.watch[tier]);
+  setMainArrow(`${cardId}MainArrow`, tier);
+  setRollingNumber(`${cardId}Now`, cur < 100 ? fmt1(cur) : fmt(cur), isFirst);
+  paintSpark(`${cardId}SparkFill`, `${cardId}SparkPath`, `${cardId}Grad`, data.history28d.map(w => w.watchHours), COLORS[tier]);
+  setMilestone(cardId, cur, "watch");
+  setWeekLine(`${cardId}Week`, fmt1(week));
+  setPrev28(`${cardId}Last28`, fmt1(last28));
+  setPrev28(`${cardId}Prev28`, fmt1(prev28));
+  setVs6M(`${cardId}VsNum`, `${cardId}VsArrow`, last28, median6m, 10);
+  if (!isFirst && week > 0) {
+    spawnFloatIcon(cardId, HUD_ICONS.up);
+    triggerGlowOnce(cardId);
+  }
+}
+
+function render(data, isFirst) {
+  safeSetText("updated", `UPDATED ${nowStamp()}`);
+  renderSubs("cardSubs", data, isFirst);
+  renderRealtime("cardRealtime", data, isFirst);
+  renderViews("cardViews", data, isFirst);
+  renderWatch("cardWatch", data, isFirst);
+  const cards = ["cardSubs", "cardRealtime", "cardViews", "cardWatch"];
+  cards.forEach((id, i) => {
+    const card = document.getElementById(id);
+    if (card) card.style.animationDelay = `${i * 0.2}s`;
+  });
+  if (!isFirst) showToast();
+}
+
+function showToast() {
+  const toast = document.getElementById("toast");
+  if (toast) {
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 2000);
+  }
+}
+
+const HUD_CONFIG = { started: false, timer: null };
+let intelQueue = [];
 
 const HUD_ICONS = {
-  live: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,
-  target: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>`,
-  rocket: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5z"/></svg>`,
+  up: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l-8 8h6v12h4V10h6z"/></svg>`,
+  down: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22l8-8h-6V2h-4v12H4z"/></svg>`,
   warn: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
-  up: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
-  down: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
   bulb: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
   globe: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.93 9h-3.17a15.7 15.7 0 0 0-1.45-6A8.02 8.02 0 0 1 19.93 11zM12 4c.9 1.3 1.7 3.3 2.1 7H9.9C10.3 7.3 11.1 5.3 12 4zM4.07 13h3.17a15.7 15.7 0 0 0 1.45 6A8.02 8.02 0 0 1 4.07 13zm3.17-2H4.07A8.02 8.02 0 0 1 8.69 5a15.7 15.7 0 0 0-1.45 6zm2.66 2h4.2c-.4 3.7-1.2 5.7-2.1 7-.9-1.3-1.7-3.3-2.1-7zm6.86 6a15.7 15.7 0 0 0 1.45-6h3.17A8.02 8.02 0 0 1 15.31 19z"/></svg>`,
   chat: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`,
@@ -721,13 +550,13 @@ function updateHudPathGeometry() {
   const box = document.getElementById("hudBox");
   if (!path || !box) return;
 
-  const w = box.offsetWidth - 2;
+  const w = box.offsetWidth - 2; 
   const h = box.offsetHeight - 2;
-
+  
   // Path: Start Top-Left(0,0) -> Down(0,H) -> Right(W,H) -> Up(W,0) -> Left(0,0)
   const d = `M 1 1 L 1 ${h} L ${w} ${h} L ${w} 1 L 1 1`;
   path.setAttribute("d", d);
-
+  
   // Ensure dasharray covers the whole new length so it can appear solid if needed
   const len = path.getTotalLength() || 1000;
   path.style.strokeDasharray = len;
@@ -735,11 +564,11 @@ function updateHudPathGeometry() {
 
 function initHudBorder() {
   updateHudPathGeometry();
-
+  
   const path = document.getElementById("hudTracePath");
   if (!path) return;
   const len = path.getTotalLength() || 1000;
-
+  
   // Reset style for animation start
   path.style.transition = "none";
   path.style.strokeDasharray = len;
@@ -763,7 +592,7 @@ function animateHudBorder(color) {
   const len = path.getTotalLength() || 1000;
 
   path.style.stroke = color;
-
+  
   // 1. Reset to empty (hidden) with NO transition
   path.style.transition = "none";
   path.style.strokeDashoffset = len;
@@ -782,7 +611,7 @@ function buildIntel(data) {
   const weekViews = Number(w.views || 0), weekG = Number(w.subscribersGained || 0), weekL = Number(w.subscribersLost || 0), weekNet = Number(w.netSubs || 0);
   const churnPct = weekG > 0 ? Math.round((weekL / weekG) * 100) : (weekL > 0 ? 100 : 0);
   const subsPer1k = weekViews > 0 ? (weekNet / weekViews) * 1000 : 0;
-
+  
   const uploadDaysAgo = (hud.uploads?.latest?.publishedAt && hud.statsThrough) ? daysBetweenISO(hud.uploads.latest.publishedAt, hud.statsThrough) : null;
   if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ key: "warn_gap", cat: "warning", weight: 3, icon: HUD_ICONS.warn, tag: "WARNING", type: "red", text: `UPLOAD BUFFER EMPTY. LAST UPLOAD WAS ${uploadDaysAgo} DAYS AGO.` });
   else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) out.push({ key: "good_gap", cat: "good", weight: 2, icon: HUD_ICONS.up, tag: "RISING", type: "green", text: `CONSISTENCY DETECTED. LAST UPLOAD ${uploadDaysAgo} DAYS AGO.` });
@@ -819,8 +648,6 @@ function buildIntel(data) {
   return out;
 }
 
-let intelQueue = [];
-
 function showNextIntel() {
   const item = intelQueue.length ? intelQueue[Math.floor(Math.random() * intelQueue.length)] : null;
   if (!item) return;
@@ -829,25 +656,24 @@ function showNextIntel() {
   const tag = document.getElementById("hudTag");
   const icon = document.getElementById("hudIcon");
   const box = document.getElementById("hudBox");
-
+  
   // Glitch Out
   box.classList.remove("glitch-active");
-  msg.style.opacity = "0";
+  msg.style.opacity = "0"; 
   tag.style.opacity = "0";
   icon.style.opacity = "0";
 
   setTimeout(() => {
     // Update
     msg.textContent = item.text;
-    setGlitchDataById("hudMessage", item.text);
     tag.textContent = item.tag;
     icon.innerHTML = item.icon || "⚡";
-
+    
     // RECALCULATE GEOMETRY FOR NEW CONTENT SIZE
     updateHudPathGeometry();
 
     const c = COLORS[item.type] || COLORS.orange;
-
+    
     box.style.setProperty("--hud-accent", c);
     tag.style.color = c;
     tag.style.textShadow = `0 0 10px ${c}`;
@@ -860,14 +686,8 @@ function showNextIntel() {
     msg.style.opacity = "1";
     tag.style.opacity = "1";
     icon.style.opacity = "1";
-    // Random micro-glitch on swap (keeps it from feeling too frequent)
-    if (Math.random() < 0.45) {
-      box.classList.add("glitch-active");
-      setTimeout(() => box.classList.remove("glitch-active"), 360);
-    } else {
-      box.classList.remove("glitch-active");
-    }
-
+    box.classList.add("glitch-active");
+    
   }, 200);
 }
 
@@ -883,6 +703,24 @@ function updateHud(data) {
   }
 }
 
+// Random glitch trigger for main counters, insights, and HUD message
+function randomGlitch() {
+  const elements = [
+    ...document.querySelectorAll('.bigNumber'),
+    ...document.querySelectorAll('.metaValue'),
+    document.getElementById('hudMessage')
+  ].filter(el => el);
+
+  if (elements.length > 0) {
+    const randomEl = elements[Math.floor(Math.random() * elements.length)];
+    randomEl.classList.add('glitch-active');
+    setTimeout(() => randomEl.classList.remove('glitch-active'), 300);
+  }
+
+  // Schedule next glitch in 10-30 seconds
+  setTimeout(randomGlitch, Math.floor(Math.random() * 20000) + 10000);
+}
+
 /* =========================================================
    Boot sequence
    ---------------------------------------------------------
@@ -890,4 +728,8 @@ function updateHud(data) {
          - First paint isFirst=true
          - Then refresh every 60 seconds
    ========================================================= */
-(async function init() { await load(true); setInterval(() => load(false), 60 * 1000); })();
+(async function init() { 
+  await load(true); 
+  setInterval(() => load(false), 60 * 1000); 
+  setTimeout(randomGlitch, 10000); // Start random glitches after init
+})();
