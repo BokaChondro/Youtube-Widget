@@ -21,7 +21,8 @@ const COLORS = {
 const FEEDBACK = {
   subs: { red: "Audience Leak", orange: "Slow Convert", yellow: "Steady Growth", green: "Strong Pull", blue: "Rising Fast", purple: "Exceptional" },
   views: { red: "Reach Down", orange: "Low Reach", yellow: "Stable Reach", green: "Reach Up", blue: "Trending", purple: "Viral" },
-  watch: { red: "Poor Engage", orange: "Retention Issue", yellow: "Consistent", green: "Engage Up", blue: "Hooked", purple: "Outstanding" }
+  watch: { red: "Poor Engage", orange: "Retention Issue", yellow: "Consistent", green: "Engage Up", blue: "Hooked", purple: "Outstanding" },
+  realtime: { red: "Cooling Off", orange: "Low Traffic", yellow: "Steady Pulse", green: "High Traffic", blue: "Trending Now", purple: "Viral Spike" }
 };
 
 // --- DOM HELPERS ---
@@ -153,6 +154,16 @@ function renderPacing(elId, cur, prev, suffix = "") {
   safeSetHTML(elId, left + right);
 }
 
+// Special Pacing for Hourly Realtime
+function renderHourlyPacing(elId, cur, prev) {
+  const c = Number(cur || 0), p = Number(prev || 0);
+  const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
+  let pctHtml = pct > 0 ? `<span style="color:var(--c-green); font-size:0.9em;">(+${pct}%)</span>` : (pct < 0 ? `<span style="color:var(--c-red); font-size:0.9em;">(${pct}%)</span>` : `<span style="color:#666; font-size:0.9em;">(—)</span>`);
+  const left = `<div><span style="opacity:0.6; margin-right:4px;">Last Hour:</span><b>${fmt(c)}</b> ${pctHtml}</div>`;
+  const right = `<div><span style="opacity:0.4; margin-right:4px;">Prev Hour:</span><span style="opacity:0.8">${fmt(p)}</span></div>`;
+  safeSetHTML(elId, left + right);
+}
+
 // --- CASINO ROLL ---
 function ensureRoll(el) {
   if (!el || (el._rollWrap && el._rollCol)) return;
@@ -225,16 +236,23 @@ function triggerGlowOnce(cardId) {
 }
 let glowTimer = null;
 
-let state = { subs: 0, views: 0, watch: 0 };
+let state = { subs: 0, views: 0, watch: 0, rt: 0 };
 function render(data, isFirst) {
   const ch = data.channel || {};
   if (ch.logo) { const v = `url("${ch.logo}")`; document.querySelectorAll(".card").forEach(c => c.style.setProperty("--logo-url", v)); }
-  const cur = { subs: Number(ch.subscribers || 0), views: Number(ch.totalViews || 0), watch: Number(data.lifetime?.watchHours || 0) };
+  const rt = data.realtime || {};
+  const cur = { 
+    subs: Number(ch.subscribers || 0), 
+    views: Number(ch.totalViews || 0), 
+    watch: Number(data.lifetime?.watchHours || 0),
+    rt: Number(rt.views48h || 0)
+  };
+  
   if (isFirst) { document.querySelectorAll(".card").forEach((c, i) => { c.style.animationDelay = `${i * 100}ms`; c.classList.add("card-enter"); }); }
 
   const weekly = data.weekly || {}, last28 = data.m28?.last28 || {}, prev28 = data.m28?.prev28 || {}, med6m = data.m28?.median6m || {}, hist = data.history28d || [];
 
-  // TOP 3 CARDS LOGIC (UNCHANGED)
+  // 1. SUBS
   const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
   setCardTheme("cardSubs", tSubs); setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]); setMainArrow("subsMainArrow", tSubs);
   setSpark("subsSparkFill", "subsSparkPath", hist.map(x => x.netSubs), tSubs);
@@ -244,6 +262,32 @@ function render(data, isFirst) {
   const gSubs = getMilestone(cur.subs, "subs"), pSubs = Math.min(100, (cur.subs / gSubs) * 100).toFixed(1);
   safeSetText("subsNextGoal", fmt(gSubs)); safeSetText("subsNextPct", pSubs + "%"); safeSetStyle("subsProgressFill", "width", pSubs + "%");
 
+  // 2. REALTIME (NEW)
+  // Baseline check: Comparing 48h view volume against Weekly Average scaled to 2 days? Or just raw?
+  // User asked for VS 6M W-AVG delta. 
+  const rtWeeklyAvg = Number(rt.avg6mWeekly || 0);
+  const rt48h = Number(rt.views48h || 0);
+  // Estimate tier: If 48h views * 3.5 > weeklyAvg, it's doing well.
+  const estWeekly = rt48h * 3.5;
+  const tRt = tierFromBaseline(estWeekly, rtWeeklyAvg, 500); 
+  setCardTheme("cardRealtime", tRt); setChip("rtDot", "rtChipText", tRt, FEEDBACK.realtime[tRt]); setMainArrow("rtMainArrow", tRt);
+  // Use last 7 days from realtime sparkline data
+  setSpark("rtSparkFill", "rtSparkPath", rt.sparkline || [], tRt);
+  renderHourlyPacing("rtPacing", rt.lastHour, rt.prevHour);
+  // Compare Last 24H (rt.last24h) vs 6M W-Avg? No, user said "VS 6M W-AVG".
+  // Let's do Realtime 48H vs W-Avg as the delta, or Last 24H vs W-Avg?
+  // Logic: The "VS" usually compares the "Last X" metric to the Average. 
+  // Here, the bottom metric is "LAST 24H". So I will compare (Last 24H) - (6M W-Avg).
+  // Note: This will be large negative usually. But I will follow the instruction literal.
+  // Actually, "VS 6M W-AVG" implies comparing the card's main metric to it? No, usually it's the period metric.
+  // I will compare 48H (Main Metric) to 6M W-AVG.
+  setVsRG("rtVsNum", "rtVsArrow", rt48h - rtWeeklyAvg);
+  safeSetText("rtLast24", fmt(rt.last24h)); safeSetText("rtPrev24", fmt(rt.prev24h));
+  const gRt = getMilestone(cur.rt, "views"); // Milestone logic based on views
+  const pRt = Math.min(100, (cur.rt / gRt) * 100).toFixed(1);
+  safeSetText("rtNextGoal", fmt(gRt)); safeSetText("rtNextPct", pRt + "%"); safeSetStyle("rtProgressFill", "width", pRt + "%");
+
+  // 3. VIEWS (LIFETIME)
   const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
   setCardTheme("cardViews", tViews); setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]); setMainArrow("viewsMainArrow", tViews);
   setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x => x.views), tViews);
@@ -253,6 +297,7 @@ function render(data, isFirst) {
   const gViews = getMilestone(cur.views, "views"), pViews = Math.min(100, (cur.views / gViews) * 100).toFixed(1);
   safeSetText("viewsNextGoal", fmt(gViews)); safeSetText("viewsNextPct", pViews + "%"); safeSetStyle("viewsProgressFill", "width", pViews + "%");
 
+  // 4. WATCH HOURS
   const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
   setCardTheme("cardWatch", tWatch); setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]); setMainArrow("watchMainArrow", tWatch);
   setSpark("watchSparkFill", "watchSparkPath", hist.map(x => x.watchHours), tWatch);
@@ -262,19 +307,38 @@ function render(data, isFirst) {
   const gWatch = getMilestone(cur.watch, "watch"), pWatch = Math.min(100, (cur.watch / gWatch) * 100).toFixed(1);
   safeSetText("watchNextGoal", fmt(gWatch)); safeSetText("watchNextPct", pWatch + "%"); safeSetStyle("watchProgressFill", "width", pWatch + "%");
 
-  const subsEl = document.getElementById("subsNow"), viewsEl = document.getElementById("viewsTotal"), watchEl = document.getElementById("watchNow");
+  // ANIMATIONS
+  const subsEl = document.getElementById("subsNow"), rtEl = document.getElementById("rtNow"), viewsEl = document.getElementById("viewsTotal"), watchEl = document.getElementById("watchNow");
   if (isFirst) {
-    animateSpeedometer(subsEl, cur.subs, { duration: 650 }); animateSpeedometer(viewsEl, cur.views, { duration: 650 }); animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: cur.watch < 100 ? 1 : 0, suffix: "h" });
+    animateSpeedometer(subsEl, cur.subs, { duration: 650 }); 
+    animateSpeedometer(rtEl, cur.rt, { duration: 650 });
+    animateSpeedometer(viewsEl, cur.views, { duration: 650 }); 
+    animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: cur.watch < 100 ? 1 : 0, suffix: "h" });
   } else {
+    // Subs Roll
     if (Math.round(cur.subs) !== Math.round(state.subs)) { animateCasinoRoll(subsEl, state.subs, cur.subs, { duration: 1800 }); if (cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs"); } else setRollInstant(subsEl, fmt(cur.subs));
+    
+    // RT Roll
+    if (Math.round(cur.rt) !== Math.round(state.rt)) { animateCasinoRoll(rtEl, state.rt, cur.rt, { duration: 1800 }); if (cur.rt > state.rt) spawnFloatIcon("cardRealtime", "views"); } else setRollInstant(rtEl, fmt(cur.rt));
+    
+    // Views Roll
     if (Math.round(cur.views) !== Math.round(state.views)) { animateCasinoRoll(viewsEl, state.views, cur.views, { duration: 1800 }); if (cur.views > state.views) spawnFloatIcon("cardViews", "views"); } else setRollInstant(viewsEl, fmt(cur.views));
+    
+    // Watch Roll
     const wDec = cur.watch < 100 ? 1 : 0, scale = wDec ? 10 : 1;
     if (Math.round(state.watch * scale) !== Math.round(cur.watch * scale)) { animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h", duration: 1800 }); if (cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch"); } else setRollInstant(watchEl, (wDec ? fmt1(cur.watch) : fmt(Math.round(cur.watch))) + "h");
   }
 
   state = cur;
-  if (!isFirst) { triggerGlowOnce("cardSubs"); triggerGlowOnce("cardViews"); triggerGlowOnce("cardWatch"); }
-  clearTimeout(glowTimer); glowTimer = setTimeout(() => { triggerGlowOnce("cardSubs"); triggerGlowOnce("cardViews"); triggerGlowOnce("cardWatch"); }, 30000);
+  if (!isFirst) { triggerGlowOnce("cardSubs"); triggerGlowOnce("cardRealtime"); triggerGlowOnce("cardViews"); triggerGlowOnce("cardWatch"); }
+  
+  clearTimeout(glowTimer); 
+  glowTimer = setTimeout(() => { 
+    triggerGlowOnce("cardSubs"); 
+    triggerGlowOnce("cardRealtime");
+    triggerGlowOnce("cardViews"); 
+    triggerGlowOnce("cardWatch"); 
+  }, 30000);
 
   updateHud(data);
 
