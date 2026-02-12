@@ -9,14 +9,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="./style.css?v=hud_v5_glare" />
+  <link rel="stylesheet" href="./style.css?v=hud_v6_rt" />
 </head>
 <body>
   <div class="wrap">
     <div class="toast" id="toast">Updated ✓</div>
 
     <div class="grid">
-      <!-- CARD 1 -->
+      <!-- CARD 1: SUBSCRIBERS -->
       <div class="card" id="cardSubs">
         <div class="glare"></div>
         <div class="cardTop">
@@ -42,7 +42,33 @@
         </div>
       </div>
 
-      <!-- CARD 2 -->
+      <!-- CARD 2: REALTIME VIEWS (NEW) -->
+      <div class="card" id="cardRealtime">
+        <div class="glare"></div>
+        <div class="cardTop">
+          <div class="left">
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg></div>
+            <div class="titles"><div class="title">Total Views</div><div class="subtitle">LAST 48H</div></div>
+          </div>
+          <div class="chip"><span class="dot" id="rtDot"></span><span class="chipText" id="rtChipText">—</span></div>
+        </div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="rtNow">—</span><span class="mainArrow" id="rtMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="rtSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="rtSparkPath" d="" fill="none" /></svg>
+        </div>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>Next Goal: <b id="rtNextGoal">—</b></span><span id="rtNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="rtProgressFill"></div></div>
+        </div>
+        <div class="weekLine" id="rtPacing">Last Hour: —</div>
+        <div class="metaRow">
+          <div class="metaItem"><div class="metaLabel">LAST 24H</div><div class="metaValue" id="rtLast24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 24H</div><div class="metaValue" id="rtPrev24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 6M W-AVG</div><div class="metaValue"><span class="vsNum" id="rtVsNum">—</span><span class="vsArrow" id="rtVsArrow">—</span></div></div>
+        </div>
+      </div>
+
+      <!-- CARD 3: TOTAL VIEWS (LIFETIME) -->
       <div class="card" id="cardViews">
         <div class="glare"></div>
         <div class="cardTop">
@@ -68,7 +94,7 @@
         </div>
       </div>
 
-      <!-- CARD 3 -->
+      <!-- CARD 4: WATCH HOURS -->
       <div class="card" id="cardWatch">
         <div class="glare"></div>
         <div class="cardTop">
@@ -130,6 +156,6 @@
     <div class="foot" id="updated">System Initializing...</div>
   </div>
 
-  <script src="./app.js?v=hud_v5_glare"></script>
+  <script src="./app.js?v=hud_v6_rt"></script>
 </body>
 </html>
