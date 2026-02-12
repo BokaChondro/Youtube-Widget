@@ -6,207 +6,100 @@
                - It only declares the DOM IDs that app.js will populate.
                - Each card has consistent sub-IDs (e.g., subsNow/subsDot/subsWeek/...).
                - The HUD markup lives at the bottom (hudBox / hudMessage / hudTag / hudTracePath).
-   ======================================================= -->
-<html lang="en">
+     ======================================================= -->
+<html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>YouTube Top Cards</title>
-
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+  
   <link rel="stylesheet" href="./style.css?v=hud_v7_solid" />
 </head>
 <body>
   <div class="wrap">
+    <div class="toast" id="toast">Updated ✓</div>
+
     <div class="grid">
-      <!-- CARD 1: SUBS -->
+      <!-- CARD 1: SUBSCRIBERS -->
       <div class="card" id="cardSubs">
         <div class="glare"></div>
         <div class="cardTop">
           <div class="left">
-            <div class="iconBox">
-              <svg viewBox="0 0 24 24" class="icon"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg>
-            </div>
-            <div class="titles">
-              <div class="title">Subscribers</div>
-              <div class="subtitle">TOTAL</div>
-            </div>
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M12 12c2.76 0 5-2.24 5-5S14.76 2 12 2 7 4.24 7 7s2.24 5 5 5Zm0 2c-4.42 0-8 2.24-8 5v3h16v-3c0-2.76-3.58-5-8-5Z"/></svg></div>
+            <div class="titles"><div class="title">Subscribers</div><div class="subtitle">Current</div></div>
           </div>
-          <div class="chip">
-            <div class="dot" id="subsDot"></div>
-            <div class="chipText" id="subsChipText">Loading</div>
-          </div>
+          <div class="chip"><span class="dot" id="subsDot"></span><span class="chipText" id="subsChipText">—</span></div>
         </div>
-
-        <div class="bigNumber">
-          <div id="subsNow">0</div>
-          <div class="mainArrow" id="subsMainArrow">-</div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="subsNow">—</span><span class="mainArrow" id="subsMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="subsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="subsSparkPath" d="" fill="none" /></svg>
         </div>
-
-        <div class="sparkWrap">
-          <svg viewBox="0 0 120 40" class="spark">
-            <path id="subsSparkFill" class="sparkFill"></path>
-            <path id="subsSparkPath" class="sparkPath"></path>
-          </svg>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>Next Goal: <b id="subsNextGoal">—</b></span><span id="subsNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="subsProgressFill"></div></div>
         </div>
-
+        <div class="weekLine" id="subsWeek">Last 7D: —</div>
         <div class="metaRow">
-          <div class="metaItem">
-            <div class="metaLabel">Last 28D</div>
-            <div class="metaValue" id="subsLast28">0</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Prev 28D</div>
-            <div class="metaValue" id="subsPrev28">0</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Vs 6M Avg</div>
-            <div class="metaValue">
-              <span id="subsVsNum" class="vsNum neu">0</span>
-              <span id="subsVsArrow" class="vsArrow neu">–</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="weekLine" id="subsWeek"></div>
-
-        <div class="milestone">
-          <div class="milestoneText">
-            <span class="milestoneLabel">Next Goal:</span>
-            <span id="subsNextGoal">0</span>
-            <span class="milestonePct" id="subsNextPct">0%</span>
-          </div>
-          <div class="progressBar">
-            <div class="progressFill" id="subsProgressFill"></div>
-          </div>
+          <div class="metaItem"><div class="metaLabel">Last 28D</div><div class="metaValue" id="subsLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">Prev 28D</div><div class="metaValue" id="subsPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">vs 6M Avg</div><div class="metaValue"><span class="vsNum" id="subsVsNum">—</span><span class="vsArrow" id="subsVsArrow">—</span></div></div>
         </div>
       </div>
 
-      <!-- CARD 2: REALTIME -->
+      <!-- CARD 2: REALTIME VIEWS (SOLID) -->
       <div class="card" id="cardRealtime">
         <div class="glare"></div>
         <div class="cardTop">
           <div class="left">
-            <div class="iconBox">
-              <svg viewBox="0 0 24 24" class="icon"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
-            </div>
-            <div class="titles">
-              <div class="title">Realtime</div>
-              <div class="subtitle">LAST 48H</div>
-            </div>
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg></div>
+            <div class="titles"><div class="title">Total Views</div><div class="subtitle">LAST 48H</div></div>
           </div>
-          <div class="chip">
-            <div class="dot" id="rtDot"></div>
-            <div class="chipText" id="rtChipText">Loading</div>
-          </div>
+          <div class="chip"><span class="dot" id="rtDot"></span><span class="chipText" id="rtChipText">—</span></div>
         </div>
-
-        <div class="bigNumber">
-          <div id="rtNow">0</div>
-          <div class="mainArrow" id="rtMainArrow">-</div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="rtNow">—</span><span class="mainArrow" id="rtMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="rtSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="rtSparkPath" d="" fill="none" /></svg>
         </div>
-
-        <div class="sparkWrap">
-          <svg viewBox="0 0 120 40" class="spark">
-            <path id="rtSparkFill" class="sparkFill"></path>
-            <path id="rtSparkPath" class="sparkPath"></path>
-          </svg>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>Next Goal: <b id="rtNextGoal">—</b></span><span id="rtNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="rtProgressFill"></div></div>
         </div>
-
+        <div class="weekLine" id="rtPacing">Last Hour: —</div>
         <div class="metaRow">
-          <div class="metaItem">
-            <div class="metaLabel">Last 24H</div>
-            <div class="metaValue" id="rtLast24">0</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Prev 24H</div>
-            <div class="metaValue" id="rtPrev24">0</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Vs 7D Avg</div>
-            <div class="metaValue">
-              <span id="rtVsNum" class="vsNum neu">0</span>
-              <span id="rtVsArrow" class="vsArrow neu">–</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="weekLine" id="rtPacing"></div>
-
-        <div class="milestone">
-          <div class="milestoneText">
-            <span class="milestoneLabel">Next Goal:</span>
-            <span id="rtNextGoal">0</span>
-            <span class="milestonePct" id="rtNextPct">0%</span>
-          </div>
-          <div class="progressBar">
-            <div class="progressFill" id="rtProgressFill"></div>
-          </div>
+          <div class="metaItem"><div class="metaLabel">LAST 24H</div><div class="metaValue" id="rtLast24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 24H</div><div class="metaValue" id="rtPrev24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 7D AVG</div><div class="metaValue"><span class="vsNum" id="rtVsNum">—</span><span class="vsArrow" id="rtVsArrow">—</span></div></div>
         </div>
       </div>
 
-      <!-- CARD 3: VIEWS -->
+      <!-- CARD 3: TOTAL VIEWS (LIFETIME) -->
       <div class="card" id="cardViews">
         <div class="glare"></div>
         <div class="cardTop">
           <div class="left">
-            <div class="iconBox">
-              <svg viewBox="0 0 24 24" class="icon"><path d="M3 4h18v16H3V4Zm8 3v10l7-5-7-5Z"/></svg>
-            </div>
-            <div class="titles">
-              <div class="title">Views</div>
-              <div class="subtitle">TOTAL</div>
-            </div>
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg></div>
+            <div class="titles"><div class="title">Total Views</div><div class="subtitle">Lifetime</div></div>
           </div>
-          <div class="chip">
-            <div class="dot" id="viewsDot"></div>
-            <div class="chipText" id="viewsChipText">Loading</div>
-          </div>
+          <div class="chip"><span class="dot" id="viewsDot"></span><span class="chipText" id="viewsChipText">—</span></div>
         </div>
-
-        <div class="bigNumber">
-          <div id="viewsTotal">0</div>
-          <div class="mainArrow" id="viewsMainArrow">-</div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="viewsTotal">—</span><span class="mainArrow" id="viewsMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="viewsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="viewsSparkPath" d="" fill="none" /></svg>
         </div>
-
-        <div class="sparkWrap">
-          <svg viewBox="0 0 120 40" class="spark">
-            <path id="viewsSparkFill" class="sparkFill"></path>
-            <path id="viewsSparkPath" class="sparkPath"></path>
-          </svg>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>Next Goal: <b id="viewsNextGoal">—</b></span><span id="viewsNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="viewsProgressFill"></div></div>
         </div>
-
+        <div class="weekLine" id="viewsWeek">Last 7D: —</div>
         <div class="metaRow">
-          <div class="metaItem">
-            <div class="metaLabel">Last 28D</div>
-            <div class="metaValue" id="viewsLast28">0</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Prev 28D</div>
-            <div class="metaValue" id="viewsPrev28">0</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Vs 6M Avg</div>
-            <div class="metaValue">
-              <span id="viewsVsNum" class="vsNum neu">0</span>
-              <span id="viewsVsArrow" class="vsArrow neu">–</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="weekLine" id="viewsWeek"></div>
-
-        <div class="milestone">
-          <div class="milestoneText">
-            <span class="milestoneLabel">Next Goal:</span>
-            <span id="viewsNextGoal">0</span>
-            <span class="milestonePct" id="viewsNextPct">0%</span>
-          </div>
-          <div class="progressBar">
-            <div class="progressFill" id="viewsProgressFill"></div>
-          </div>
+          <div class="metaItem"><div class="metaLabel">Last 28D</div><div class="metaValue" id="viewsLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">Prev 28D</div><div class="metaValue" id="viewsPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">vs 6M Avg</div><div class="metaValue"><span class="vsNum" id="viewsVsNum">—</span><span class="vsArrow" id="viewsVsArrow">—</span></div></div>
         </div>
       </div>
 
@@ -215,90 +108,70 @@
         <div class="glare"></div>
         <div class="cardTop">
           <div class="left">
-            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 5h-2v6l5 3 .9-1.5-3.9-2.3V7Zm7-3h-5v2h2.59l-3.06 3.06 1.42 1.42L19 7.41V10h2V4Z"/></svg></div>
-            <div class="titles">
-              <div class="title">Watch Hours</div>
-              <div class="subtitle">LIFETIME</div>
-            </div>
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.48 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13h-1v5.5l4.5 4.5 1.41-1.41-4-4V7zM12 5l3 3h-6l3-3z"/></svg></div>
+            <div class="titles"><div class="title">Watch Hours</div><div class="subtitle">Lifetime</div></div>
           </div>
-          <div class="chip">
-            <div class="dot" id="watchDot"></div>
-            <div class="chipText" id="watchChipText">Loading</div>
-          </div>
+          <div class="chip"><span class="dot" id="watchDot"></span><span class="chipText" id="watchChipText">—</span></div>
         </div>
-
-        <div class="bigNumber">
-          <div id="watchNow">0h</div>
-          <div class="mainArrow" id="watchMainArrow">-</div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="watchNow">—</span><span class="mainArrow" id="watchMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="watchSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="watchSparkPath" d="" fill="none" /></svg>
         </div>
-
-        <div class="sparkWrap">
-          <svg viewBox="0 0 120 40" class="spark">
-            <path id="watchSparkFill" class="sparkFill"></path>
-            <path id="watchSparkPath" class="sparkPath"></path>
-          </svg>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>Next Goal: <b id="watchNextGoal">—</b></span><span id="watchNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="watchProgressFill"></div></div>
         </div>
-
+        <div class="weekLine" id="watchWeek">Last 7D: —</div>
         <div class="metaRow">
-          <div class="metaItem">
-            <div class="metaLabel">Last 28D</div>
-            <div class="metaValue" id="watchLast28">0h</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Prev 28D</div>
-            <div class="metaValue" id="watchPrev28">0h</div>
-          </div>
-          <div class="metaItem">
-            <div class="metaLabel">Vs 6M Avg</div>
-            <div class="metaValue">
-              <span id="watchVsNum" class="vsNum neu">0h</span>
-              <span id="watchVsArrow" class="vsArrow neu">–</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="weekLine" id="watchWeek"></div>
-
-        <div class="milestone">
-          <div class="milestoneText">
-            <span class="milestoneLabel">Next Goal:</span>
-            <span id="watchNextGoal">0</span>
-            <span class="milestonePct" id="watchNextPct">0%</span>
-          </div>
-          <div class="progressBar">
-            <div class="progressFill" id="watchProgressFill"></div>
-          </div>
+          <div class="metaItem"><div class="metaLabel">Last 28D</div><div class="metaValue" id="watchLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">Prev 28D</div><div class="metaValue" id="watchPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">vs 6M Avg</div><div class="metaValue"><span class="vsNum" id="watchVsNum">—</span><span class="vsArrow" id="watchVsArrow">—</span></div></div>
         </div>
       </div>
     </div>
 
-    <!-- HUD -->
-    <div class="hudBox" id="hudBox">
-      <div class="hudInner">
-        <div class="hudLeft">
-          <div class="hudSys">AI HUD</div>
-          <div class="hudTag" id="hudTag">BOOT</div>
-        </div>
-
-        <div class="hudCenter">
-          <div class="hudMessage" id="hudMessage">INITIALIZING…</div>
-        </div>
-
-        <div class="hudRight">
-          <div class="hudIconBox" id="hudIcon">⚡</div>
-        </div>
-      </div>
-
-      <svg class="hudTrace" viewBox="0 0 100 50" preserveAspectRatio="none">
+    <!-- =======================================================
+     HUD mount point
+     ---------------------------------------------------------
+         app.js expects:
+           - #hudBox (main container)
+           - #hudTracePath (SVG path to animate border trace)
+           - #hudIcon, #hudTag, #hudMessage (content)
+         If any of these IDs change, update app.js accordingly.
+     ======================================================= -->
+<!-- === SCI-FI HUD === -->
+    <div class="hud-box" id="hudBox">
+      <!-- Added Glare Here -->
+      <div class="glare"></div>
+      
+      <!-- Trace Border SVG -->
+      <svg class="hud-border-svg" aria-hidden="true">
         <path id="hudTracePath" d="" />
       </svg>
-    </div>
 
-    <div class="footer">
-      <div id="updated">SYSTEM ONLINE • --:--</div>
-      <div class="toast" id="toast">SYNCED</div>
-    </div>
+      <div class="hud-content">
+        <!-- Icon -->
+        <div class="hud-icon-box" id="hudIconBox">
+          <span id="hudIcon" class="hud-icon">⚡</span>
+        </div>
 
+        <div class="hud-text-area">
+          <!-- Header -->
+          <div class="hud-header">
+            <span class="hud-sys">SYSTEM_FEEDBACK //</span>
+            <span class="hud-tag" id="hudTag">STANDBY</span>
+          </div>
+          
+          <!-- Message -->
+          <div class="hud-message-mask">
+            <div class="hud-message" id="hudMessage">AWAITING SIGNAL...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- === END HUD === -->
+
+    <div class="foot" id="updated">System Initializing...</div>
   </div>
 
   <script src="./app.js?v=hud_v7_solid"></script>
