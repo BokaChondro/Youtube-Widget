@@ -348,7 +348,6 @@ async function computeKPIs(env) {
   const daily = await fetchDailyCore(token, dailyStart, endIso);
   const N = daily.length;
 
-  // Existing KPIs
   const weekSum = N >= 7 ? sumDailyRows(daily, N - 7, N - 1) : {};
   const prevWeekSum = N >= 14 ? sumDailyRows(daily, N - 14, N - 8) : {};
   const weeklyStart = N >= 7 ? daily[N - 7].day : isoDate(shiftDays(end, -6));
@@ -376,27 +375,31 @@ async function computeKPIs(env) {
   const avgViews = avg(prev6.map((w) => w.metrics.views));
   const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
 
-  // --- NEW: Realtime / 48H / 6M Weekly Avg Logic ---
-  // 1. 6 Month Weekly Avg: (Total 6m views / 26 weeks)
-  // 'daily' array contains roughly 195 days (6.5 months)
-  const totalViews6m = daily.reduce((acc, r) => acc + (r.views || 0), 0);
-  const totalDays = daily.length || 1;
-  const avgDaily6m = totalViews6m / totalDays;
-  const avgWeekly6m = round1(avgDaily6m * 7);
-
-  // 2. Realtime 48h (approx via last 2 daily rows)
+  // --- REVISED: SOLID REALTIME & 7D LOGIC ---
   const lastDay = daily[N - 1] || {};
   const prevDay = daily[N - 2] || {};
-  const viewsLast24 = Number(lastDay.views || 0);
-  const viewsPrev24 = Number(prevDay.views || 0);
-  const views48h = viewsLast24 + viewsPrev24;
   
-  // 3. Hourly estimates (mocked from daily totals)
+  // 1. Solid Data Points
+  const viewsLast24 = Number(lastDay.views || 0); // Day N-1
+  const viewsPrev24 = Number(prevDay.views || 0); // Day N-2
+  const views48h = viewsLast24 + viewsPrev24;
+
+  // 2. Hourly estimates (Mathematical Average of solid data)
   const estLastHour = Math.round(viewsLast24 / 24);
   const estPrevHour = Math.round(viewsPrev24 / 24);
 
-  // 4. Sparkline (Last 7 days daily trend)
-  const sparklineData = daily.slice(-7).map(r => r.views);
+  // 3. Sparkline & 7D Avg Calculation
+  // We need exactly the last 7 days of data for the sparkline and formula.
+  const sevenDaySlice = daily.slice(-7); // The last 7 days
+  const sparklineData = sevenDaySlice.map(r => r.views);
+  
+  // Formula: LAST 24H vs [(LAST 7D - LAST 24H) / 6]
+  const viewsLast7dTotal = sparklineData.reduce((a, b) => a + Number(b||0), 0);
+  const viewsPrior6dTotal = viewsLast7dTotal - viewsLast24;
+  const avgPrior6d = viewsPrior6dTotal > 0 ? (viewsPrior6dTotal / 6) : 0;
+  
+  // The delta for the card ("VS 7D AVG")
+  const vs7dAvgDelta = viewsLast24 - avgPrior6d;
 
   const realtime = {
     views48h,
@@ -404,10 +407,11 @@ async function computeKPIs(env) {
     prev24h: viewsPrev24,
     lastHour: estLastHour,
     prevHour: estPrevHour,
-    avg6mWeekly: avgWeekly6m,
+    vs7dAvgDelta: round1(vs7dAvgDelta),
+    avgPrior6d: round1(avgPrior6d), // Sent for debug/context if needed
     sparkline: sparklineData
   };
-  // --- END NEW LOGIC ---
+  // --- END REVISED LOGIC ---
 
   const history28d = [...winResults].sort((a, b) => b.idx - a.idx).map((w) => ({
     startDate: w.startDate, endDate: w.endDate, netSubs: w.metrics.netSubs, views: w.metrics.views, watchHours: w.metrics.watchHours,
@@ -467,7 +471,7 @@ async function computeKPIs(env) {
       avg6m: { netSubs: avgSubs, views: avgViews, watchHours: avgWatch },
       median6m: { netSubs: medianSubs, views: medianViews, watchHours: medianWatch },
     },
-    realtime, // Added here
+    realtime,
     lifetime: { watchHours: life.totalHours },
     history28d,
     hud,
