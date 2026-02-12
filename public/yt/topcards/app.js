@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic v6 (Bug Fixes, Optimized Loop, New Bar Anim)
+   Sci-Fi Logic v7 (Smooth Interpolated Morphing)
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -227,7 +227,6 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   col.style.transform = `translateY(${-1.1 * (steps.length - 1)}em)`;
 }
 
-// FIX: USE INNERHTML to parse <span>
 function animateSpeedometer(el, toVal, opts = {}) {
   if (!el) return;
   const decimals = opts.decimals ?? 0, suffix = opts.suffix ?? "", duration = opts.duration ?? 650;
@@ -238,7 +237,7 @@ function animateSpeedometer(el, toVal, opts = {}) {
   const renderText = (v) => (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
   const tick = (now) => {
     const p = Math.min(1, (now - t0) / duration);
-    el.innerHTML = renderText(endVal * easeOutCubic(p)); // FIXED: innerHTML
+    el.innerHTML = renderText(endVal * easeOutCubic(p)); 
     if (p < 1) el._spdRaf = requestAnimationFrame(tick);
   };
   el._spdRaf = requestAnimationFrame(tick);
@@ -314,7 +313,7 @@ let animState = {
   tiers: { subs: "blue", rt: "blue", views: "blue", watch: "blue" }
 };
 
-// 30s TRIGGER: OPTIMIZED SNAKE WAVE + NEON SURGE BAR
+// 30s TRIGGER: SMOOTH MORPH (Real -> Wave -> Real)
 function triggerAdvancedAnimations() {
   const cards = [
     { id: "subs", spark: "subsSpark", bar: "subsProgressFill" },
@@ -326,28 +325,59 @@ function triggerAdvancedAnimations() {
   const elements = ["subsIconBox", "subsChip", "rtIconBox", "rtChip", "viewsIconBox", "viewsChip", "watchIconBox", "watchChip"];
   elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add("aurora-mode"); });
 
-  // OPTIMIZATION: Use requestAnimationFrame instead of setInterval
+  // OPTIMIZATION: Linear Interpolation (Lerp)
+  // Phases: 
+  // 0-10%: Morph Real -> Wave
+  // 10-90%: Animate Wave
+  // 90-100%: Morph Wave -> Real
   let start = null;
-  const duration = 3000; // 3 seconds
+  const duration = 3000; 
 
   function step(timestamp) {
     if (!start) start = timestamp;
     const progress = timestamp - start;
+    const pct = progress / duration;
     
-    // Wave Math (Frames approx using progress)
-    const frames = progress / 50; 
+    // Wave Offset
+    const waveOffset = progress / 200; 
 
     cards.forEach(c => {
-      // 1. Smooth Sine Wave (Snake)
-      // Amplitude: 8 (Smaller/Smoother), Speed: 0.1 (Slower)
-      const waveData = Array.from({length: 20}, (_, i) => 50 + 8 * Math.sin((i + frames) * 0.1));
+      const realData = animState[c.id] || [];
+      const len = realData.length || 20; // Match data length
+      const waveData = Array.from({length: len}, (_, i) => 50 + 15 * Math.sin((i + waveOffset) * 0.5));
+      
+      // Interpolation Logic
+      let renderData = [];
+      let mix = 0; // 0 = Real, 1 = Wave
+
+      if(pct < 0.15) {
+        mix = pct / 0.15; // 0 -> 1
+      } else if (pct > 0.85) {
+        mix = 1 - ((pct - 0.85) / 0.15); // 1 -> 0
+      } else {
+        mix = 1; // Full Wave
+      }
+
+      // Blend Arrays
+      for(let i=0; i<len; i++) {
+        // If data length mismatch (rare), fallback to 50
+        const rVal = realData[i] !== undefined ? realData[i] : 50; 
+        // Normalize Real Val roughly to 0-100 scale for smoother visual blend if needed,
+        // But sparkline auto-scales. So just blending raw values might jump scale.
+        // TRICK: Just blend the raw values. setSpark adapts. 
+        // The visual effect of "morphing" comes from the line changing shape.
+        // To make it look "snake-like", the waveData needs to be scaled to the Real Data's range.
+        
+        // Simple blend:
+        renderData.push(rVal * (1 - mix) + waveData[i] * mix); 
+      }
       
       const tierColor = animState.tiers[c.id] || "blue";
-      setSpark(`${c.spark}Fill`, `${c.spark}Path`, waveData, tierColor);
+      setSpark(`${c.spark}Fill`, `${c.spark}Path`, renderData, tierColor);
       
-      // 2. Neon Surge Bar (Trigger once)
+      // 2. Neon Surge Bar (Trigger once at start)
       const bEl = document.getElementById(c.bar);
-      if(bEl && progress < 100) { // Trigger only at start
+      if(bEl && progress < 50) { 
          bEl.style.setProperty('--target-width', (c.id === 'subs' ? animState.pSubs : c.id === 'rt' ? animState.pRt : c.id === 'views' ? animState.pViews : animState.pWatch) + "%");
          bEl.classList.remove("bar-surge");
          void bEl.offsetWidth; 
@@ -358,7 +388,7 @@ function triggerAdvancedAnimations() {
     if (progress < duration) {
       requestAnimationFrame(step);
     } else {
-      // RESTORE STATE
+      // Final Snap to Real Data (Clean)
       setSpark("subsSparkFill", "subsSparkPath", animState.subs, animState.tiers.subs);
       setSpark("rtSparkFill", "rtSparkPath", animState.rt, animState.tiers.rt);
       setSpark("viewsSparkFill", "viewsSparkPath", animState.views, animState.tiers.views);
@@ -381,7 +411,6 @@ function triggerAdvancedAnimations() {
    MAIN RENDER
    ========================================================= */
 let state = { subs: 0, views: 0, watch: 0, rt: 0 };
-// Wrap lowercase h for styling
 const UNIT_H = '<span class="unit-lower">h</span>';
 
 function render(data, isFirst) {
@@ -467,7 +496,6 @@ function render(data, isFirst) {
   renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, UNIT_H);
   setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (data.m28?.avg6m?.watchHours || 0), 1, UNIT_H);
   
-  // Use HTML for meta row
   safeSetHTML("watchLast28", fmt(last28.watchHours) + UNIT_H); 
   safeSetHTML("watchPrev28", fmt(prev28.watchHours) + UNIT_H);
   
