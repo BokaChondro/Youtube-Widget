@@ -1,18 +1,40 @@
+/**
+ * =========================================================
+ *  YouTube KPI API (Cloudflare Worker)
+ *  Purpose:
+ *    - Fetch channel + analytics data (daily, weekly, 28d windows)
+ *    - Compute baselines (median/avg over last ~6 months via 28d windows)
+ *    - Build a HUD payload (latest upload, CTR/retention snapshots, traffic sources, per-video intel)
+ *  Notes:
+ *    - Dates use YYYY-MM-DD (YouTube Analytics requirement)
+ *    - endIso is set to "yesterday" to avoid partial-day noise
+ *    - safeAnalytics() makes non-critical endpoints best-effort
+ * =========================================================
+ */
 // functions/api/yt-kpis.js
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * shiftDays — Returns a new Date shifted by deltaDays (keeps the original date intact).
+ */
 function shiftDays(dateObj, deltaDays) {
   const d = new Date(dateObj);
   d.setDate(d.getDate() + deltaDays);
   return d;
 }
 
+/**
+ * round1 — Rounds to 1 decimal place (used for watch hours and % values).
+ */
 function round1(n) {
   return Math.round(Number(n || 0) * 10) / 10;
 }
 
+/**
+ * median — Median of a numeric array (used for 6-month rolling baseline).
+ */
 function median(nums) {
   const arr = (nums || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
   if (!arr.length) return 0;
@@ -20,12 +42,18 @@ function median(nums) {
   return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
 }
 
+/**
+ * avg — Arithmetic mean of a numeric array (used for 6-month rolling average).
+ */
 function avg(nums) {
   const arr = (nums || []).map(Number).filter(Number.isFinite);
   if (!arr.length) return 0;
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+/**
+ * safeStartDateFromPublishedAt — Ensures analytics start date is valid and not earlier than YouTube’s launch date.
+ */
 function safeStartDateFromPublishedAt(publishedAt) {
   if (!publishedAt) return "2006-01-01";
   const d = new Date(publishedAt);
@@ -34,6 +62,9 @@ function safeStartDateFromPublishedAt(publishedAt) {
   return iso < "2006-01-01" ? "2006-01-01" : iso;
 }
 
+/**
+ * daysBetween — Whole-day difference between two ISO dates (YYYY-MM-DD).
+ */
 function daysBetween(isoA, isoB) {
   try {
     const a = new Date(isoA);
@@ -45,23 +76,36 @@ function daysBetween(isoA, isoB) {
   }
 }
 
+/**
+ * clamp — Clamps a number between a min and max.
+ */
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
+/**
+ * safeReadJson — Reads fetch() response body safely; returns {raw} if JSON parse fails.
+ */
 async function safeReadJson(r) {
   const txt = await r.text();
   try {
     return JSON.parse(txt);
   } catch {
-    return { raw: txt };
+    // 14) Final response shape consumed by app.js
+  return { raw: txt };
   }
 }
 
+/**
+ * uniq — Deduplicates an array (filters falsy values) using Set.
+ */
 function uniq(arr) {
   return [...new Set((arr || []).filter(Boolean))];
 }
 
+/**
+ * parseISODurationToSeconds — Parses YouTube ISO 8601 durations (PT#H#M#S) into total seconds.
+ */
 function parseISODurationToSeconds(isoDur) {
   if (!isoDur || typeof isoDur !== "string") return null;
   const m = isoDur.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/);
@@ -72,12 +116,18 @@ function parseISODurationToSeconds(isoDur) {
   return h * 3600 + mm * 60 + s;
 }
 
+/**
+ * pct — Coerces to number and rounds to 1 decimal (for CTR/percent metrics); returns null if invalid.
+ */
 function pct(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return null;
   return round1(x);
 }
 
+/**
+ * getAccessToken — Exchanges refresh token for a short-lived OAuth access token (server-side).
+ */
 async function getAccessToken(env) {
   const body = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
@@ -97,6 +147,9 @@ async function getAccessToken(env) {
   return data.access_token;
 }
 
+/**
+ * ytDataGET — Calls YouTube Data API v3 endpoints with Bearer auth and JSON error handling.
+ */
 async function ytDataGET(token, path, params = {}) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
   Object.entries(params).forEach(([k, v]) => {
@@ -112,6 +165,9 @@ async function ytDataGET(token, path, params = {}) {
   return data;
 }
 
+/**
+ * ytAnalyticsGET — Calls YouTube Analytics v2 reports endpoint (channel==MINE) with Bearer auth.
+ */
 async function ytAnalyticsGET(token, params = {}) {
   const url = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
   url.searchParams.set("ids", "channel==MINE");
@@ -129,6 +185,9 @@ async function ytAnalyticsGET(token, params = {}) {
   return data;
 }
 
+/**
+ * safeAnalytics — Wrapper around ytAnalyticsGET that returns null instead of throwing (best-effort metrics).
+ */
 async function safeAnalytics(token, params) {
   try {
     return await ytAnalyticsGET(token, params);
@@ -137,6 +196,9 @@ async function safeAnalytics(token, params) {
   }
 }
 
+/**
+ * fetchChannelBasics — Fetches channel metadata + headline stats (subs, total views, logo, uploads playlist).
+ */
 async function fetchChannelBasics(token) {
   const data = await ytDataGET(token, "channels", {
     part: "snippet,statistics,contentDetails",
@@ -145,6 +207,7 @@ async function fetchChannelBasics(token) {
   const ch = data.items?.[0];
   const thumbs = ch?.snippet?.thumbnails || {};
   const logo = thumbs.high?.url || thumbs.medium?.url || thumbs.default?.url || "";
+  // 14) Final response shape consumed by app.js
   return {
     channelId: ch?.id || null,
     title: ch?.snippet?.title || "",
@@ -156,6 +219,9 @@ async function fetchChannelBasics(token) {
   };
 }
 
+/**
+ * fetchRecentUploads — Reads the uploads playlist and returns the latest N video IDs + titles + publish dates.
+ */
 async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
   if (!uploadsPlaylistId) return [];
   const data = await ytDataGET(token, "playlistItems", {
@@ -172,6 +238,9 @@ async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
     .filter((x) => x.videoId);
 }
 
+/**
+ * fetchVideos — Batch fetches per-video stats/content details for a list of IDs (views, duration, etc.).
+ */
 async function fetchVideos(token, ids = []) {
   const idList = uniq(ids);
   if (!idList.length) return [];
@@ -193,6 +262,9 @@ async function fetchVideos(token, ids = []) {
     .filter((x) => x.videoId);
 }
 
+/**
+ * sumDailyRows — Sums slices of the daily time series for multiple metrics (views/minutes/subs gained/lost).
+ */
 function sumDailyRows(rows, startIdx, endIdx) {
   const out = { views: 0, minutes: 0, gained: 0, lost: 0 };
   if (!Array.isArray(rows)) return out;
@@ -208,10 +280,14 @@ function sumDailyRows(rows, startIdx, endIdx) {
   return out;
 }
 
+/**
+ * packMetrics — Normalizes summed metrics into the common KPI shape (views, watchHours, netSubs, etc.).
+ */
 function packMetrics(sum) {
   const minutes = Number(sum.minutes || 0);
   const gained = Number(sum.gained || 0);
   const lost = Number(sum.lost || 0);
+  // 14) Final response shape consumed by app.js
   return {
     views: Number(sum.views || 0),
     minutes,
@@ -222,6 +298,9 @@ function packMetrics(sum) {
   };
 }
 
+/**
+ * fetchDailyCore — Downloads daily series for views, minutes watched, and subscriber gains/losses.
+ */
 async function fetchDailyCore(token, startIso, endIso) {
   const data = await ytAnalyticsGET(token, {
     startDate: startIso,
@@ -240,6 +319,9 @@ async function fetchDailyCore(token, startIso, endIso) {
   }));
 }
 
+/**
+ * fetchLifetimeWatchHours — Computes lifetime watch hours from channel publish date to end date.
+ */
 async function fetchLifetimeWatchHours(token, publishedAt, endIso) {
   const startIso = safeStartDateFromPublishedAt(publishedAt);
   const data = await ytAnalyticsGET(token, {
@@ -248,9 +330,13 @@ async function fetchLifetimeWatchHours(token, publishedAt, endIso) {
     metrics: "estimatedMinutesWatched",
   });
   const minutes = Number(data.rows?.[0]?.[0] || 0);
+  // 14) Final response shape consumed by app.js
   return { startIso, totalHours: round1(minutes / 60) };
 }
 
+/**
+ * rowsToDimList — Converts Analytics rows into {key,value,dim,metric} lists for HUD charts/lists.
+ */
 function rowsToDimList(resp, dimName, metricName) {
   return (resp?.rows || []).map((r) => ({
     key: String(r[0]),
@@ -260,6 +346,9 @@ function rowsToDimList(resp, dimName, metricName) {
   }));
 }
 
+/**
+ * parseVideoRows — Turns video-dimension Analytics rows into a videoId->metrics map for quick joins.
+ */
 function parseVideoRows(resp, metricKeys = []) {
   const rows = resp?.rows || [];
   const out = {};
@@ -275,6 +364,9 @@ function parseVideoRows(resp, metricKeys = []) {
   return out;
 }
 
+/**
+ * fetchVideoAnalytics7dBundle — Fetches multiple best-effort 7-day analytics maps (views, retention, CTR, engagement).
+ */
 async function fetchVideoAnalytics7dBundle(token, startIso, endIso, maxResults = 25) {
   const common = { startDate: startIso, endDate: endIso, dimensions: "video", sort: "-views", maxResults: String(clamp(maxResults, 1, 50)) };
   
@@ -283,6 +375,7 @@ async function fetchVideoAnalytics7dBundle(token, startIso, endIso, maxResults =
   const thumbs = await safeAnalytics(token, { ...common, metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate" });
   const engage = await safeAnalytics(token, { ...common, metrics: "likes,comments,shares" });
 
+  // 14) Final response shape consumed by app.js
   return {
     baseMap: parseVideoRows(base, ["views7d", "minutes7d", "subsGained7d", "subsLost7d"]),
     retentionMap: parseVideoRows(retention, ["avgViewDurationSec7d", "avgViewPercentage7d"]),
@@ -292,6 +385,9 @@ async function fetchVideoAnalytics7dBundle(token, startIso, endIso, maxResults =
   };
 }
 
+/**
+ * buildVideoIntelList — Joins video metadata with analytics maps and derives per-video efficiency metrics.
+ */
 function buildVideoIntelList(videoDetails, maps, endIso) {
   const vids = (videoDetails || []).slice(0, 50);
   return vids.map((v) => {
@@ -311,7 +407,8 @@ function buildVideoIntelList(videoDetails, maps, endIso) {
     const daysOnline = ageDays === null ? 7 : clamp(ageDays + 1, 1, 7);
     const viewsPerDay = round1(views7d / Math.max(1, daysOnline));
 
-    return {
+    // 14) Final response shape consumed by app.js
+  return {
       videoId: id,
       title: v.title || "",
       publishedAt: v.publishedAt || null,
@@ -339,21 +436,34 @@ function buildVideoIntelList(videoDetails, maps, endIso) {
   });
 }
 
+/**
+ * computeKPIs — Main orchestrator: fetches data, computes weekly + 28d + 6m baselines, and builds HUD payload.
+ */
 async function computeKPIs(env) {
+  // 1) OAuth: refresh-token -> access token (short-lived)
   const token = await getAccessToken(env);
+  // 2) Channel basics: logo, publish date, headline stats, uploads playlist
   const ch = await fetchChannelBasics(token);
+  // 3) Use 'yesterday' as end date to avoid partial-day noise
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
+  // 4) Pull ~196 days of daily data so we can build multiple 28D windows (for 6M baseline)
   const dailyStart = isoDate(shiftDays(end, -195));
   const daily = await fetchDailyCore(token, dailyStart, endIso);
   const N = daily.length;
 
+  // 5) Weekly window = last 7 complete days (ending at endIso)
   const weekSum = N >= 7 ? sumDailyRows(daily, N - 7, N - 1) : {};
+  //    Previous week window = the 7 days before that
   const prevWeekSum = N >= 14 ? sumDailyRows(daily, N - 14, N - 8) : {};
   const weeklyStart = N >= 7 ? daily[N - 7].day : isoDate(shiftDays(end, -6));
+  const prevWeeklyStart = N >= 14 ? daily[N - 14].day : isoDate(shiftDays(end, -13));
+  const prevWeeklyEnd = N >= 14 ? daily[N - 8].day : isoDate(shiftDays(end, -7));
   const weeklyPacked = packMetrics(weekSum);
   const prevWeeklyPacked = packMetrics(prevWeekSum);
 
+  // 6) Build rolling 28-day windows stepping back in 28-day chunks:
+  //    idx=0 is last 28D, idx=1 is previous 28D, idx=2..6 make up ~6 months baseline
   const winResults = [];
   for (let i = 0; i < 7; i++) {
     const endIdx = (N - 1) - 28 * i;
@@ -365,62 +475,30 @@ async function computeKPIs(env) {
 
   const last28 = winResults.find((x) => x.idx === 0) || { metrics: packMetrics({}) };
   const prev28 = winResults.find((x) => x.idx === 1) || { metrics: packMetrics({}) };
+  // 7) Baseline set = previous 6 *complete* 28D windows (exclude the most recent 28D)
   const prev6 = winResults.filter((x) => x.idx >= 1 && x.idx <= 6);
 
+  // 8) Baselines: median is used for tiering (more robust to outliers)
   const medianSubs = median(prev6.map((w) => w.metrics.netSubs));
   const medianViews = median(prev6.map((w) => w.metrics.views));
   const medianWatch = median(prev6.map((w) => w.metrics.watchHours));
   
+  //    Average is used for the 'vs 6M Avg' numeric delta
   const avgSubs = avg(prev6.map((w) => w.metrics.netSubs));
   const avgViews = avg(prev6.map((w) => w.metrics.views));
   const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
-
-  // --- REVISED: SOLID REALTIME & 7D LOGIC ---
-  const lastDay = daily[N - 1] || {};
-  const prevDay = daily[N - 2] || {};
-  
-  // 1. Solid Data Points
-  const viewsLast24 = Number(lastDay.views || 0); // Day N-1
-  const viewsPrev24 = Number(prevDay.views || 0); // Day N-2
-  const views48h = viewsLast24 + viewsPrev24;
-
-  // 2. Hourly estimates (Mathematical Average of solid data)
-  const estLastHour = Math.round(viewsLast24 / 24);
-  const estPrevHour = Math.round(viewsPrev24 / 24);
-
-  // 3. Sparkline & 7D Avg Calculation
-  // We need exactly the last 7 days of data for the sparkline and formula.
-  const sevenDaySlice = daily.slice(-7); // The last 7 days
-  const sparklineData = sevenDaySlice.map(r => r.views);
-  
-  // Formula: LAST 24H vs [(LAST 7D - LAST 24H) / 6]
-  const viewsLast7dTotal = sparklineData.reduce((a, b) => a + Number(b||0), 0);
-  const viewsPrior6dTotal = viewsLast7dTotal - viewsLast24;
-  const avgPrior6d = viewsPrior6dTotal > 0 ? (viewsPrior6dTotal / 6) : 0;
-  
-  // The delta for the card ("VS 7D AVG")
-  const vs7dAvgDelta = viewsLast24 - avgPrior6d;
-
-  const realtime = {
-    views48h,
-    last24h: viewsLast24,
-    prev24h: viewsPrev24,
-    lastHour: estLastHour,
-    prevHour: estPrevHour,
-    vs7dAvgDelta: round1(vs7dAvgDelta),
-    avgPrior6d: round1(avgPrior6d), // Sent for debug/context if needed
-    sparkline: sparklineData
-  };
-  // --- END REVISED LOGIC ---
 
   const history28d = [...winResults].sort((a, b) => b.idx - a.idx).map((w) => ({
     startDate: w.startDate, endDate: w.endDate, netSubs: w.metrics.netSubs, views: w.metrics.views, watchHours: w.metrics.watchHours,
   }));
 
+  // 9) Lifetime watch hours (minutes watched from channel start -> endIso)
   const life = await fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
+  // 10) Recent uploads list for HUD (titles + video IDs)
   const uploads = await fetchRecentUploads(token, ch.uploadsPlaylistId, 25);
   const latestUpload = uploads[0] || null;
 
+  // 11) Top video in the last 7D (best-effort; can be null if endpoint fails)
   const top7Resp = await safeAnalytics(token, { startDate: weeklyStart, endDate: endIso, dimensions: "video", metrics: "views", sort: "-views", maxResults: "1" });
   const top7VideoId = top7Resp?.rows?.[0]?.[0] || null;
   
@@ -439,9 +517,11 @@ async function computeKPIs(env) {
   const subStatus28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "subscribedStatus", metrics: "views", sort: "-views", maxResults: "5" });
   const country28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "country", metrics: "views", sort: "-views", maxResults: "5" });
 
+  // 12) Per-video 7D intel bundle (views, retention, CTR, engagement) used by HUD
   const v7dBundle = await fetchVideoAnalytics7dBundle(token, weeklyStart, endIso, 25);
   const videoIntelList = buildVideoIntelList(videoDetails, v7dBundle, endIso);
 
+  // 13) HUD payload: extra 'diagnostic' / 'intel' data for the rotating message system
   const hud = {
     statsThrough: endIso,
     uploads: { latest: latestUpload, recent: uploads },
@@ -453,9 +533,11 @@ async function computeKPIs(env) {
     traffic: { last28: rowsToDimList(traffic28, "insightTrafficSourceType", "views"), prev28: rowsToDimList(trafficPrev28, "insightTrafficSourceType", "views") },
     subscribedStatus: rowsToDimList(subStatus28, "subscribedStatus", "views"),
     countries: rowsToDimList(country28, "country", "views"),
+    views48h: N >= 2 ? Number(daily[N - 1]?.views || 0) + Number(daily[N - 2]?.views || 0) : 0,
     videoIntel: { range7d: { startDate: weeklyStart, endDate: endIso }, videos: videoIntelList },
   };
 
+  // 14) Final response shape consumed by app.js
   return {
     channel: ch,
     weekly: {
@@ -471,13 +553,15 @@ async function computeKPIs(env) {
       avg6m: { netSubs: avgSubs, views: avgViews, watchHours: avgWatch },
       median6m: { netSubs: medianSubs, views: medianViews, watchHours: medianWatch },
     },
-    realtime,
     lifetime: { watchHours: life.totalHours },
     history28d,
     hud,
   };
 }
 
+/**
+ * onRequest — Cloudflare Worker entry: cached GET endpoint returning computeKPIs() JSON (55s TTL).
+ */
 export async function onRequest(context) {
   try {
     const cache = caches.default;
