@@ -1,5 +1,33 @@
+/* =========================================================
+   public/yt/topcards/app.js — Front-end runtime (NO UI redesign here)
+   ---------------------------------------------------------
+       Purpose:
+         - Fetch KPI JSON from /api/yt-kpis every 60s and paint the 4 Top Cards + Sci‑Fi HUD.
+         - All DOM updates are "safe" helpers (safeSetText / safeSetHTML / safeSetStyle).
+         - Visual behaviors (rolling numbers, glow, float icons) are triggered only on value deltas.
+
+       High-level flow:
+         init() -> load(isFirst=true) -> render(data, isFirst) -> updateHud(data)
+                  -> setInterval(load(false), 60s)
+
+       Where to look when changing behavior later:
+         - Number tiers + labels: COLORS + FEEDBACK + tierFromBaseline()
+         - Card paint: render() (subs / realtime / views / watch)
+         - Animations: ensureRoll() / animateCasinoRoll() / spawnFloatIcon() / triggerGlowOnce()
+         - HUD messages: buildIntel() -> showNextIntel() -> animateHudBorder()
+   ========================================================= */
+
 // public/yt/topcards/app.js
 
+/* =========================================================
+   Number formatting helpers
+   ---------------------------------------------------------
+       NF_INT / NF_1:
+         - Centralized Intl.NumberFormat instances to keep output consistent.
+         - fmt()  -> integer formatting (views/subs)
+         - fmt1() -> 1-decimal formatting (watch hours when < 100h)
+         - nowStamp() -> tiny UI footer timestamp string
+   ========================================================= */
 const NF_INT = new Intl.NumberFormat();
 const NF_1 = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
@@ -7,6 +35,15 @@ function fmt(n) { return NF_INT.format(Number(n || 0)); }
 function fmt1(n) { return NF_1.format(Number(n || 0)); }
 function nowStamp() { return new Date().toLocaleTimeString(); }
 
+/* =========================================================
+   Tier color palette
+   ---------------------------------------------------------
+       COLORS drives:
+         - Tier dot glow color (CSS uses --c-tier)
+         - Sparkline stroke + fill gradient
+         - HUD accent (tag/icon/border trace)
+       NOTE: Tiers are semantic labels (red/orange/yellow/green/blue/purple), not business logic by themselves.
+   ========================================================= */
 const COLORS = {
   green:  "#00FF00",
   red:    "#fe0000",
@@ -18,6 +55,13 @@ const COLORS = {
   white:  "#ffffff"
 };
 
+/* =========================================================
+   Tier -> label dictionaries (text shown in the small chip on each card)
+   ---------------------------------------------------------
+       FEEDBACK maps "metric type" -> tier -> short label.
+       Example: realtime { red: "Big Drop", ... purple: "On Fire" }.
+       These labels are purely UI text; tier assignment happens elsewhere (tierFromBaseline / tierRealtime etc.).
+   ========================================================= */
 const FEEDBACK = {
   subs: { red: "Audience Leak", orange: "Slow Convert", yellow: "Steady Growth", green: "Strong Pull", blue: "Rising Fast", purple: "Exceptional" },
   views: { red: "Reach Down", orange: "Low Reach", yellow: "Stable Reach", green: "Reach Up", blue: "Trending", purple: "Viral" },
@@ -25,12 +69,25 @@ const FEEDBACK = {
   realtime: { red: "Big Drop", orange: "Drop Alert", yellow: "Going Flat", green: "Good Pace", blue: "Uptrend", purple: "On Fire" }
 };
 
+/* =========================================================
+   DOM write helpers (safe updates only)
+   ---------------------------------------------------------
+       Every DOM update goes through these so:
+         - Missing element IDs fail silently (no hard crash)
+         - render() can stay readable
+   ========================================================= */
 // --- DOM HELPERS ---
 function safeSetText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 function safeSetStyle(id, prop, val) { const el = document.getElementById(id); if (el) el.style[prop] = val; }
 function safeSetHTML(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
 
 // --- LOGIC ---
+/* =========================================================
+   Tier arrow glyphs
+   ---------------------------------------------------------
+       Converts tier to an arrow symbol placed beside the big number.
+       This is separate from the chip label (FEEDBACK) and the dot color (COLORS).
+   ========================================================= */
 function tierArrow(tier) {
   if (tier === "red") return "↓↓";
   if (tier === "orange") return "↓";
@@ -40,6 +97,16 @@ function tierArrow(tier) {
   return "⟰";
 }
 
+/* =========================================================
+   Tiering: compare 'current window' vs 'baseline window'
+   ---------------------------------------------------------
+       Used by the 'Last 28D vs 6M Avg' style comparisons.
+       Inputs:
+         - last28: the active window value (what user sees as the main period)
+         - median6m: the baseline (computed server-side from rolling history)
+         - absMin: fallback threshold when baseline is 0 / unavailable
+       Output: one of {red, orange, yellow, green, blue, purple}.
+   ========================================================= */
 function tierFromBaseline(last28, median6m, absMin) {
   const L = Number(last28 || 0);
   const B = Number(median6m || 0);
@@ -156,6 +223,14 @@ function ensureSparkGradient(svgEl, gradId, tierHex) {
   return `url(#${gradId})`;
 }
 
+/* =========================================================
+   Sparkline rendering (SVG path + gradient fill)
+   ---------------------------------------------------------
+       setSpark(fillId, pathId, values, tier):
+         - Transforms an array of numbers into an SVG quadratic curve path.
+         - Sets stroke color to COLORS[tier] and fill to a per-card gradient.
+         - Called from render() per card to visualize short-term pacing.
+   ========================================================= */
 function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
@@ -178,6 +253,14 @@ function setSpark(fillId, pathId, values, tier) {
   if (gradUrl) fillEl.style.fill = gradUrl;
 }
 
+/* =========================================================
+   Bottom 'pacing' row (Last vs Prev period)
+   ---------------------------------------------------------
+       Renders a compact left/right row like:
+         Left:  Last 7D: <cur> (+/- pct)
+         Right: Prev:    <prev>
+       safeSetHTML() is used because we embed colored spans for +/-.
+   ========================================================= */
 function renderPacing(elId, cur, prev, suffix = "") {
   const c = Number(cur || 0), p = Number(prev || 0);
   const pct = p === 0 ? 0 : Math.round(((c - p) / p) * 100);
@@ -198,6 +281,19 @@ function renderHourlyPacing(elId, cur, prev) {
 }
 
 // --- CASINO ROLL ---
+/* =========================================================
+   Rolling number engine: build the DOM structure once
+   ---------------------------------------------------------
+       The 'casino roll' animation needs a specific structure:
+
+         <div class="rollWrap">
+           <div class="rollCol"> <div class="rollLine">0</div> ... </div>
+           ...
+         </div>
+
+       ensureRoll(el, {decimals, suffix}) creates it inside the target element if missing.
+       The animation later manipulates translateY on each .rollCol to simulate digit rolling.
+   ========================================================= */
 function ensureRoll(el) {
   if (!el || (el._rollWrap && el._rollCol)) return;
   el.textContent = "";
@@ -211,6 +307,15 @@ function setRollInstant(el, text) {
   const col = el._rollCol; col.style.transition = "none"; col.style.transform = "translateY(0)";
   col.innerHTML = `<span class="rollLine">${text}</span>`;
 }
+/* =========================================================
+   Rolling number animation (delta-driven)
+   ---------------------------------------------------------
+       animateCasinoRoll(el, from, to, opts):
+         - Uses ensureRoll() to guarantee roll DOM exists.
+         - Computes per-digit 'to' positions (with optional decimals/suffix).
+         - Animates each column with easing, duration, and stagger.
+       In render(): we only call this when the rounded value changed.
+   ========================================================= */
 function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   if (!el) return;
   const decimals = opts.decimals ?? 0, suffix = opts.suffix ?? "", duration = opts.duration ?? 1600;
@@ -256,12 +361,27 @@ const SVGS = {
   views: `<svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>`,
   watch: `<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
 };
+/* =========================================================
+   Floating icon burst (positive reinforcement)
+   ---------------------------------------------------------
+       spawnFloatIcon(cardId, type):
+         - Injects a temporary SVG element positioned inside the card.
+         - CSS keyframes float it upward with fade/scale.
+         - Triggered only on *increase* of the metric (subs/views/watch/realtime).
+   ========================================================= */
 function spawnFloatIcon(cardId, type) {
   const card = document.getElementById(cardId); if (!card) return;
   const el = document.createElement("div"); el.className = "floatIcon"; el.innerHTML = SVGS[type] || "";
   card.appendChild(el); setTimeout(() => el.remove(), 7000);
 }
 
+/* =========================================================
+   One-shot glow pulse after updates
+   ---------------------------------------------------------
+       Adds a CSS class (e.g., .glow-once) to the card briefly,
+       so the card 'pops' when new data arrives. render() triggers on refresh
+       and again after 30s to keep the UI feeling alive.
+   ========================================================= */
 function triggerGlowOnce(cardId) {
   const card = document.getElementById(cardId); if (!card) return;
   card.classList.remove("glow-once"); void card.offsetWidth; card.classList.add("glow-once");
@@ -270,6 +390,18 @@ function triggerGlowOnce(cardId) {
 let glowTimer = null;
 
 let state = { subs: 0, views: 0, watch: 0, rt: 0 };
+/* =========================================================
+   render(data, isFirst) — MAIN painter for the 4 Top Cards + HUD
+   ---------------------------------------------------------
+       Responsibilities:
+         - Read server response JSON (data) and compute per-card tiers.
+         - Update: big numbers, tier dots, chip labels, milestone bar, sparklines, and bottom meta rows.
+         - If not first load: animate digit rolls when values changed.
+         - Trigger float icons on positive deltas.
+         - Call updateHud(data) to refresh message queue.
+
+       NOTE: This is the file's 'hot path' every 60 seconds.
+   ========================================================= */
 function render(data, isFirst) {
   const ch = data.channel || {};
   if (ch.logo) { const v = `url("${ch.logo}")`; document.querySelectorAll(".card").forEach(c => c.style.setProperty("--logo-url", v)); }
@@ -392,16 +524,43 @@ function render(data, isFirst) {
   document.getElementById("toast").classList.add("show"); setTimeout(() => document.getElementById("toast").classList.remove("show"), 2000);
 }
 
+/* =========================================================
+   load(isFirst) — fetch + error handling wrapper
+   ---------------------------------------------------------
+       - Calls fetchJSON('/api/yt-kpis')
+       - On success -> render(data, isFirst)
+       - On failure -> prints 'FETCH ERROR:' in footer
+   ========================================================= */
 async function load(isFirst) {
   try { const data = await fetchJSON("/api/yt-kpis"); if (data.error) throw new Error(data.error); render(data, isFirst); }
   catch (e) { document.getElementById("updated").textContent = "FETCH ERROR: " + e.message; }
 }
 
+/* =========================================================
+   3D tilt hover (purely visual)
+   ---------------------------------------------------------
+       Each .card listens to mousemove and computes rotateX/rotateY based on cursor position.
+       This does NOT affect data; it's only the parallax/tilt effect.
+       (Performance tip for later: throttle with requestAnimationFrame if needed.)
+   ========================================================= */
 document.querySelectorAll(".card").forEach(card => {
   card.addEventListener("mousemove", (e) => { const r = card.getBoundingClientRect(), x = ((e.clientY - r.top) / r.height - 0.5) * -10, y = ((e.clientX - r.left) / r.width - 0.5) * 10; card.style.transform = `perspective(1000px) rotateX(${x}deg) rotateY(${y}deg) scale(1.02)`; });
   card.addEventListener("mouseleave", () => { card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale(1)`; });
 });
 
+/* =========================================================
+   HUD Engine — sci‑fi message rotation + border trace
+   ---------------------------------------------------------
+       updateHud(data):
+         - Builds a weighted queue of messages (buildIntel)
+         - Boots HUD once, then rotates message every HUD_CONFIG.interval (16s)
+
+       showNextIntel():
+         - Fades out
+         - Swaps text + tag + icon
+         - Recalculates border geometry for the new text size
+         - Restarts the animated border trace
+   ========================================================= */
 /* ===========================
    HUD ENGINE (SCI-FI V4 TRACE)
    =========================== */
@@ -410,6 +569,12 @@ document.querySelectorAll(".card").forEach(card => {
 let shownAt = {};
 try { shownAt = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"); } catch(e) { console.warn("HUD Mem Reset"); }
 
+/* =========================================================
+   HUD_CONFIG — rotation + cooldown memory
+   ---------------------------------------------------------
+       - cooldownMs: per-category cooldown to avoid repeating the same type too often.
+       - shownAt persisted in localStorage (aihud_shownAt) so refresh doesn't spam repeats.
+   ========================================================= */
 const HUD_CONFIG = {
   interval: 16000,
   timer: null, started: false, bootAt: Date.now(),
@@ -456,6 +621,12 @@ function pick(arr) { return arr && arr.length ? arr[Math.floor(Math.random() * a
 function uniqPush(arr, s) { if (!arr.includes(s)) arr.push(s); }
 
 // --- HUD BORDER ANIMATION (Counter Clockwise from Top-Left) ---
+/* =========================================================
+   HUD border geometry (SVG path generation)
+   ---------------------------------------------------------
+       Calculates a rounded-rect path around the current HUD content size.
+       The SVG path 'hudTracePath' is used by animateHudBorder() to draw a moving trace.
+   ========================================================= */
 function updateHudPathGeometry() {
   const path = document.getElementById("hudTracePath");
   const box = document.getElementById("hudBox");
@@ -614,4 +785,11 @@ function updateHud(data) {
   }
 }
 
+/* =========================================================
+   Boot sequence
+   ---------------------------------------------------------
+       Immediately-invoked async init():
+         - First paint isFirst=true
+         - Then refresh every 60 seconds
+   ========================================================= */
 (async function init() { await load(true); setInterval(() => load(false), 60 * 1000); })();
