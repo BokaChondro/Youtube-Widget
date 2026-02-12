@@ -13,7 +13,7 @@
 
 :root {
   --bg-dark: #050505;
-  --card-bg: #0a0a0a;
+  --card-bg: #000000;
   
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-highlight: rgba(255, 255, 255, 0.05);
@@ -39,7 +39,7 @@
 
 body {
   background-color: var(--bg-dark);
-  color: #e0e0e0;
+  color: #191919;
   font-family: var(--font-data); /* Default to mono for clean look */
   overflow-x: hidden;
   min-height: 100vh;
