@@ -1,42 +1,37 @@
-/* =========================================================
-   public/yt/topcards/style.css — Visual system for cards + HUD
-   ---------------------------------------------------------
-       This file defines:
-             - Layout (grid of 4 cards)
-             - Card look (glass, shadows, glare)
-             - Animations (glow pulse, floating icon, rolling digits)
-             - Sci‑Fi HUD styles (border trace, tag, glitch, icon box)
 
-           NOTE: App logic lives in app.js; CSS only handles appearance/animation.
+### public/yt/topcards/style.css
+
+```css
+/* =========================================================
+   public/yt/topcards/style.css — CYBERPUNK UPGRADE
+   ---------------------------------------------------------
+   Updates:
+   - Task A: Sci-Fi Fonts, Neon Borders, Scanlines
+   - Task B: Responsive Grid (minmax/clamp)
+   - Task D: Glitch Animations
    ========================================================= */
 
-/* =========================================================
-   Theme tokens (CSS variables)
-   ---------------------------------------------------------
-       These variables are the design system knobs:
-         --bg, --card, --line, text opacity colors, and tier colors (if defined here).
-       app.js sets per-card tier via inline CSS vars (e.g., --c-tier).
-   ========================================================= */
 :root {
-  --bg-dark: #191919;
-  --card-bg: #000000;
+  --bg-dark: #050505;
+  --card-bg: #0a0a0a;
   
-  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-border: rgba(255, 255, 255, 0.1);
   --glass-highlight: rgba(255, 255, 255, 0.05);
 
-  --c-red: #fe0000;
-  --c-green: #00ff00;
-  --c-blue: #0073ff;
-  --c-yellow: #fdfe02;
-  --c-purple: #ab20fd;
-  --c-pink: #ff85ef;
-  --c-orange: #ff9500;
+  --c-red: #ff003c;
+  --c-green: #00ff9d;
+  --c-blue: #00f0ff;
+  --c-yellow: #fcee0a;
+  --c-purple: #d600ff;
+  --c-pink: #ff00aa;
+  --c-orange: #ff7b00;
 
   --c-tier: var(--c-yellow);
-  --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-tech: 'JetBrains Mono', monospace;
+  
+  /* Task A: Font Stack Update */
+  --font-main: 'Orbitron', sans-serif; 
+  --font-data: 'JetBrains Mono', monospace;
 
-  /* HUD Timing matches JS */
   --hud-time: 16s;
 }
 
@@ -44,159 +39,258 @@
 
 body {
   background-color: var(--bg-dark);
-  color: #fff;
-  font-family: var(--font-main);
-  overflow: hidden;
-  height: 100vh;
+  color: #e0e0e0;
+  font-family: var(--font-data); /* Default to mono for clean look */
+  overflow-x: hidden;
+  min-height: 100vh;
   display: flex; justify-content: center; align-items: center;
+  /* Task A: Subtle grid background */
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
-.wrap { width: 100%; max-width: 1280px; padding: 10px; } /* Increased max-width for 4 cards */
-/* =========================================================
-   Grid layout: the 4 Top Cards
-   ---------------------------------------------------------
-       .grid controls the width + column layout.
-       If the number of cards changes in the future, this is where column template will be adjusted.
-   ========================================================= */
-.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; perspective: 1000px; } /* 4 Columns */
+/* Task B: Responsive Wrap */
+.wrap { 
+  width: 100%; 
+  max-width: 1600px; /* Increased max width */
+  padding: 20px; 
+}
 
-/* --- CARD CORE (LOCKED) --- */
+/* Task B: Responsive Grid using auto-fit + minmax */
+.grid { 
+  display: grid; 
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+  gap: 16px; 
+} 
+
 /* =========================================================
-   Card core (glass panel)
+   CARD STYLES (CYBERPUNK)
    ---------------------------------------------------------
-       Core card container:
-         - background + border
-         - rounding + overflow (to clip glare and float icons)
-         - transition for hover/tilt and glow pulse
+   Removed 3D tilt perspective. Added neon hover glow.
    ========================================================= */
 .card {
   position: relative;
-  background:
-    radial-gradient(circle at 18% 18%, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.00) 60%),
-    radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--c-tier) 12%, transparent) 0%, transparent 60%),
-    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.00)),
-    var(--card-bg);
+  background: rgba(10, 10, 10, 0.7);
   border: 1px solid var(--glass-border);
-  border-radius: 20px;
+  border-radius: 4px; /* Sharper corners */
   padding: 20px;
   overflow: hidden;
-  box-shadow: 0 4px 30px rgba(0,0,0,0.8);
-  transition: transform 0.1s ease-out, box-shadow 0.3s ease;
-  transform-style: preserve-3d;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
   --logo-url: none;
   opacity: 1;
-  border-left: 1px solid var(--glass-border);
-  border-bottom: 1px solid var(--glass-border);
+  border-left: 2px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(12px);
 }
+
 .card-enter { animation: cardFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 @keyframes cardFadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-.card:hover { z-index: 10; box-shadow: 0 20px 60px -10px rgba(0,0,0,0.95), 0 0 20px var(--glass-highlight); }
+
+/* Task A: Neon Hover Effect */
+.card:hover { 
+  z-index: 10; 
+  transform: translateY(-2px);
+  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.8), 0 0 15px color-mix(in srgb, var(--c-tier) 30%, transparent);
+  border-color: color-mix(in srgb, var(--c-tier) 50%, transparent);
+  border-left-color: var(--c-tier);
+}
+
+/* Pulsing Logo Bg */
 .card::before {
   content: ""; position: absolute; top: 50%; left: 50%; width: 60%; height: 60%;
   transform: translate(-50%, -50%); background-color: #000; background-image: var(--logo-url);
   background-size: contain; background-repeat: no-repeat; background-position: center;
-  opacity: 0.5; mix-blend-mode: screen; filter: grayscale(100%) contrast(1.2); z-index: 0; pointer-events: none;
+  opacity: 0.3; mix-blend-mode: screen; filter: grayscale(100%) contrast(1.2); z-index: 0; pointer-events: none;
   animation: logoBreath 10s ease-in-out infinite;
 }
-@keyframes logoBreath { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; } 50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.6; } }
-/* =========================================================
-   Glare overlay (specular sweep)
-   ---------------------------------------------------------
-       Each card and the HUD contains a .glare element.
-       It sits absolutely positioned on top and uses gradients to simulate light reflections.
-   ========================================================= */
+@keyframes logoBreath { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; } 50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.4; } }
+
+/* Glare (kept from original) */
 .glare {
   position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 60%, transparent);
-  transform: skewX(-25deg); pointer-events: none; z-index: 1; animation: glareSweep 6s infinite ease-in-out;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.02) 60%, transparent);
+  transform: skewX(-25deg); pointer-events: none; z-index: 1; animation: glareSweep 8s infinite ease-in-out;
 }
 @keyframes glareSweep { 0%, 40% { left: -100%; } 100% { left: 200%; } }
+
+/* Scanline Overlay (New) */
 .card::after {
-  content: ""; position: absolute; top: -60px; right: -60px; width: 180px; height: 180px;
-  background: radial-gradient(circle, var(--c-tier) 0%, transparent 70%); opacity: 0.08; filter: blur(50px); z-index: 0; pointer-events: none;
+  content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  z-index: 2; background-size: 100% 2px, 3px 100%; pointer-events: none;
 }
-.cardTop, .midRow, .weekLine, .metaRow, .milestoneBox { position: relative; z-index: 2; }
+
+.cardTop, .midRow, .weekLine, .metaRow, .milestoneBox { position: relative; z-index: 3; }
 .cardTop { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-.left { display: flex; align-items: center; gap: 10px; }
-.iconBox { width: 36px; height: 36px; background: rgba(255,255,255,0.08); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; transition: all 0.3s ease; }
-.icon { width: 20px; height: 20px; fill: currentColor; }
+.left { display: flex; align-items: center; gap: 12px; }
+
+/* Icon Box Upgrade */
+.iconBox { 
+  width: 40px; height: 40px; 
+  background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px; /* Square sci-fi look */
+  display: flex; align-items: center; justify-content: center; 
+  color: var(--c-tier); 
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+  transition: all 0.3s ease; 
+}
+.icon { width: 22px; height: 22px; fill: currentColor; filter: drop-shadow(0 0 5px currentColor); }
+
+/* Typography Upgrades */
 .titles { display: flex; flex-direction: column; }
-.title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95); }
-.subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; }
-.chip { display: flex; align-items: center; gap: 6px; background: rgba(30,30,30,0.5); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: #555; box-shadow: 0 0 8px currentColor; }
-.chipText { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8); }
-.midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 40px; }
-.bigNumber { display: flex; align-items: baseline; gap: 4px; font-size: 28px; font-weight: 700; text-shadow: 0 4px 20px rgba(0,0,0,0.5); font-feature-settings: "tnum"; color: #fff; }
-.mainArrow { font-size: 20px; transform: translateY(-2px); }
-.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 4px var(--c-tier)); }
+.title { 
+  font-family: var(--font-main); 
+  font-size: 14px; 
+  font-weight: 700; 
+  color: #fff; 
+  letter-spacing: 1px; 
+  text-transform: uppercase; 
+}
+.subtitle { 
+  font-family: var(--font-data); 
+  font-size: 10px; 
+  font-weight: 400; 
+  color: rgba(255,255,255,0.5); 
+  text-transform: uppercase; 
+  letter-spacing: 1px; 
+}
+
+.chip { 
+  display: flex; align-items: center; gap: 6px; 
+  background: rgba(0,0,0,0.6); 
+  padding: 4px 10px; 
+  border-radius: 2px; /* Tech corners */
+  border: 1px solid rgba(255,255,255,0.15); 
+}
+.dot { width: 6px; height: 6px; border-radius: 0; /* Square dot */ background: #555; box-shadow: 0 0 8px currentColor; }
+.chipText { font-family: var(--font-data); font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.9); text-transform: uppercase; }
+
+.midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 46px; }
+.bigNumber { 
+  display: flex; align-items: baseline; gap: 6px; 
+  font-family: var(--font-main); /* Sci-Fi Number */
+  font-size: 32px; font-weight: 700; 
+  color: #fff; 
+  text-shadow: 0 0 15px rgba(255,255,255,0.1); 
+  font-feature-settings: "tnum"; 
+}
+.mainArrow { font-size: 20px; transform: translateY(-4px); }
+.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 5px var(--c-tier)); }
 .spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+
 .milestoneBox { margin-bottom: 12px; }
-.milestoneText { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 4px; }
-.milestoneText b { color: #fff; }
-.progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
-.progressFill { height: 100%; width: 0%; background: var(--c-tier); box-shadow: 0 0 10px var(--c-tier); border-radius: 2px; transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
-.weekLine { font-size: 12px; color: rgba(255,255,255,0.9); padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; }
+.milestoneText { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.6); margin-bottom: 4px; text-transform: uppercase; font-family: var(--font-data); }
+.milestoneText b { color: #fff; font-weight: 700; }
+.progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); overflow: hidden; }
+.progressFill { height: 100%; width: 0%; background: var(--c-tier); box-shadow: 0 0 8px var(--c-tier); transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
+
+.weekLine { 
+  font-family: var(--font-data);
+  font-size: 11px; 
+  color: rgba(255,255,255,0.8); 
+  padding-bottom: 12px; 
+  margin-bottom: 12px; 
+  border-bottom: 1px dashed rgba(255,255,255,0.15); 
+  display: flex; justify-content: space-between; 
+  text-transform: uppercase;
+}
+
 .metaRow { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
 .metaItem { display: flex; flex-direction: column; gap: 2px; }
-.metaLabel { font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase; }
-.metaValue { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.9); font-feature-settings: "tnum"; }
-.vsNum.pos { color: var(--c-green); } .vsNum.neg { color: var(--c-red); } .vsNum.neu { color: #888; }
+.metaLabel { font-size: 9px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px; }
+.metaValue { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.9); font-feature-settings: "tnum"; font-family: var(--font-data); }
+
+.vsNum.pos { color: var(--c-green); text-shadow: 0 0 5px rgba(0,255,157,0.3); } 
+.vsNum.neg { color: var(--c-red); text-shadow: 0 0 5px rgba(255,0,60,0.3); } 
+.vsNum.neu { color: #888; }
 .vsArrow.pos { color: var(--c-green); } .vsArrow.neg { color: var(--c-red); }
-.foot { margin-top: 15px; text-align: center; font-size: 10px; color: rgba(255,255,255,0.2); }
-.toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px); background: rgba(0,255,153,0.15); border: 1px solid rgba(0,255,153,0.3); color: #00ff99; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; opacity: 0; transition: all 0.3s ease; pointer-events: none; z-index: 100; }
+
+.foot { margin-top: 20px; text-align: right; font-size: 10px; color: rgba(255,255,255,0.2); font-family: var(--font-data); letter-spacing: 1px; }
+
+.toast { 
+  position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px); 
+  background: rgba(0,0,0,0.8); border: 1px solid var(--c-green); 
+  color: var(--c-green); padding: 6px 16px; font-family: var(--font-data);
+  font-size: 12px; font-weight: 600; opacity: 0; transition: all 0.3s ease; 
+  pointer-events: none; z-index: 100; letter-spacing: 1px;
+}
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-/* =========================================================
-   Floating icon animation (spawnFloatIcon)
-   ---------------------------------------------------------
-       .floatIcon is a temporary element inserted by JS on positive changes.
-       Keyframes control:
-         - upward drift
-         - fade-out
-         - slight scale
-   ========================================================= */
-.floatIcon { position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff; filter: drop-shadow(0 0 8px rgba(255,255,255,0.9)); pointer-events: none; z-index: 20; transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards; }
+
+/* Float Icons */
+.floatIcon { position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff; filter: drop-shadow(0 0 10px #fff); pointer-events: none; z-index: 20; transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards; }
 @keyframes floatSequence { 0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); } 20%, 80% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); } 100% { opacity: 0; transform: translate(-50%, -60px) scale(1); } }
-/* =========================================================
-   Rolling digits styles (ensureRoll / animateCasinoRoll)
-   ---------------------------------------------------------
-       rollWrap/rollCol/rollLine implement a slot-machine style vertical digit stack.
-       JS changes translateY on .rollCol to roll to the next digit.
-   ========================================================= */
+
+/* Roll Animation */
 .rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
 .rollCol { display: flex; flex-direction: column; }
 .rollLine { height: 1.1em; line-height: 1.1em; display: block; }
-@keyframes glowOnceBox { 0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); color: #fff; } 50% { box-shadow: 0 0 18px var(--c-tier); color: var(--c-tier); } }
-@keyframes glowOnceChip { 0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); } 50% { box-shadow: 0 0 18px var(--c-tier); } }
-.card.glow-once .iconBox { animation: glowOnceBox 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
-.card.glow-once .chip { animation: glowOnceChip 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
 
-@media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .card { margin-bottom: 10px; } }
+/* Glow Once (Flash update) */
+@keyframes glowOnceBox { 0%, 100% { box-shadow: inset 0 0 10px rgba(0,0,0,0.5); color: var(--c-tier); } 50% { box-shadow: 0 0 20px var(--c-tier), inset 0 0 10px var(--c-tier); color: #fff; } }
+@keyframes glowOnceChip { 0%, 100% { box-shadow: none; border-color: rgba(255,255,255,0.15); } 50% { box-shadow: 0 0 15px var(--c-tier); border-color: var(--c-tier); } }
+.card.glow-once .iconBox { animation: glowOnceBox 2s cubic-bezier(0.22, 1, 0.36, 1) 1; }
+.card.glow-once .chip { animation: glowOnceChip 2s cubic-bezier(0.22, 1, 0.36, 1) 1; }
 
-/* --- HUD (SCI-FI TRACE) --- */
 /* =========================================================
-   Sci‑Fi HUD container
+   TASK D: RANDOM GLITCH EFFECTS
    ---------------------------------------------------------
-       The HUD is a separate component under the grid:
-         - its own glare
-         - an SVG path border (hud-border-svg + hudTracePath)
-         - content area (icon + tag + message)
-         - glitch-active class triggers small distortions
+   Classes applied by JS to random elements.
    ========================================================= */
-.hud-box {
-  position: relative; margin-top: 20px; width: 100%;
-  background: rgba(8, 8, 8, 0.85);
-  border-radius: 12px;
-  padding: 18px 24px;
-  overflow: hidden;
-  backdrop-filter: blur(40px); /* Heavy glass */
-  box-shadow: inset 0 0 20px rgba(255,255,255,0.05), 0 20px 50px -10px rgba(0,0,0,0.9);
-  display: flex; flex-direction: column;
-  --hud-accent: var(--c-blue); /* Dynamic */
+.cyber-glitch {
+  position: relative;
+  animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both infinite;
+  color: #fff;
+}
+.cyber-glitch::before, .cyber-glitch::after {
+  content: attr(data-text);
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+}
+.cyber-glitch::before {
+  left: 2px; text-shadow: -1px 0 #ff00c1; clip: rect(44px, 450px, 56px, 0);
+  animation: glitch-anim 2s infinite linear alternate-reverse;
+}
+.cyber-glitch::after {
+  left: -2px; text-shadow: -1px 0 #00fff9; clip: rect(44px, 450px, 56px, 0);
+  animation: glitch-anim2 2s infinite linear alternate-reverse;
 }
 
-/* Border Trace SVG (Absolute Overlay) */
+@keyframes glitch-skew {
+  0% { transform: skew(0deg); }
+  20% { transform: skew(-2deg); }
+  40% { transform: skew(2deg); }
+  60% { transform: skew(-1deg); }
+  80% { transform: skew(1deg); }
+  100% { transform: skew(0deg); }
+}
+@keyframes glitch-anim {
+  0% { clip: rect(12px, 9999px, 32px, 0); }
+  50% { clip: rect(65px, 9999px, 80px, 0); }
+  100% { clip: rect(3px, 9999px, 15px, 0); }
+}
+@keyframes glitch-anim2 {
+  0% { clip: rect(82px, 9999px, 99px, 0); }
+  50% { clip: rect(2px, 9999px, 40px, 0); }
+  100% { clip: rect(55px, 9999px, 68px, 0); }
+}
+
+/* =========================================================
+   HUD (Cyberpunk Trace)
+   ========================================================= */
+.hud-box {
+  position: relative; margin-top: 24px; width: 100%;
+  background: rgba(5, 5, 5, 0.9);
+  border-radius: 4px;
+  padding: 24px 30px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px -10px rgba(0,0,0,0.9);
+  display: flex; flex-direction: column;
+  --hud-accent: var(--c-blue);
+  border-left: 4px solid var(--hud-accent); /* Solid anchor */
+}
+
 .hud-border-svg {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   pointer-events: none; z-index: 10;
@@ -204,84 +298,54 @@ body {
 .hud-border-svg path {
   fill: none;
   stroke: var(--hud-accent);
-  stroke-width: 3px;
+  stroke-width: 2px;
   stroke-linecap: square;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 10px var(--hud-accent));
-  /* Animation controlled by JS transition of dashoffset */
+  filter: drop-shadow(0 0 8px var(--hud-accent));
 }
 
-/* Content */
-.hud-content {
-  display: flex; align-items: center; gap: 20px; position: relative; z-index: 2;
-}
+.hud-content { display: flex; align-items: center; gap: 24px; position: relative; z-index: 2; }
 
 .hud-icon-box {
-  width: 44px; height: 44px;
-  background: rgba(255,255,255,0.03);
+  width: 48px; height: 48px;
+  background: rgba(255,255,255,0.02);
   border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 0 15px rgba(0,0,0,0.3);
-  color: var(--hud-accent); /* Icon inherits this */
-}
-.hud-icon svg {
-  width: 24px; height: 24px;
-  fill: currentColor;
-  filter: drop-shadow(0 0 8px currentColor);
-}
-
-.hud-text-area {
-  display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0;
-}
-
-/* Header */
-.hud-header {
-  display: flex; align-items: center; gap: 10px;
-}
-.hud-sys {
-  font-family: var(--font-tech);
-  font-size: 11px;
-  color: rgba(255,255,255,0.4);
-  letter-spacing: 1px;
-}
-.hud-tag {
-  font-family: var(--font-tech);
-  font-size: 11px;
-  font-weight: 700;
   color: var(--hud-accent);
-  text-shadow: 0 0 10px var(--hud-accent);
-  letter-spacing: 1.5px;
+  box-shadow: 0 0 15px rgba(0,0,0,0.5);
 }
+.hud-icon svg { width: 28px; height: 28px; fill: currentColor; filter: drop-shadow(0 0 8px currentColor); }
 
-/* Message */
+.hud-text-area { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+
+.hud-header { display: flex; align-items: center; gap: 12px; }
+.hud-sys { font-family: var(--font-data); font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 2px; }
+.hud-tag { font-family: var(--font-main); font-size: 12px; font-weight: 700; color: var(--hud-accent); text-shadow: 0 0 10px var(--hud-accent); letter-spacing: 2px; }
+
 .hud-message-mask { overflow: hidden; }
 .hud-message {
-  font-family: var(--font-main);
-  font-size: 15px;
-  font-weight: 700;
+  font-family: var(--font-data);
+  font-size: 14px;
+  font-weight: 400;
   color: #fff;
-  line-height: 1.3;
+  line-height: 1.4;
   text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
-/* Glitch Animation */
-.glitch-active .hud-tag,
-.glitch-active .hud-message,
-.glitch-active .hud-icon {
-  animation: glitchAnim 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-}
-
-@keyframes glitchAnim {
+/* Glitch Animation for Message Swap (Existing) */
+.glitch-active .hud-tag, .glitch-active .hud-message, .glitch-active .hud-icon { animation: glitchMsg 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
+@keyframes glitchMsg {
   0% { transform: translate(0); opacity: 0; }
-  20% { transform: translate(-2px, 2px); opacity: 1; }
-  40% { transform: translate(2px, -2px); }
+  20% { transform: translate(-3px, 3px); opacity: 1; }
+  40% { transform: translate(3px, -3px); }
   60% { transform: translate(0); }
   100% { transform: translate(0); opacity: 1; }
 }
 
 @media (max-width: 600px) {
-  .hud-box { padding: 14px; }
-  .hud-message { font-size: 13px; }
+  .hud-box { padding: 16px; }
+  .hud-message { font-size: 12px; }
   .hud-icon-box { width: 36px; height: 36px; }
 }
