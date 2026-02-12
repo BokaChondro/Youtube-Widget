@@ -1,3 +1,22 @@
+/* =========================================================
+   public/yt/topcards/style.css — Visual system for cards + HUD
+   ---------------------------------------------------------
+       This file defines:
+             - Layout (grid of 4 cards)
+             - Card look (glass, shadows, glare)
+             - Animations (glow pulse, floating icon, rolling digits)
+             - Sci‑Fi HUD styles (border trace, tag, glitch, icon box)
+
+           NOTE: App logic lives in app.js; CSS only handles appearance/animation.
+   ========================================================= */
+
+/* =========================================================
+   Theme tokens (CSS variables)
+   ---------------------------------------------------------
+       These variables are the design system knobs:
+         --bg, --card, --line, text opacity colors, and tier colors (if defined here).
+       app.js sets per-card tier via inline CSS vars (e.g., --c-tier).
+   ========================================================= */
 :root {
   --bg-dark: #191919;
   --card-bg: #000000;
@@ -33,9 +52,23 @@ body {
 }
 
 .wrap { width: 100%; max-width: 1280px; padding: 10px; } /* Increased max-width for 4 cards */
+/* =========================================================
+   Grid layout: the 4 Top Cards
+   ---------------------------------------------------------
+       .grid controls the width + column layout.
+       If the number of cards changes in the future, this is where column template will be adjusted.
+   ========================================================= */
 .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; perspective: 1000px; } /* 4 Columns */
 
 /* --- CARD CORE (LOCKED) --- */
+/* =========================================================
+   Card core (glass panel)
+   ---------------------------------------------------------
+       Core card container:
+         - background + border
+         - rounding + overflow (to clip glare and float icons)
+         - transition for hover/tilt and glow pulse
+   ========================================================= */
 .card {
   position: relative;
   background:
@@ -66,6 +99,12 @@ body {
   animation: logoBreath 10s ease-in-out infinite;
 }
 @keyframes logoBreath { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; } 50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.6; } }
+/* =========================================================
+   Glare overlay (specular sweep)
+   ---------------------------------------------------------
+       Each card and the HUD contains a .glare element.
+       It sits absolutely positioned on top and uses gradients to simulate light reflections.
+   ========================================================= */
 .glare {
   position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 60%, transparent);
@@ -107,8 +146,23 @@ body {
 .foot { margin-top: 15px; text-align: center; font-size: 10px; color: rgba(255,255,255,0.2); }
 .toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px); background: rgba(0,255,153,0.15); border: 1px solid rgba(0,255,153,0.3); color: #00ff99; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; opacity: 0; transition: all 0.3s ease; pointer-events: none; z-index: 100; }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+/* =========================================================
+   Floating icon animation (spawnFloatIcon)
+   ---------------------------------------------------------
+       .floatIcon is a temporary element inserted by JS on positive changes.
+       Keyframes control:
+         - upward drift
+         - fade-out
+         - slight scale
+   ========================================================= */
 .floatIcon { position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff; filter: drop-shadow(0 0 8px rgba(255,255,255,0.9)); pointer-events: none; z-index: 20; transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards; }
 @keyframes floatSequence { 0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); } 20%, 80% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); } 100% { opacity: 0; transform: translate(-50%, -60px) scale(1); } }
+/* =========================================================
+   Rolling digits styles (ensureRoll / animateCasinoRoll)
+   ---------------------------------------------------------
+       rollWrap/rollCol/rollLine implement a slot-machine style vertical digit stack.
+       JS changes translateY on .rollCol to roll to the next digit.
+   ========================================================= */
 .rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
 .rollCol { display: flex; flex-direction: column; }
 .rollLine { height: 1.1em; line-height: 1.1em; display: block; }
@@ -121,6 +175,15 @@ body {
 @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .card { margin-bottom: 10px; } }
 
 /* --- HUD (SCI-FI TRACE) --- */
+/* =========================================================
+   Sci‑Fi HUD container
+   ---------------------------------------------------------
+       The HUD is a separate component under the grid:
+         - its own glare
+         - an SVG path border (hud-border-svg + hudTracePath)
+         - content area (icon + tag + message)
+         - glitch-active class triggers small distortions
+   ========================================================= */
 .hud-box {
   position: relative; margin-top: 20px; width: 100%;
   background: rgba(8, 8, 8, 0.85);
