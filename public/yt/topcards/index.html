@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- =======================================================
      public/yt/topcards/index.html
-     Sci-Fi Theme v7 (Smooth Morphing Sparklines)
+     Sci-Fi Theme v8 (Bug Fixes & Celebration Mode)
      ======================================================= -->
 <html>
 <head>
@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="./style.css?v=scifi_v7" />
+  <link rel="stylesheet" href="./style.css?v=scifi_v8" />
 </head>
 <body>
   <div class="wrap">
@@ -34,9 +34,13 @@
           <div class="bigNumber"><span id="subsNow" class="glitch-target">—</span><span class="mainArrow" id="subsMainArrow">—</span></div>
           <svg class="spark" id="subsSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="subsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="subsSparkPath" d="" fill="none" /></svg>
         </div>
-        <div class="milestoneBox">
-          <div class="milestoneText"><span>NEXT TARGET: <b id="subsNextGoal">—</b></span><span id="subsNextPct">0%</span></div>
-          <div class="progressBg"><div class="progressFill" id="subsProgressFill"></div></div>
+        <!-- Dual Layer Milestone Box for Celebration Swap -->
+        <div class="milestoneBox" id="subsMilestoneBox">
+          <div class="milestone-default">
+            <div class="milestoneText"><span>NEXT TARGET: <b id="subsNextGoal">—</b></span><span id="subsNextPct">0%</span></div>
+            <div class="progressBg"><div class="progressFill" id="subsProgressFill"></div></div>
+          </div>
+          <div class="milestone-celebrate">WOW! NEW SUBSCRIBER!</div>
         </div>
         <div class="weekLine" id="subsWeek">LAST 7D: —</div>
         <div class="metaRow">
@@ -60,9 +64,12 @@
           <div class="bigNumber"><span id="rtNow" class="glitch-target">—</span><span class="mainArrow" id="rtMainArrow">—</span></div>
           <svg class="spark" id="rtSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="rtSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="rtSparkPath" d="" fill="none" /></svg>
         </div>
-        <div class="milestoneBox">
-          <div class="milestoneText"><span>NEXT TARGET: <b id="rtNextGoal">—</b></span><span id="rtNextPct">0%</span></div>
-          <div class="progressBg"><div class="progressFill" id="rtProgressFill"></div></div>
+        <div class="milestoneBox" id="rtMilestoneBox">
+          <div class="milestone-default">
+            <div class="milestoneText"><span>NEXT TARGET: <b id="rtNextGoal">—</b></span><span id="rtNextPct">0%</span></div>
+            <div class="progressBg"><div class="progressFill" id="rtProgressFill"></div></div>
+          </div>
+          <div class="milestone-celebrate">PEOPLE WATCHING!</div>
         </div>
         <div class="weekLine" id="rtPacing">LAST HOUR: —</div>
         <div class="metaRow">
@@ -86,9 +93,12 @@
           <div class="bigNumber"><span id="viewsTotal" class="glitch-target">—</span><span class="mainArrow" id="viewsMainArrow">—</span></div>
           <svg class="spark" id="viewsSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="viewsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="viewsSparkPath" d="" fill="none" /></svg>
         </div>
-        <div class="milestoneBox">
-          <div class="milestoneText"><span>NEXT TARGET: <b id="viewsNextGoal">—</b></span><span id="viewsNextPct">0%</span></div>
-          <div class="progressBg"><div class="progressFill" id="viewsProgressFill"></div></div>
+        <div class="milestoneBox" id="viewsMilestoneBox">
+          <div class="milestone-default">
+            <div class="milestoneText"><span>NEXT TARGET: <b id="viewsNextGoal">—</b></span><span id="viewsNextPct">0%</span></div>
+            <div class="progressBg"><div class="progressFill" id="viewsProgressFill"></div></div>
+          </div>
+          <div class="milestone-celebrate">MORE VIEWS!</div>
         </div>
         <div class="weekLine" id="viewsWeek">LAST 7D: —</div>
         <div class="metaRow">
@@ -112,9 +122,12 @@
           <div class="bigNumber"><span id="watchNow" class="glitch-target">—</span><span class="mainArrow" id="watchMainArrow">—</span></div>
           <svg class="spark" id="watchSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="watchSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="watchSparkPath" d="" fill="none" /></svg>
         </div>
-        <div class="milestoneBox">
-          <div class="milestoneText"><span>NEXT TARGET: <b id="watchNextGoal">—</b></span><span id="watchNextPct">0%</span></div>
-          <div class="progressBg"><div class="progressFill" id="watchProgressFill"></div></div>
+        <div class="milestoneBox" id="watchMilestoneBox">
+          <div class="milestone-default">
+            <div class="milestoneText"><span>NEXT TARGET: <b id="watchNextGoal">—</b></span><span id="watchNextPct">0%</span></div>
+            <div class="progressBg"><div class="progressFill" id="watchProgressFill"></div></div>
+          </div>
+          <div class="milestone-celebrate">MORE WATCH TIME!</div>
         </div>
         <div class="weekLine" id="watchWeek">LAST 7D: —</div>
         <div class="metaRow">
@@ -150,6 +163,6 @@
     <div class="foot" id="updated">SYSTEM INITIALIZING...</div>
   </div>
 
-  <script src="./app.js?v=scifi_v7"></script>
+  <script src="./app.js?v=scifi_v8"></script>
 </body>
 </html>
