@@ -32,8 +32,8 @@ body {
   display: flex; justify-content: center; align-items: center;
 }
 
-.wrap { width: 100%; max-width: 960px; padding: 10px; }
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; perspective: 1000px; }
+.wrap { width: 100%; max-width: 1280px; padding: 10px; } /* Increased max-width for 4 cards */
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; perspective: 1000px; } /* 4 Columns */
 
 /* --- CARD CORE (LOCKED) --- */
 .card {
@@ -116,7 +116,9 @@ body {
 @keyframes glowOnceChip { 0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); } 50% { box-shadow: 0 0 18px var(--c-tier); } }
 .card.glow-once .iconBox { animation: glowOnceBox 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
 .card.glow-once .chip { animation: glowOnceChip 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
-@media (max-width: 700px) { .grid { grid-template-columns: 1fr; } .card { margin-bottom: 10px; } }
+
+@media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .card { margin-bottom: 10px; } }
 
 /* --- HUD (SCI-FI TRACE) --- */
 .hud-box {
