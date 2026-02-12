@@ -1,4 +1,12 @@
 <!doctype html>
+<!-- =======================================================
+     public/yt/topcards/index.html — Static DOM skeleton
+     ---------------------------------------------------------
+         This file is intentionally 'dumb':
+               - It only declares the DOM IDs that app.js will populate.
+               - Each card has consistent sub-IDs (e.g., subsNow/subsDot/subsWeek/...).
+               - The HUD markup lives at the bottom (hudBox / hudMessage / hudTag / hudTracePath).
+     ======================================================= -->
 <html>
 <head>
   <meta charset="utf-8" />
@@ -121,7 +129,16 @@
       </div>
     </div>
 
-    <!-- === SCI-FI HUD === -->
+    <!-- =======================================================
+     HUD mount point
+     ---------------------------------------------------------
+         app.js expects:
+           - #hudBox (main container)
+           - #hudTracePath (SVG path to animate border trace)
+           - #hudIcon, #hudTag, #hudMessage (content)
+         If any of these IDs change, update app.js accordingly.
+     ======================================================= -->
+<!-- === SCI-FI HUD === -->
     <div class="hud-box" id="hudBox">
       <!-- Added Glare Here -->
       <div class="glare"></div>
