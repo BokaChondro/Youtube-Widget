@@ -22,7 +22,7 @@ const FEEDBACK = {
   subs: { red: "Audience Leak", orange: "Slow Convert", yellow: "Steady Growth", green: "Strong Pull", blue: "Rising Fast", purple: "Exceptional" },
   views: { red: "Reach Down", orange: "Low Reach", yellow: "Stable Reach", green: "Reach Up", blue: "Trending", purple: "Viral" },
   watch: { red: "Poor Engage", orange: "Retention Issue", yellow: "Consistent", green: "Engage Up", blue: "Hooked", purple: "Outstanding" },
-  realtime: { red: "Big Drop", orange: "Drop Alert", yellow: "Cooling Off", green: "Good Pace", blue: "Uptrend", purple: "On Fire" }
+  realtime: { red: "Big Drop", orange: "Drop Alert", yellow: "Going Flat", green: "Good Pace", blue: "Uptrend", purple: "On Fire" }
 };
 
 // --- DOM HELPERS ---
@@ -60,11 +60,11 @@ function tierRealtime(last24, prev6Avg, absMin = 100) {
   if (B <= 0) return L > absMin ? "green" : "orange"; // fallback if no history
   const ratio = L / B;
   
-  if (ratio < 0.5) return "red";      // Big Drop
+  if (ratio < 0.4) return "red";      // Big Drop
   if (ratio < 0.7) return "orange";   // Drop Alert
-  if (ratio < 0.9) return "yellow";  // Cooling Off
-  if (ratio < 1.25) return "green";    // Good Pace
-  if (ratio < 1.75) return "blue";     // Uptrend
+  if (ratio < 1.3) return "yellow";  // Going Flat
+  if (ratio < 1.6) return "green";    // Good Pace
+  if (ratio < 2.0) return "blue";     // Uptrend
   return "purple";                    // On Fire
 }
 
