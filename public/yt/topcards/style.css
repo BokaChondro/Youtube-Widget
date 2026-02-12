@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/style.css
-   Sci-Fi Theme v8 (Celebration + Fixes)
+   Sci-Fi Theme v8 (Visual Fixes & Celebration)
    ========================================================= */
 
 :root {
@@ -127,11 +127,11 @@ body {
 .spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 
 /* =========================================================
-   Milestone & Celebration Styles
+   Milestone & Celebration Styles (UPDATED)
    ========================================================= */
 .milestoneBox { 
   position: relative; 
-  height: 46px; /* Fixed height for swap */
+  height: 54px; /* Increased height for larger text */
   margin-bottom: 16px; 
   background: rgba(255,255,255,0.03); 
   border: 1px solid rgba(255,255,255,0.05); 
@@ -142,6 +142,7 @@ body {
 .milestone-default {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   padding: 8px;
+  display: flex; flex-direction: column; justify-content: center;
   transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease;
   transform: translateY(0); opacity: 1;
 }
@@ -151,20 +152,20 @@ body {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-display); 
-  font-size: 14px; font-weight: 700; letter-spacing: 1px;
-  color: var(--c-tier); text-shadow: 0 0 10px var(--c-tier);
+  font-size: 24px; /* Large font to match Main Counter approx */
+  font-weight: 700; letter-spacing: 1px;
+  color: var(--c-tier); text-shadow: 0 0 15px var(--c-tier);
   text-transform: uppercase;
   transform: translateY(100%); opacity: 0;
   transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease;
+  background: rgba(0,0,0,0.8); /* Slight dim for readability */
+  text-align: center;
+  line-height: 1;
 }
 
-/* Celebrating Class on .milestoneBox */
-.milestoneBox.celebrating .milestone-default {
-  transform: translateY(-100%); opacity: 0;
-}
-.milestoneBox.celebrating .milestone-celebrate {
-  transform: translateY(0); opacity: 1;
-}
+/* Celebrating Class Triggers */
+.milestoneBox.celebrating .milestone-default { transform: translateY(-100%); opacity: 0; }
+.milestoneBox.celebrating .milestone-celebrate { transform: translateY(0); opacity: 1; }
 
 .milestoneText { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,0.6); margin-bottom: 6px; text-transform: uppercase; }
 .milestoneText b { color: #fff; font-family: var(--font-display); letter-spacing: 1px; }
@@ -215,23 +216,25 @@ body {
   100% { transform: translate(0); }
 }
 
-/* Floating Celebration Icon */
+/* Floating Celebration Icon (Fixed Color White) */
 .float-celebration {
   position: absolute; 
-  top: 50%; left: 50%; 
-  width: 100px; height: 100px; /* Big Icon */
-  transform: translate(-50%, -50%);
-  fill: var(--c-tier); 
-  filter: drop-shadow(0 0 20px var(--c-tier)); 
-  pointer-events: none; z-index: 20; 
+  top: 100%; left: 50%; /* Start from bottom of visible area */
+  width: 120px; height: 120px; /* Big Icon */
+  transform: translate(-50%, 0);
+  fill: #fff; /* White */
+  color: #fff;
+  filter: drop-shadow(0 0 30px #fff); 
+  pointer-events: none; z-index: 1; /* Behind top elements but above BG */
   opacity: 0;
-  animation: celebrateFloat 15s ease-in-out forwards;
+  animation: celebrateSequence 16.5s ease-in-out forwards;
 }
-@keyframes celebrateFloat {
-  0% { opacity: 0; transform: translate(-50%, -20%) scale(0.5); }
-  5% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); } /* Fast In */
-  80% { opacity: 0.5; transform: translate(-50%, -70%) scale(1.1); } /* Slow Float Up */
-  100% { opacity: 0; transform: translate(-50%, -100%) scale(1.2); } /* Fade Out Top */
+
+@keyframes celebrateSequence {
+  0% { opacity: 0; transform: translate(-50%, 50%) scale(0.5); }
+  10% { opacity: 0.8; transform: translate(-50%, -50%) scale(1); } /* Pop In to Center */
+  90% { opacity: 0.8; transform: translate(-50%, -60%) scale(1.1); } /* Float slowly */
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(1.2); } /* Pop Out Top */
 }
 
 /* Roll Fix */
