@@ -346,25 +346,45 @@ function pick(arr) { return arr && arr.length ? arr[Math.floor(Math.random() * a
 function uniqPush(arr, s) { if (!arr.includes(s)) arr.push(s); }
 
 // --- HUD BORDER ANIMATION (Counter Clockwise from Top-Left) ---
-function initHudBorder() {
+function updateHudPathGeometry() {
   const path = document.getElementById("hudTracePath");
   const box = document.getElementById("hudBox");
   if (!path || !box) return;
 
-  const w = box.offsetWidth - 2; // -2 for stroke width calc offset
+  const w = box.offsetWidth - 2; 
   const h = box.offsetHeight - 2;
   
   // Path: Start Top-Left(0,0) -> Down(0,H) -> Right(W,H) -> Up(W,0) -> Left(0,0)
-  // This is CCW direction.
   const d = `M 1 1 L 1 ${h} L ${w} ${h} L ${w} 1 L 1 1`;
-  
   path.setAttribute("d", d);
+  
+  // Ensure dasharray covers the whole new length so it can appear solid if needed
+  const len = path.getTotalLength() || 1000;
+  path.style.strokeDasharray = len;
+}
+
+function initHudBorder() {
+  updateHudPathGeometry();
+  
+  const path = document.getElementById("hudTracePath");
+  if (!path) return;
   const len = path.getTotalLength() || 1000;
   
   // Reset style for animation start
   path.style.transition = "none";
   path.style.strokeDasharray = len;
   path.style.strokeDashoffset = len; // Hidden start
+
+  // Start ResizeObserver once to handle window resize or fluid layout changes
+  if (!window._hudRo) {
+      const box = document.getElementById("hudBox");
+      if (box) {
+          window._hudRo = new ResizeObserver(() => {
+              updateHudPathGeometry();
+          });
+          window._hudRo.observe(box);
+      }
+  }
 }
 
 function animateHudBorder(color) {
@@ -449,6 +469,9 @@ function showNextIntel() {
     msg.textContent = item.text;
     tag.textContent = item.tag;
     icon.innerHTML = item.icon || "⚡";
+    
+    // RECALCULATE GEOMETRY FOR NEW CONTENT SIZE
+    updateHudPathGeometry();
 
     const c = COLORS[item.type] || COLORS.orange;
     
