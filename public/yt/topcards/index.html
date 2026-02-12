@@ -155,4 +155,209 @@
 
   <script src="./app.js?v=scifi_v1"></script>
 </body>
+</html>      </div>
+
+      <!-- CARD 3: TOTAL VIEWS (LIFETIME) -->
+      <div class="card" id="cardViews">
+        <div class="glare"></div>
+        <div class="cardTop">
+          <div class="left">
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-7 4V8l7 4z"/></svg></div>
+            <div class="titles"><div class="title">Total Views</div><div class="subtitle">Lifetime Index</div></div>
+          </div>
+          <div class="chip"><span class="dot" id="viewsDot"></span><span class="chipText" id="viewsChipText">—</span></div>
+        </div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="viewsTotal" class="glitch-target">—</span><span class="mainArrow" id="viewsMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="viewsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="viewsSparkPath" d="" fill="none" /></svg>
+        </div>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>NEXT TARGET: <b id="viewsNextGoal">—</b></span><span id="viewsNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="viewsProgressFill"></div></div>
+        </div>
+        <div class="weekLine" id="viewsWeek">LAST 7D: —</div>
+        <div class="metaRow">
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="viewsLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="viewsPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 6M BASE</div><div class="metaValue"><span class="vsNum" id="viewsVsNum">—</span><span class="vsArrow" id="viewsVsArrow">—</span></div></div>
+        </div>
+      </div>
+
+      <!-- CARD 4: WATCH HOURS -->
+      <div class="card" id="cardWatch">
+        <div class="glare"></div>
+        <div class="cardTop">
+          <div class="left">
+            <!-- UPDATED ICON: Clock with rising trend -->
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/><path d="M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z"/><path d="M16 4h6v2h-6z"/><path d="M20 7v2h-2V7z"/></svg></div>
+            <div class="titles"><div class="title">Watch Hours</div><div class="subtitle">Consumption</div></div>
+          </div>
+          <div class="chip"><span class="dot" id="watchDot"></span><span class="chipText" id="watchChipText">—</span></div>
+        </div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="watchNow" class="glitch-target">—</span><span class="mainArrow" id="watchMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="watchSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="watchSparkPath" d="" fill="none" /></svg>
+        </div>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>NEXT TARGET: <b id="watchNextGoal">—</b></span><span id="watchNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="watchProgressFill"></div></div>
+        </div>
+        <div class="weekLine" id="watchWeek">LAST 7D: —</div>
+        <div class="metaRow">
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="watchLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="watchPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 6M BASE</div><div class="metaValue"><span class="vsNum" id="watchVsNum">—</span><span class="vsArrow" id="watchVsArrow">—</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === SCI-FI HUD === -->
+    <div class="hud-box" id="hudBox">
+      <div class="glare"></div>
+      <svg class="hud-border-svg" aria-hidden="true">
+        <path id="hudTracePath" d="" />
+      </svg>
+      <div class="hud-content">
+        <div class="hud-icon-box" id="hudIconBox">
+          <span id="hudIcon" class="hud-icon">⚡</span>
+        </div>
+        <div class="hud-text-area">
+          <div class="hud-header">
+            <span class="hud-sys">SYSTEM_FEEDBACK //</span>
+            <span class="hud-tag" id="hudTag">STANDBY</span>
+          </div>
+          <div class="hud-message-mask">
+            <div class="hud-message" id="hudMessage">AWAITING SIGNAL...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- === END HUD === -->
+
+    <div class="foot" id="updated">SYSTEM INITIALIZING...</div>
+  </div>
+
+  <script src="./app.js?v=scifi_v1"></script>
+</body>
+</html>        </div>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>NEXT TARGET: <b id="subsNextGoal">—</b></span><span id="subsNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="subsProgressFill"></div></div>
+        </div>
+        <div class="weekLine" id="subsWeek">LAST 7D: —</div>
+        <div class="metaRow">
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="subsLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="subsPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 6M BASE</div><div class="metaValue"><span class="vsNum" id="subsVsNum">—</span><span class="vsArrow" id="subsVsArrow">—</span></div></div>
+        </div>
+      </div>
+
+      <!-- CARD 2: REALTIME VIEWS (SOLID) -->
+      <div class="card" id="cardRealtime">
+        <div class="glare"></div>
+        <div class="cardTop">
+          <div class="left">
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></div>
+            <div class="titles"><div class="title">Active Views</div><div class="subtitle">Last 48 Hours</div></div>
+          </div>
+          <div class="chip"><span class="dot" id="rtDot"></span><span class="chipText" id="rtChipText">—</span></div>
+        </div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="rtNow" class="glitch-target">—</span><span class="mainArrow" id="rtMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="rtSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="rtSparkPath" d="" fill="none" /></svg>
+        </div>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>NEXT TARGET: <b id="rtNextGoal">—</b></span><span id="rtNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="rtProgressFill"></div></div>
+        </div>
+        <div class="weekLine" id="rtPacing">LAST HOUR: —</div>
+        <div class="metaRow">
+          <div class="metaItem"><div class="metaLabel">LAST 24H</div><div class="metaValue" id="rtLast24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 24H</div><div class="metaValue" id="rtPrev24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 7D AVG</div><div class="metaValue"><span class="vsNum" id="rtVsNum">—</span><span class="vsArrow" id="rtVsArrow">—</span></div></div>
+        </div>
+      </div>
+
+      <!-- CARD 3: TOTAL VIEWS (LIFETIME) -->
+      <div class="card" id="cardViews">
+        <div class="glare"></div>
+        <div class="cardTop">
+          <div class="left">
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-7 4V8l7 4z"/></svg></div>
+            <div class="titles"><div class="title">Total Views</div><div class="subtitle">Lifetime Index</div></div>
+          </div>
+          <div class="chip"><span class="dot" id="viewsDot"></span><span class="chipText" id="viewsChipText">—</span></div>
+        </div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="viewsTotal" class="glitch-target">—</span><span class="mainArrow" id="viewsMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="viewsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="viewsSparkPath" d="" fill="none" /></svg>
+        </div>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>NEXT TARGET: <b id="viewsNextGoal">—</b></span><span id="viewsNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="viewsProgressFill"></div></div>
+        </div>
+        <div class="weekLine" id="viewsWeek">LAST 7D: —</div>
+        <div class="metaRow">
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="viewsLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="viewsPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 6M BASE</div><div class="metaValue"><span class="vsNum" id="viewsVsNum">—</span><span class="vsArrow" id="viewsVsArrow">—</span></div></div>
+        </div>
+      </div>
+
+      <!-- CARD 4: WATCH HOURS -->
+      <div class="card" id="cardWatch">
+        <div class="glare"></div>
+        <div class="cardTop">
+          <div class="left">
+            <!-- UPDATED ICON: Clock with rising trend -->
+            <div class="iconBox"><svg viewBox="0 0 24 24" class="icon"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/><path d="M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z"/><path d="M16 4h6v2h-6z"/><path d="M20 7v2h-2V7z"/></svg></div>
+            <div class="titles"><div class="title">Watch Hours</div><div class="subtitle">Consumption</div></div>
+          </div>
+          <div class="chip"><span class="dot" id="watchDot"></span><span class="chipText" id="watchChipText">—</span></div>
+        </div>
+        <div class="midRow">
+          <div class="bigNumber"><span id="watchNow" class="glitch-target">—</span><span class="mainArrow" id="watchMainArrow">—</span></div>
+          <svg class="spark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="watchSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="watchSparkPath" d="" fill="none" /></svg>
+        </div>
+        <div class="milestoneBox">
+          <div class="milestoneText"><span>NEXT TARGET: <b id="watchNextGoal">—</b></span><span id="watchNextPct">0%</span></div>
+          <div class="progressBg"><div class="progressFill" id="watchProgressFill"></div></div>
+        </div>
+        <div class="weekLine" id="watchWeek">LAST 7D: —</div>
+        <div class="metaRow">
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="watchLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="watchPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">VS 6M BASE</div><div class="metaValue"><span class="vsNum" id="watchVsNum">—</span><span class="vsArrow" id="watchVsArrow">—</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === SCI-FI HUD === -->
+    <div class="hud-box" id="hudBox">
+      <div class="glare"></div>
+      <svg class="hud-border-svg" aria-hidden="true">
+        <path id="hudTracePath" d="" />
+      </svg>
+      <div class="hud-content">
+        <div class="hud-icon-box" id="hudIconBox">
+          <span id="hudIcon" class="hud-icon">⚡</span>
+        </div>
+        <div class="hud-text-area">
+          <div class="hud-header">
+            <span class="hud-sys">SYSTEM_FEEDBACK //</span>
+            <span class="hud-tag" id="hudTag">STANDBY</span>
+          </div>
+          <div class="hud-message-mask">
+            <div class="hud-message" id="hudMessage">AWAITING SIGNAL...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- === END HUD === -->
+
+    <div class="foot" id="updated">SYSTEM INITIALIZING...</div>
+  </div>
+
+  <script src="./app.js?v=scifi_v1"></script>
+</body>
 </html>
