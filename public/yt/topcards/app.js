@@ -53,19 +53,49 @@ function tierFromBaseline(last28, median6m, absMin) {
   return "purple";
 }
 
-function getMilestone(val, type) {
+// Special tier logic for Realtime (Last 24H vs Prev 6D Avg)
+function tierRealtime(last24, prev6Avg, absMin = 100) {
+  const L = Number(last24 || 0);
+  const B = Number(prev6Avg || 0);
+  if (B <= 0) return L > absMin ? "green" : "orange"; // fallback if no history
+  const ratio = L / B;
+  
+  if (ratio < 0.5) return "red";      // Big Drop
+  if (ratio < 0.8) return "orange";   // Drop Alert
+  if (ratio < 0.95) return "yellow";  // Cooling Off
+  if (ratio < 1.2) return "green";    // Good Pace
+  if (ratio < 1.6) return "blue";     // Uptrend
+  return "purple";                    // On Fire
+}
+
+// Updated Milestone Logic: Returns Range { min, max }
+function getMilestoneLimits(val, type) {
   const v = Number(val || 0);
-  if (v < 0) return 100;
+  if (v < 0) return { min: 0, max: 100 };
+
+  // Watch Hours (Specific YT Milestones)
   if (type === "watch") {
-    if (v < 100) return 100;
-    if (v < 4000) return 4000;
-    if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
-    return Math.ceil((v + 1) / 5000) * 5000;
+    if (v < 100) return { min: 0, max: 100 };
+    if (v < 4000) return { min: 100, max: 4000 }; // Monetization jump
+    if (v < 10000) {
+      const step = 1000;
+      const min = Math.floor(v / step) * step;
+      return { min, max: min + step };
+    }
+    const step = 5000;
+    const min = Math.floor(v / step) * step;
+    return { min, max: min + step };
   }
-  if (v < 1000) return Math.ceil((v + 1) / 100) * 100;
-  if (v < 10000) return Math.ceil((v + 1) / 1000) * 1000;
-  if (v < 100000) return Math.ceil((v + 1) / 10000) * 10000;
-  return Math.ceil((v + 1) / 100000) * 100000;
+
+  // Standard (Subs, Views, Realtime)
+  let step = 100;
+  if (v >= 100000) step = 100000; // 100k -> 200k
+  else if (v >= 10000) step = 10000; // 10k -> 20k
+  else if (v >= 1000) step = 1000; // 1k -> 2k
+  else step = 100; // 0 -> 100
+
+  const min = Math.floor(v / step) * step;
+  return { min, max: min + step };
 }
 
 async function fetchJSON(url) {
@@ -259,33 +289,36 @@ function render(data, isFirst) {
   renderPacing("subsWeek", weekly.netSubs, weekly.prevNetSubs);
   setVsRG("subsVsNum", "subsVsArrow", (last28.netSubs || 0) - (data.m28?.avg6m?.netSubs || 0));
   safeSetText("subsLast28", (Number(last28.netSubs) >= 0 ? "+" : "") + fmt(last28.netSubs)); safeSetText("subsPrev28", (Number(prev28.netSubs) >= 0 ? "+" : "") + fmt(prev28.netSubs));
-  const gSubs = getMilestone(cur.subs, "subs"), pSubs = Math.min(100, (cur.subs / gSubs) * 100).toFixed(1);
-  safeSetText("subsNextGoal", fmt(gSubs)); safeSetText("subsNextPct", pSubs + "%"); safeSetStyle("subsProgressFill", "width", pSubs + "%");
+  
+  // MILESTONE SUBS
+  const mSubs = getMilestoneLimits(cur.subs, "subs");
+  const pSubs = Math.min(100, Math.max(0, ((cur.subs - mSubs.min) / (mSubs.max - mSubs.min)) * 100)).toFixed(1);
+  safeSetText("subsNextGoal", fmt(mSubs.max)); 
+  safeSetText("subsNextPct", pSubs + "%"); 
+  safeSetStyle("subsProgressFill", "width", pSubs + "%");
 
-  // 2. REALTIME (NEW)
-  // Baseline check: Comparing 48h view volume against Weekly Average scaled to 2 days? Or just raw?
-  // User asked for VS 6M W-AVG delta. 
-  const rtWeeklyAvg = Number(rt.avg6mWeekly || 0);
-  const rt48h = Number(rt.views48h || 0);
-  // Estimate tier: If 48h views * 3.5 > weeklyAvg, it's doing well.
-  const estWeekly = rt48h * 3.5;
-  const tRt = tierFromBaseline(estWeekly, rtWeeklyAvg, 500); 
-  setCardTheme("cardRealtime", tRt); setChip("rtDot", "rtChipText", tRt, FEEDBACK.realtime[tRt]); setMainArrow("rtMainArrow", tRt);
-  // Use last 7 days from realtime sparkline data
+  // 2. REALTIME (SOLID DATA)
+  const rtLast24 = Number(rt.last24h || 0);
+  const rtPrev6Avg = Number(rt.avgPrior6d || 0); 
+  const vsDelta = Number(rt.vs7dAvgDelta || 0); 
+
+  const tRt = tierRealtime(rtLast24, rtPrev6Avg, 500); 
+  setCardTheme("cardRealtime", tRt); 
+  setChip("rtDot", "rtChipText", tRt, FEEDBACK.realtime[tRt]); 
+  setMainArrow("rtMainArrow", tRt);
+  
   setSpark("rtSparkFill", "rtSparkPath", rt.sparkline || [], tRt);
   renderHourlyPacing("rtPacing", rt.lastHour, rt.prevHour);
-  // Compare Last 24H (rt.last24h) vs 6M W-Avg? No, user said "VS 6M W-AVG".
-  // Let's do Realtime 48H vs W-Avg as the delta, or Last 24H vs W-Avg?
-  // Logic: The "VS" usually compares the "Last X" metric to the Average. 
-  // Here, the bottom metric is "LAST 24H". So I will compare (Last 24H) - (6M W-Avg).
-  // Note: This will be large negative usually. But I will follow the instruction literal.
-  // Actually, "VS 6M W-AVG" implies comparing the card's main metric to it? No, usually it's the period metric.
-  // I will compare 48H (Main Metric) to 6M W-AVG.
-  setVsRG("rtVsNum", "rtVsArrow", rt48h - rtWeeklyAvg);
-  safeSetText("rtLast24", fmt(rt.last24h)); safeSetText("rtPrev24", fmt(rt.prev24h));
-  const gRt = getMilestone(cur.rt, "views"); // Milestone logic based on views
-  const pRt = Math.min(100, (cur.rt / gRt) * 100).toFixed(1);
-  safeSetText("rtNextGoal", fmt(gRt)); safeSetText("rtNextPct", pRt + "%"); safeSetStyle("rtProgressFill", "width", pRt + "%");
+  setVsRG("rtVsNum", "rtVsArrow", vsDelta);
+  safeSetText("rtLast24", fmt(rt.last24h)); 
+  safeSetText("rtPrev24", fmt(rt.prev24h));
+  
+  // MILESTONE REALTIME
+  const mRt = getMilestoneLimits(cur.rt, "views");
+  const pRt = Math.min(100, Math.max(0, ((cur.rt - mRt.min) / (mRt.max - mRt.min)) * 100)).toFixed(1);
+  safeSetText("rtNextGoal", fmt(mRt.max)); 
+  safeSetText("rtNextPct", pRt + "%"); 
+  safeSetStyle("rtProgressFill", "width", pRt + "%");
 
   // 3. VIEWS (LIFETIME)
   const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
@@ -294,8 +327,13 @@ function render(data, isFirst) {
   renderPacing("viewsWeek", weekly.views, weekly.prevViews);
   setVsRG("viewsVsNum", "viewsVsArrow", (last28.views || 0) - (data.m28?.avg6m?.views || 0));
   safeSetText("viewsLast28", fmt(last28.views)); safeSetText("viewsPrev28", fmt(prev28.views));
-  const gViews = getMilestone(cur.views, "views"), pViews = Math.min(100, (cur.views / gViews) * 100).toFixed(1);
-  safeSetText("viewsNextGoal", fmt(gViews)); safeSetText("viewsNextPct", pViews + "%"); safeSetStyle("viewsProgressFill", "width", pViews + "%");
+  
+  // MILESTONE VIEWS
+  const mViews = getMilestoneLimits(cur.views, "views");
+  const pViews = Math.min(100, Math.max(0, ((cur.views - mViews.min) / (mViews.max - mViews.min)) * 100)).toFixed(1);
+  safeSetText("viewsNextGoal", fmt(mViews.max)); 
+  safeSetText("viewsNextPct", pViews + "%"); 
+  safeSetStyle("viewsProgressFill", "width", pViews + "%");
 
   // 4. WATCH HOURS
   const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
@@ -304,8 +342,13 @@ function render(data, isFirst) {
   renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
   setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (data.m28?.avg6m?.watchHours || 0), 1, "h");
   safeSetText("watchLast28", fmt(last28.watchHours) + "h"); safeSetText("watchPrev28", fmt(prev28.watchHours) + "h");
-  const gWatch = getMilestone(cur.watch, "watch"), pWatch = Math.min(100, (cur.watch / gWatch) * 100).toFixed(1);
-  safeSetText("watchNextGoal", fmt(gWatch)); safeSetText("watchNextPct", pWatch + "%"); safeSetStyle("watchProgressFill", "width", pWatch + "%");
+  
+  // MILESTONE WATCH
+  const mWatch = getMilestoneLimits(cur.watch, "watch");
+  const pWatch = Math.min(100, Math.max(0, ((cur.watch - mWatch.min) / (mWatch.max - mWatch.min)) * 100)).toFixed(1);
+  safeSetText("watchNextGoal", fmt(mWatch.max)); 
+  safeSetText("watchNextPct", pWatch + "%"); 
+  safeSetStyle("watchProgressFill", "width", pWatch + "%");
 
   // ANIMATIONS
   const subsEl = document.getElementById("subsNow"), rtEl = document.getElementById("rtNow"), viewsEl = document.getElementById("viewsTotal"), watchEl = document.getElementById("watchNow");
@@ -503,7 +546,7 @@ function buildIntel(data) {
     out.push({ key: "lv_stat", cat: "video", weight: 2.8, icon: HUD_ICONS.rocket, tag: "LATEST", type: "purple", text: `LATEST UPLOAD: "${lv.title.toUpperCase()}" — ${fmt(vViews)} VIEWS.` });
   }
 
-  const nextSub = getMilestone(Number(ch.subscribers||0), "subs");
+  const nextSub = getMilestoneLimits(Number(ch.subscribers||0), "subs").max;
   if (nextSub > Number(ch.subscribers||0)) out.push({ key: "goal", cat: "goal", weight: 1.4, icon: HUD_ICONS.target, tag: "MILESTONE", type: "blue", text: `${fmt(nextSub - Number(ch.subscribers))} SUBS REMAINING TO REACH ${fmt(nextSub)}.` });
 
   const tip = pick(KB.tips); if (tip) out.push({ key: "tip", cat: "tip", weight: 0.4, icon: HUD_ICONS.bulb, tag: "TIP", type: "yellow", text: tip.toUpperCase() });
