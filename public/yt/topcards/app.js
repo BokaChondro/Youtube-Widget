@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic Update (Glitch Effects + No Tilt)
+   Sci-Fi Logic Update v2 (Glitch Text, Triangles, Aurora Mode)
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -10,9 +10,6 @@ function fmt(n) { return NF_INT.format(Number(n || 0)); }
 function fmt1(n) { return NF_1.format(Number(n || 0)); }
 function nowStamp() { return new Date().toLocaleTimeString(); }
 
-/* =========================================================
-   Neon Palette
-   ========================================================= */
 const COLORS = {
   green:  "#00ff66",
   red:    "#ff003c",
@@ -36,14 +33,14 @@ function safeSetText(id, text) { const el = document.getElementById(id); if (el)
 function safeSetStyle(id, prop, val) { const el = document.getElementById(id); if (el) el.style[prop] = val; }
 function safeSetHTML(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
 
-// --- LOGIC ---
+// --- TRIANGLE ARROWS ---
 function tierArrow(tier) {
-  if (tier === "red") return "↓↓";
-  if (tier === "orange") return "↓";
-  if (tier === "yellow") return "-";
-  if (tier === "green") return "↑";
-  if (tier === "blue") return "↑↑";
-  return "⟰";
+  if (tier === "red") return "▼▼";
+  if (tier === "orange") return "▼";
+  if (tier === "yellow") return "—";
+  if (tier === "green") return "▲";
+  if (tier === "blue") return "▲▲";
+  return "▲▲▲"; // Purple
 }
 
 function tierFromBaseline(last28, median6m, absMin) {
@@ -122,7 +119,7 @@ function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   const d = Number(delta || 0);
   numEl.className = d > 0 ? "vsNum pos" : (d < 0 ? "vsNum neg" : "vsNum neu");
   arrEl.className = d > 0 ? "vsArrow pos" : (d < 0 ? "vsArrow neg" : "vsArrow neu");
-  arrEl.textContent = d > 0 ? "↑" : (d < 0 ? "↓" : "–");
+  arrEl.textContent = d > 0 ? "▲" : (d < 0 ? "▼" : "—");
   const absTxt = decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)));
   numEl.textContent = absTxt + suffix;
 }
@@ -257,21 +254,44 @@ function spawnFloatIcon(cardId, type) {
   card.appendChild(el); setTimeout(() => el.remove(), 7000);
 }
 
-function triggerGlowOnce(cardId) {
-  const card = document.getElementById(cardId); if (!card) return;
-  card.classList.remove("glow-once"); void card.offsetWidth; card.classList.add("glow-once");
-  setTimeout(() => card.classList.remove("glow-once"), 4000);
-}
-let glowTimer = null;
-let state = { subs: 0, views: 0, watch: 0, rt: 0 };
-
 /* =========================================================
-   Glitch Logic (Random)
+   Glitch & Periodic Effects
    ========================================================= */
+
+// TEXT SCRAMBLER
+const GLITCH_CHARS = "#@&$-+!^%";
+function scrambleText(el) {
+  if (!el || el.dataset.scrambling) return;
+  const original = el.textContent;
+  if (!original || original.length < 2) return; // Skip small text
+  el.dataset.scrambling = "true";
+  let steps = 0;
+  const maxSteps = 4;
+  
+  const interval = setInterval(() => {
+    const arr = original.split('');
+    // Scramble 50% of chars
+    for(let i=0; i<arr.length; i++) {
+      if(Math.random() > 0.5 && arr[i] !== ' ' && arr[i] !== ',') {
+        arr[i] = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+      }
+    }
+    el.textContent = arr.join('');
+    steps++;
+    if(steps >= maxSteps) {
+      clearInterval(interval);
+      el.textContent = original;
+      delete el.dataset.scrambling;
+    }
+  }, 60);
+}
+
 function randomGlitchLoop() {
   const targets = [
-    "subsNow", "rtNow", "viewsTotal", "watchNow", 
-    "subsVsNum", "rtVsNum", "viewsVsNum", "watchVsNum"
+    // Main
+    "subsNow", "rtNow", "viewsTotal", "watchNow",
+    // Sub
+    "subsLast28", "subsPrev28", "rtLast24", "rtPrev24", "viewsLast28", "viewsPrev28", "watchLast28", "watchPrev28"
   ];
   
   // Pick random target
@@ -279,16 +299,68 @@ function randomGlitchLoop() {
   const el = document.getElementById(id);
   if (el) {
     el.classList.add("glitch-active");
-    setTimeout(() => el.classList.remove("glitch-active"), 200 + Math.random() * 300);
+    scrambleText(el);
+    setTimeout(() => el.classList.remove("glitch-active"), 300);
   }
   
-  // Schedule next glitch
-  setTimeout(randomGlitchLoop, 2000 + Math.random() * 5000);
+  // HUD Message Random Glitch
+  const hudMsg = document.getElementById("hudMessage");
+  if (hudMsg && Math.random() > 0.6) {
+    hudMsg.classList.add("glitch-active");
+    scrambleText(hudMsg);
+    setTimeout(() => hudMsg.classList.remove("glitch-active"), 300);
+  }
+
+  // Slightly increased frequency (1s - 4s)
+  setTimeout(randomGlitchLoop, 1000 + Math.random() * 3000);
+}
+
+// PERIODIC AURORA / NEON EFFECTS (Every 30s + On Load)
+function triggerPeriodicEffects() {
+  const classes = ["aurora-mode"];
+  const elements = [
+    "subsIconBox", "subsChip", 
+    "rtIconBox", "rtChip", 
+    "viewsIconBox", "viewsChip", 
+    "watchIconBox", "watchChip"
+  ];
+  
+  // 1. Icon & Chip Glow
+  elements.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.add("aurora-mode");
+  });
+
+  // 2. Bar Scan
+  const bars = document.querySelectorAll(".progressFill");
+  bars.forEach(b => {
+    b.classList.remove("scifi-bar-scan");
+    void b.offsetWidth; // force reflow
+    b.classList.add("scifi-bar-scan");
+  });
+
+  // 3. Sparkline Twitch
+  const sparks = document.querySelectorAll(".spark");
+  sparks.forEach(s => {
+    s.classList.remove("spark-twitch");
+    void s.offsetWidth;
+    s.classList.add("spark-twitch");
+  });
+
+  // Cleanup after 2s
+  setTimeout(() => {
+    elements.forEach(id => {
+      const el = document.getElementById(id);
+      if(el) el.classList.remove("aurora-mode");
+    });
+  }, 2500);
 }
 
 /* =========================================================
    MAIN RENDER
    ========================================================= */
+let state = { subs: 0, views: 0, watch: 0, rt: 0 };
+
 function render(data, isFirst) {
   const ch = data.channel || {};
   if (ch.logo) { const v = `url("${ch.logo}")`; document.querySelectorAll(".card").forEach(c => c.style.setProperty("--logo-url", v)); }
@@ -385,15 +457,7 @@ function render(data, isFirst) {
   }
 
   state = cur;
-  if (!isFirst) { triggerGlowOnce("cardSubs"); triggerGlowOnce("cardRealtime"); triggerGlowOnce("cardViews"); triggerGlowOnce("cardWatch"); }
-  
-  clearTimeout(glowTimer); 
-  glowTimer = setTimeout(() => { 
-    triggerGlowOnce("cardSubs"); 
-    triggerGlowOnce("cardRealtime");
-    triggerGlowOnce("cardViews"); 
-    triggerGlowOnce("cardWatch"); 
-  }, 30000);
+  triggerPeriodicEffects(); // Trigger Aurora/Scan on every render/refresh
 
   updateHud(data);
 
@@ -405,8 +469,6 @@ async function load(isFirst) {
   try { const data = await fetchJSON("/api/yt-kpis"); if (data.error) throw new Error(data.error); render(data, isFirst); }
   catch (e) { document.getElementById("updated").textContent = "FETCH ERROR: " + e.message; }
 }
-
-// REMOVED 3D TILT LISTENERS
 
 /* ===========================
    HUD ENGINE (SCI-FI)
@@ -562,7 +624,9 @@ function showNextIntel() {
     icon.style.color = c;
     animateHudBorder(c);
     msg.style.opacity = "1"; tag.style.opacity = "1"; icon.style.opacity = "1";
+    // GLITCH ON SHOW
     box.classList.add("glitch-active");
+    setTimeout(() => box.classList.remove("glitch-active"), 300);
   }, 200);
 }
 
@@ -574,8 +638,10 @@ function updateHud(data) {
       initHudBorder();
       showNextIntel();
       HUD_CONFIG.timer = setInterval(showNextIntel, 16000);
-      // START RANDOM GLITCH EFFECTS
+      // START LOOPS
       randomGlitchLoop();
+      // Also interval for 30s animations
+      setInterval(triggerPeriodicEffects, 30000);
     }, 1200);
   }
 }
