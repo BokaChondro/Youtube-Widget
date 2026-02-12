@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic Update v4 (Snake Wave & Quantum Bar)
+   Sci-Fi Logic v5 (Smooth Wave + Quantum Bars + Lowercase 'h')
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -120,7 +120,8 @@ function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   arrEl.className = d > 0 ? "vsArrow pos" : (d < 0 ? "vsArrow neg" : "vsArrow neu");
   arrEl.textContent = d > 0 ? "▲" : (d < 0 ? "▼" : "—");
   const absTxt = decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)));
-  numEl.textContent = absTxt + suffix;
+  // Allow HTML suffix for the 'h'
+  numEl.innerHTML = absTxt + suffix; 
 }
 
 function hexToRgb(hex) {
@@ -294,14 +295,17 @@ function randomGlitchLoop() {
     scrambleText(el);
     setTimeout(() => el.classList.remove("glitch-active"), 800);
   }
+  
+  // HUD Glitch Reduced Frequency
   const hudMsg = document.getElementById("hudMessage");
-  if (hudMsg && Math.random() > 0.6) {
+  if (hudMsg && Math.random() > 0.8) { // 20% chance
     hudMsg.classList.add("glitch-active");
     scrambleText(hudMsg);
     setTimeout(() => hudMsg.classList.remove("glitch-active"), 800);
   }
-  // REDUCED FREQUENCY: 3000ms - 9000ms
-  setTimeout(randomGlitchLoop, 3000 + Math.random() * 6000);
+  
+  // SLOWED DOWN: 4s - 10s
+  setTimeout(randomGlitchLoop, 4000 + Math.random() * 6000);
 }
 
 // ANIMATION STATE
@@ -311,7 +315,7 @@ let animState = {
   tiers: { subs: "blue", rt: "blue", views: "blue", watch: "blue" }
 };
 
-// 30s TRIGGER: SNAKE WAVE + QUANTUM FLUX BAR
+// 30s TRIGGER: SMOOTH WAVE + QUANTUM FLUX BAR
 function triggerAdvancedAnimations() {
   const cards = [
     { id: "subs", spark: "subsSpark", bar: "subsProgressFill" },
@@ -323,29 +327,26 @@ function triggerAdvancedAnimations() {
   const elements = ["subsIconBox", "subsChip", "rtIconBox", "rtChip", "viewsIconBox", "viewsChip", "watchIconBox", "watchChip"];
   elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add("aurora-mode"); });
 
-  // START "SNAKE WAVE" LOOP
+  // START "SMOOTH WAVE" LOOP
   let frames = 0;
   const maxFrames = 60; // 3 seconds
   
   const waveInterval = setInterval(() => {
     cards.forEach(c => {
       // 1. Smooth Sine Wave (Snake)
-      // Generate 20 points that form a sine wave, shifting 'frames' moves it.
-      const waveData = Array.from({length: 20}, (_, i) => 50 + 40 * Math.sin((i + frames) * 0.5));
+      // Amplitude: 15 (Smaller), Speed: 0.2 (Slower)
+      const waveData = Array.from({length: 20}, (_, i) => 50 + 15 * Math.sin((i + frames) * 0.2));
       
-      // Use stored tier color!
       const tierColor = animState.tiers[c.id] || "blue";
-      setSpark(`${c.spark}Fill`, `${c.spark}Path`, waveData, tierColor);
+      setSpark(`${c.spark}Fill`, `${c.spark}Path`, waveData, tierColor); // CORRECT TIER COLOR
       
       // 2. Quantum Flux Bar
       const bEl = document.getElementById(c.bar);
       if(bEl) {
-        // We set CSS variable for target width so keyframe can use it
-        // The class 'bar-flux' handles the animation logic in CSS
-        if(frames === 1) { // Trigger once at start
+        if(frames === 1) { 
            bEl.style.setProperty('--target-width', (c.id === 'subs' ? animState.pSubs : c.id === 'rt' ? animState.pRt : c.id === 'views' ? animState.pViews : animState.pWatch) + "%");
            bEl.classList.remove("bar-flux");
-           void bEl.offsetWidth; // trigger reflow
+           void bEl.offsetWidth; 
            bEl.classList.add("bar-flux");
         }
       }
@@ -361,7 +362,6 @@ function triggerAdvancedAnimations() {
       setSpark("viewsSparkFill", "viewsSparkPath", animState.views, animState.tiers.views);
       setSpark("watchSparkFill", "watchSparkPath", animState.watch, animState.tiers.watch);
 
-      // Bar cleanup handled by CSS end state, but good to reset class
       cards.forEach(c => {
         const bEl = document.getElementById(c.bar);
         if(bEl) setTimeout(() => bEl.classList.remove("bar-flux"), 500);
@@ -378,6 +378,8 @@ function triggerAdvancedAnimations() {
    MAIN RENDER
    ========================================================= */
 let state = { subs: 0, views: 0, watch: 0, rt: 0 };
+// Wrap lowercase h for styling
+const UNIT_H = '<span class="unit-lower">h</span>';
 
 function render(data, isFirst) {
   const ch = data.channel || {};
@@ -459,9 +461,12 @@ function render(data, isFirst) {
   animState.tiers.watch = tWatch;
   setCardTheme("cardWatch", tWatch); setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]); setMainArrow("watchMainArrow", tWatch);
   setSpark("watchSparkFill", "watchSparkPath", animState.watch, tWatch);
-  renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
-  setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (data.m28?.avg6m?.watchHours || 0), 1, "h");
-  safeSetText("watchLast28", fmt(last28.watchHours) + "h"); safeSetText("watchPrev28", fmt(prev28.watchHours) + "h");
+  renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, UNIT_H);
+  setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (data.m28?.avg6m?.watchHours || 0), 1, UNIT_H);
+  
+  // Use HTML for meta row
+  safeSetHTML("watchLast28", fmt(last28.watchHours) + UNIT_H); 
+  safeSetHTML("watchPrev28", fmt(prev28.watchHours) + UNIT_H);
   
   const mWatch = getMilestoneLimits(cur.watch, "watch");
   const pWatch = Math.min(100, Math.max(0, ((cur.watch - mWatch.min) / (mWatch.max - mWatch.min)) * 100)).toFixed(1);
@@ -476,13 +481,13 @@ function render(data, isFirst) {
     animateSpeedometer(subsEl, cur.subs, { duration: 650 }); 
     animateSpeedometer(rtEl, cur.rt, { duration: 650 });
     animateSpeedometer(viewsEl, cur.views, { duration: 650 }); 
-    animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: cur.watch < 100 ? 1 : 0, suffix: "h" });
+    animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: cur.watch < 100 ? 1 : 0, suffix: UNIT_H });
   } else {
     if (Math.round(cur.subs) !== Math.round(state.subs)) { animateCasinoRoll(subsEl, state.subs, cur.subs, { duration: 1800 }); if (cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs"); } else setRollInstant(subsEl, fmt(cur.subs));
     if (Math.round(cur.rt) !== Math.round(state.rt)) { animateCasinoRoll(rtEl, state.rt, cur.rt, { duration: 1800 }); if (cur.rt > state.rt) spawnFloatIcon("cardRealtime", "views"); } else setRollInstant(rtEl, fmt(cur.rt));
     if (Math.round(cur.views) !== Math.round(state.views)) { animateCasinoRoll(viewsEl, state.views, cur.views, { duration: 1800 }); if (cur.views > state.views) spawnFloatIcon("cardViews", "views"); } else setRollInstant(viewsEl, fmt(cur.views));
     const wDec = cur.watch < 100 ? 1 : 0, scale = wDec ? 10 : 1;
-    if (Math.round(state.watch * scale) !== Math.round(cur.watch * scale)) { animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: "h", duration: 1800 }); if (cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch"); } else setRollInstant(watchEl, (wDec ? fmt1(cur.watch) : fmt(Math.round(cur.watch))) + "h");
+    if (Math.round(state.watch * scale) !== Math.round(cur.watch * scale)) { animateCasinoRoll(watchEl, state.watch, cur.watch, { decimals: wDec, suffix: UNIT_H, duration: 1800 }); if (cur.watch > state.watch) spawnFloatIcon("cardWatch", "watch"); } else setRollInstant(watchEl, (wDec ? fmt1(cur.watch) : fmt(Math.round(cur.watch))) + UNIT_H);
   }
 
   state = cur;
