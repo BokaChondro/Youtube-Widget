@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/style.css
-   Sci-Fi Theme v6 (Refined)
+   Sci-Fi Theme v7 (Clean Background + Refined Effects)
    ========================================================= */
 
 :root {
@@ -29,10 +29,7 @@
 
 body {
   background-color: var(--bg-dark);
-  background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
+  /* REMOVED GRID PATTERN for cleaner dark look */
   color: #fff;
   font-family: var(--font-display);
   overflow-x: hidden;
@@ -126,7 +123,6 @@ body {
 .bigNumber { font-family: var(--font-display); display: flex; align-items: baseline; gap: 6px; font-size: 36px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
 .mainArrow { font-size: 18px; transform: translateY(-4px); }
 
-/* Force lowercase h unit */
 .unit-lower { text-transform: none !important; font-variant: normal; }
 
 .spark { width: 120px; height: 40px; overflow: visible; filter: drop-shadow(0 0 5px var(--c-tier)); transition: transform 0.5s; }
