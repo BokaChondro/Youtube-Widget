@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic v5 (Smooth Wave + Quantum Bars + Lowercase 'h')
+   Sci-Fi Logic v6 (Bug Fixes, Optimized Loop, New Bar Anim)
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -120,7 +120,6 @@ function setVsRG(elNumId, elArrowId, delta, decimals = 0, suffix = "") {
   arrEl.className = d > 0 ? "vsArrow pos" : (d < 0 ? "vsArrow neg" : "vsArrow neu");
   arrEl.textContent = d > 0 ? "▲" : (d < 0 ? "▼" : "—");
   const absTxt = decimals ? Math.abs(d).toFixed(decimals) : fmt(Math.round(Math.abs(d)));
-  // Allow HTML suffix for the 'h'
   numEl.innerHTML = absTxt + suffix; 
 }
 
@@ -228,6 +227,7 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   col.style.transform = `translateY(${-1.1 * (steps.length - 1)}em)`;
 }
 
+// FIX: USE INNERHTML to parse <span>
 function animateSpeedometer(el, toVal, opts = {}) {
   if (!el) return;
   const decimals = opts.decimals ?? 0, suffix = opts.suffix ?? "", duration = opts.duration ?? 650;
@@ -238,7 +238,7 @@ function animateSpeedometer(el, toVal, opts = {}) {
   const renderText = (v) => (decimals ? fmt1(v) : fmt(Math.round(v))) + suffix;
   const tick = (now) => {
     const p = Math.min(1, (now - t0) / duration);
-    el.textContent = renderText(endVal * easeOutCubic(p));
+    el.innerHTML = renderText(endVal * easeOutCubic(p)); // FIXED: innerHTML
     if (p < 1) el._spdRaf = requestAnimationFrame(tick);
   };
   el._spdRaf = requestAnimationFrame(tick);
@@ -296,16 +296,15 @@ function randomGlitchLoop() {
     setTimeout(() => el.classList.remove("glitch-active"), 800);
   }
   
-  // HUD Glitch Reduced Frequency
   const hudMsg = document.getElementById("hudMessage");
-  if (hudMsg && Math.random() > 0.8) { // 20% chance
+  if (hudMsg && Math.random() > 0.8) { 
     hudMsg.classList.add("glitch-active");
     scrambleText(hudMsg);
     setTimeout(() => hudMsg.classList.remove("glitch-active"), 800);
   }
   
-  // SLOWED DOWN: 4s - 10s
-  setTimeout(randomGlitchLoop, 4000 + Math.random() * 6000);
+  // REDUCED FREQUENCY: 6s - 18s (Double time)
+  setTimeout(randomGlitchLoop, 6000 + Math.random() * 12000);
 }
 
 // ANIMATION STATE
@@ -315,7 +314,7 @@ let animState = {
   tiers: { subs: "blue", rt: "blue", views: "blue", watch: "blue" }
 };
 
-// 30s TRIGGER: SMOOTH WAVE + QUANTUM FLUX BAR
+// 30s TRIGGER: OPTIMIZED SNAKE WAVE + NEON SURGE BAR
 function triggerAdvancedAnimations() {
   const cards = [
     { id: "subs", spark: "subsSpark", bar: "subsProgressFill" },
@@ -327,35 +326,38 @@ function triggerAdvancedAnimations() {
   const elements = ["subsIconBox", "subsChip", "rtIconBox", "rtChip", "viewsIconBox", "viewsChip", "watchIconBox", "watchChip"];
   elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add("aurora-mode"); });
 
-  // START "SMOOTH WAVE" LOOP
-  let frames = 0;
-  const maxFrames = 60; // 3 seconds
-  
-  const waveInterval = setInterval(() => {
+  // OPTIMIZATION: Use requestAnimationFrame instead of setInterval
+  let start = null;
+  const duration = 3000; // 3 seconds
+
+  function step(timestamp) {
+    if (!start) start = timestamp;
+    const progress = timestamp - start;
+    
+    // Wave Math (Frames approx using progress)
+    const frames = progress / 50; 
+
     cards.forEach(c => {
       // 1. Smooth Sine Wave (Snake)
-      // Amplitude: 15 (Smaller), Speed: 0.2 (Slower)
-      const waveData = Array.from({length: 20}, (_, i) => 50 + 15 * Math.sin((i + frames) * 0.2));
+      // Amplitude: 8 (Smaller/Smoother), Speed: 0.1 (Slower)
+      const waveData = Array.from({length: 20}, (_, i) => 50 + 8 * Math.sin((i + frames) * 0.1));
       
       const tierColor = animState.tiers[c.id] || "blue";
-      setSpark(`${c.spark}Fill`, `${c.spark}Path`, waveData, tierColor); // CORRECT TIER COLOR
+      setSpark(`${c.spark}Fill`, `${c.spark}Path`, waveData, tierColor);
       
-      // 2. Quantum Flux Bar
+      // 2. Neon Surge Bar (Trigger once)
       const bEl = document.getElementById(c.bar);
-      if(bEl) {
-        if(frames === 1) { 
-           bEl.style.setProperty('--target-width', (c.id === 'subs' ? animState.pSubs : c.id === 'rt' ? animState.pRt : c.id === 'views' ? animState.pViews : animState.pWatch) + "%");
-           bEl.classList.remove("bar-flux");
-           void bEl.offsetWidth; 
-           bEl.classList.add("bar-flux");
-        }
+      if(bEl && progress < 100) { // Trigger only at start
+         bEl.style.setProperty('--target-width', (c.id === 'subs' ? animState.pSubs : c.id === 'rt' ? animState.pRt : c.id === 'views' ? animState.pViews : animState.pWatch) + "%");
+         bEl.classList.remove("bar-surge");
+         void bEl.offsetWidth; 
+         bEl.classList.add("bar-surge");
       }
     });
-    frames++;
 
-    if (frames >= maxFrames) {
-      clearInterval(waveInterval);
-      
+    if (progress < duration) {
+      requestAnimationFrame(step);
+    } else {
       // RESTORE STATE
       setSpark("subsSparkFill", "subsSparkPath", animState.subs, animState.tiers.subs);
       setSpark("rtSparkFill", "rtSparkPath", animState.rt, animState.tiers.rt);
@@ -364,14 +366,15 @@ function triggerAdvancedAnimations() {
 
       cards.forEach(c => {
         const bEl = document.getElementById(c.bar);
-        if(bEl) setTimeout(() => bEl.classList.remove("bar-flux"), 500);
+        if(bEl) setTimeout(() => bEl.classList.remove("bar-surge"), 500);
       });
 
       setTimeout(() => {
         elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.remove("aurora-mode"); });
       }, 500); 
     }
-  }, 50);
+  }
+  requestAnimationFrame(step);
 }
 
 /* =========================================================
