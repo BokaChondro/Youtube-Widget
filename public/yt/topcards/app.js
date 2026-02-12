@@ -46,9 +46,9 @@ function tierFromBaseline(last28, median6m, absMin) {
   if (B <= 0) return L > absMin ? "green" : "orange";
   const ratio = L / B;
   if (ratio < 0.7) return "red";
-  if (ratio < 0.9) return "orange";
-  if (ratio < 1.05) return "yellow";
-  if (ratio < 1.25) return "green";
+  if (ratio < 0.85) return "orange";
+  if (ratio < 1.15) return "yellow";
+  if (ratio < 1.3) return "green";
   if (ratio < 1.6) return "blue";
   return "purple";
 }
@@ -61,10 +61,10 @@ function tierRealtime(last24, prev6Avg, absMin = 100) {
   const ratio = L / B;
   
   if (ratio < 0.5) return "red";      // Big Drop
-  if (ratio < 0.8) return "orange";   // Drop Alert
-  if (ratio < 0.95) return "yellow";  // Cooling Off
-  if (ratio < 1.2) return "green";    // Good Pace
-  if (ratio < 1.6) return "blue";     // Uptrend
+  if (ratio < 0.7) return "orange";   // Drop Alert
+  if (ratio < 0.9) return "yellow";  // Cooling Off
+  if (ratio < 1.25) return "green";    // Good Pace
+  if (ratio < 1.75) return "blue";     // Uptrend
   return "purple";                    // On Fire
 }
 
@@ -87,12 +87,15 @@ function getMilestoneLimits(val, type) {
     return { min, max: min + step };
   }
 
-  // Standard (Subs, Views, Realtime)
+// Standard (Subs, Views, Realtime)
   let step = 100;
-  if (v >= 100000) step = 100000; // 100k -> 200k
-  else if (v >= 10000) step = 10000; // 10k -> 20k
-  else if (v >= 1000) step = 1000; // 1k -> 2k
-  else step = 100; // 0 -> 100
+  
+  if (v >= 10000000) step = 10000000;      // 10M -> 20M
+  else if (v >= 1000000) step = 1000000;   // 1M -> 2M
+  else if (v >= 100000) step = 100000;     // 100k -> 200k
+  else if (v >= 10000) step = 10000;       // 10k -> 20k
+  else if (v >= 1000) step = 1000;         // 1k -> 2k
+  else step = 100;                         // 0 -> 100
 
   const min = Math.floor(v / step) * step;
   return { min, max: min + step };
