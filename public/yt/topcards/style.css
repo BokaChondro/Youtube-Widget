@@ -1,11 +1,11 @@
 /* =========================================================
    public/yt/topcards/style.css
-   Sci-Fi Theme v4 (Smooth Waves & Quantum Bars)
+   Sci-Fi Theme v5 (Strict Colors & Refined Animations)
    ========================================================= */
 
 :root {
-  --bg-dark: #030303;
-  --card-bg: rgba(0, 0, 0, 0.85);
+  --bg-dark: #191919; /* Updated Base Color */
+  --card-bg: #000000; /* Strictly Black */
   
   --glass-border: rgba(255, 255, 255, 0.1);
   --glass-highlight: rgba(255, 255, 255, 0.08);
@@ -67,7 +67,6 @@ body {
   box-shadow: 0 0 20px rgba(var(--c-tier), 0.2), inset 0 0 20px rgba(0,0,0,0.8);
 }
 
-/* HIGH VISIBILITY LOGO PULSE */
 .card::before {
   content: ""; position: absolute; top: 50%; left: 50%; width: 70%; height: 70%;
   transform: translate(-50%, -50%); background-color: #000; background-image: var(--logo-url);
@@ -92,7 +91,6 @@ body {
 .cardTop { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .left { display: flex; align-items: center; gap: 12px; }
 
-/* Icon */
 .iconBox { 
   width: 42px; height: 42px; 
   background: rgba(255,255,255,0.05); 
@@ -103,7 +101,6 @@ body {
 }
 .icon { width: 22px; height: 22px; fill: currentColor; filter: drop-shadow(0 0 5px currentColor); }
 
-/* Aurora Glow Mode */
 .aurora-mode {
   color: var(--c-tier) !important;
   box-shadow: 0 0 20px var(--c-tier), inset 0 0 10px var(--c-tier);
@@ -129,7 +126,9 @@ body {
 .bigNumber { font-family: var(--font-display); display: flex; align-items: baseline; gap: 6px; font-size: 36px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
 .mainArrow { font-size: 18px; transform: translateY(-4px); }
 
-/* Sparkline */
+/* Utility to keep unit lowercase in uppercase containers */
+.unit-lower { text-transform: none !important; font-variant: normal; }
+
 .spark { width: 120px; height: 40px; overflow: visible; filter: drop-shadow(0 0 5px var(--c-tier)); transition: transform 0.5s; }
 .spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 
@@ -138,7 +137,6 @@ body {
 .milestoneText b { color: #fff; font-family: var(--font-display); letter-spacing: 1px; }
 .progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); overflow: hidden; position: relative; border-radius: 2px; }
 
-/* Bar Base */
 .progressFill { 
   height: 100%; width: 0%; 
   background: var(--c-tier); 
@@ -187,7 +185,7 @@ body {
 /* HUD */
 .hud-box {
   position: relative; margin-top: 20px; width: 100%;
-  background: rgba(10, 10, 10, 0.95);
+  background: #000000; /* Strictly Black */
   border: 1px solid rgba(255,255,255,0.1);
   padding: 24px 30px;
   overflow: hidden;
