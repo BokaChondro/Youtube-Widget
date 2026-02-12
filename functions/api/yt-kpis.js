@@ -348,11 +348,10 @@ async function computeKPIs(env) {
   const daily = await fetchDailyCore(token, dailyStart, endIso);
   const N = daily.length;
 
+  // Existing KPIs
   const weekSum = N >= 7 ? sumDailyRows(daily, N - 7, N - 1) : {};
   const prevWeekSum = N >= 14 ? sumDailyRows(daily, N - 14, N - 8) : {};
   const weeklyStart = N >= 7 ? daily[N - 7].day : isoDate(shiftDays(end, -6));
-  const prevWeeklyStart = N >= 14 ? daily[N - 14].day : isoDate(shiftDays(end, -13));
-  const prevWeeklyEnd = N >= 14 ? daily[N - 8].day : isoDate(shiftDays(end, -7));
   const weeklyPacked = packMetrics(weekSum);
   const prevWeeklyPacked = packMetrics(prevWeekSum);
 
@@ -376,6 +375,39 @@ async function computeKPIs(env) {
   const avgSubs = avg(prev6.map((w) => w.metrics.netSubs));
   const avgViews = avg(prev6.map((w) => w.metrics.views));
   const avgWatch = avg(prev6.map((w) => w.metrics.watchHours));
+
+  // --- NEW: Realtime / 48H / 6M Weekly Avg Logic ---
+  // 1. 6 Month Weekly Avg: (Total 6m views / 26 weeks)
+  // 'daily' array contains roughly 195 days (6.5 months)
+  const totalViews6m = daily.reduce((acc, r) => acc + (r.views || 0), 0);
+  const totalDays = daily.length || 1;
+  const avgDaily6m = totalViews6m / totalDays;
+  const avgWeekly6m = round1(avgDaily6m * 7);
+
+  // 2. Realtime 48h (approx via last 2 daily rows)
+  const lastDay = daily[N - 1] || {};
+  const prevDay = daily[N - 2] || {};
+  const viewsLast24 = Number(lastDay.views || 0);
+  const viewsPrev24 = Number(prevDay.views || 0);
+  const views48h = viewsLast24 + viewsPrev24;
+  
+  // 3. Hourly estimates (mocked from daily totals)
+  const estLastHour = Math.round(viewsLast24 / 24);
+  const estPrevHour = Math.round(viewsPrev24 / 24);
+
+  // 4. Sparkline (Last 7 days daily trend)
+  const sparklineData = daily.slice(-7).map(r => r.views);
+
+  const realtime = {
+    views48h,
+    last24h: viewsLast24,
+    prev24h: viewsPrev24,
+    lastHour: estLastHour,
+    prevHour: estPrevHour,
+    avg6mWeekly: avgWeekly6m,
+    sparkline: sparklineData
+  };
+  // --- END NEW LOGIC ---
 
   const history28d = [...winResults].sort((a, b) => b.idx - a.idx).map((w) => ({
     startDate: w.startDate, endDate: w.endDate, netSubs: w.metrics.netSubs, views: w.metrics.views, watchHours: w.metrics.watchHours,
@@ -417,7 +449,6 @@ async function computeKPIs(env) {
     traffic: { last28: rowsToDimList(traffic28, "insightTrafficSourceType", "views"), prev28: rowsToDimList(trafficPrev28, "insightTrafficSourceType", "views") },
     subscribedStatus: rowsToDimList(subStatus28, "subscribedStatus", "views"),
     countries: rowsToDimList(country28, "country", "views"),
-    views48h: N >= 2 ? Number(daily[N - 1]?.views || 0) + Number(daily[N - 2]?.views || 0) : 0,
     videoIntel: { range7d: { startDate: weeklyStart, endDate: endIso }, videos: videoIntelList },
   };
 
@@ -436,6 +467,7 @@ async function computeKPIs(env) {
       avg6m: { netSubs: avgSubs, views: avgViews, watchHours: avgWatch },
       median6m: { netSubs: medianSubs, views: medianViews, watchHours: medianWatch },
     },
+    realtime, // Added here
     lifetime: { watchHours: life.totalHours },
     history28d,
     hud,
