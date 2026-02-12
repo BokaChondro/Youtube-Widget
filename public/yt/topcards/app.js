@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic Update v3 (Advanced Signal Animation)
+   Sci-Fi Logic Update v4 (Snake Wave & Quantum Bar)
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -149,29 +149,24 @@ function ensureSparkGradient(svgEl, gradId, tierHex) {
   return `url(#${gradId})`;
 }
 
-// Sparkline Logic (Handles both static data and noise injection)
 function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
   if (!fillEl || !pathEl) return;
-  
   const vals = (values || []).map(Number);
   if (vals.length < 2) return;
   const w = 120, h = 40;
   const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
   const pts = vals.map((v, i) => ({ x: (i / (vals.length - 1)) * w, y: h - ((v - min) / span) * h }));
-  
   let dLine = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
   for (let i = 1; i < pts.length; i++) {
     const p = pts[i - 1], c = pts[i], cx = ((p.x + c.x) / 2).toFixed(1), cy = ((p.y + c.y) / 2).toFixed(1);
     dLine += ` Q ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${cx} ${cy}`;
   }
   dLine += ` T ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
-  
   pathEl.setAttribute("d", dLine); 
   pathEl.style.stroke = COLORS[tier]; 
   pathEl.style.strokeWidth = "2.4";
-  
   fillEl.setAttribute("d", `${dLine} L ${w} ${h} L 0 ${h} Z`);
   const svgEl = fillEl.closest("svg");
   const gradUrl = ensureSparkGradient(svgEl, `grad-${fillId}`, COLORS[tier]);
@@ -264,7 +259,6 @@ function spawnFloatIcon(cardId, type) {
    Glitch & Advanced Animations
    ========================================================= */
 
-// TEXT SCRAMBLER (Longer duration 12 steps)
 const GLITCH_CHARS = "#@&$-+!^%";
 function scrambleText(el) {
   if (!el || el.dataset.scrambling) return;
@@ -272,7 +266,7 @@ function scrambleText(el) {
   if (!original || original.length < 2) return; 
   el.dataset.scrambling = "true";
   let steps = 0;
-  const maxSteps = 12; // approx 700ms
+  const maxSteps = 12; 
   
   const interval = setInterval(() => {
     const arr = original.split('');
@@ -306,16 +300,18 @@ function randomGlitchLoop() {
     scrambleText(hudMsg);
     setTimeout(() => hudMsg.classList.remove("glitch-active"), 800);
   }
-  setTimeout(randomGlitchLoop, 1500 + Math.random() * 3000);
+  // REDUCED FREQUENCY: 3000ms - 9000ms
+  setTimeout(randomGlitchLoop, 3000 + Math.random() * 6000);
 }
 
-// Store history to restore after animation
+// ANIMATION STATE
 let animState = {
   subs: [], rt: [], views: [], watch: [],
-  pSubs: 0, pRt: 0, pViews: 0, pWatch: 0
+  pSubs: 0, pRt: 0, pViews: 0, pWatch: 0,
+  tiers: { subs: "blue", rt: "blue", views: "blue", watch: "blue" }
 };
 
-// 30s TRIGGER: SIGNAL INTERCEPT + TARGET CALIBRATION
+// 30s TRIGGER: SNAKE WAVE + QUANTUM FLUX BAR
 function triggerAdvancedAnimations() {
   const cards = [
     { id: "subs", spark: "subsSpark", bar: "subsProgressFill" },
@@ -325,63 +321,55 @@ function triggerAdvancedAnimations() {
   ];
 
   const elements = ["subsIconBox", "subsChip", "rtIconBox", "rtChip", "viewsIconBox", "viewsChip", "watchIconBox", "watchChip"];
-  // Glow ON
   elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add("aurora-mode"); });
 
-  // Start "Signal Intercept" Noise Loop
+  // START "SNAKE WAVE" LOOP
   let frames = 0;
-  const maxFrames = 30; // 1.5 seconds at 50ms interval
+  const maxFrames = 60; // 3 seconds
   
-  const noiseInterval = setInterval(() => {
+  const waveInterval = setInterval(() => {
     cards.forEach(c => {
-      // 1. Sparkline Noise
-      const noiseData = Array.from({length: 20}, () => Math.random() * 100);
-      setSpark(`${c.spark}Fill`, `${c.spark}Path`, noiseData, "blue"); // Use blue/purple for signal effect
+      // 1. Smooth Sine Wave (Snake)
+      // Generate 20 points that form a sine wave, shifting 'frames' moves it.
+      const waveData = Array.from({length: 20}, (_, i) => 50 + 40 * Math.sin((i + frames) * 0.5));
       
-      const sEl = document.getElementById(c.spark);
-      if(sEl) sEl.classList.add("signal-intercept");
-
-      // 2. Progress Bar Calibration (Random Jumping)
+      // Use stored tier color!
+      const tierColor = animState.tiers[c.id] || "blue";
+      setSpark(`${c.spark}Fill`, `${c.spark}Path`, waveData, tierColor);
+      
+      // 2. Quantum Flux Bar
       const bEl = document.getElementById(c.bar);
       if(bEl) {
-        bEl.classList.add("bar-calibrating");
-        bEl.style.width = Math.floor(Math.random() * 100) + "%";
+        // We set CSS variable for target width so keyframe can use it
+        // The class 'bar-flux' handles the animation logic in CSS
+        if(frames === 1) { // Trigger once at start
+           bEl.style.setProperty('--target-width', (c.id === 'subs' ? animState.pSubs : c.id === 'rt' ? animState.pRt : c.id === 'views' ? animState.pViews : animState.pWatch) + "%");
+           bEl.classList.remove("bar-flux");
+           void bEl.offsetWidth; // trigger reflow
+           bEl.classList.add("bar-flux");
+        }
       }
     });
     frames++;
 
     if (frames >= maxFrames) {
-      clearInterval(noiseInterval);
+      clearInterval(waveInterval);
       
       // RESTORE STATE
-      // Subs
-      setSpark("subsSparkFill", "subsSparkPath", animState.subs, tierFromBaseline(animState.subs[animState.subs.length-1], 0, 0));
-      document.getElementById("subsProgressFill").style.width = animState.pSubs + "%";
-      
-      // RT
-      setSpark("rtSparkFill", "rtSparkPath", animState.rt, "green"); // approx tier
-      document.getElementById("rtProgressFill").style.width = animState.pRt + "%";
-      
-      // Views
-      setSpark("viewsSparkFill", "viewsSparkPath", animState.views, "yellow");
-      document.getElementById("viewsProgressFill").style.width = animState.pViews + "%";
-      
-      // Watch
-      setSpark("watchSparkFill", "watchSparkPath", animState.watch, "purple");
-      document.getElementById("watchProgressFill").style.width = animState.pWatch + "%";
+      setSpark("subsSparkFill", "subsSparkPath", animState.subs, animState.tiers.subs);
+      setSpark("rtSparkFill", "rtSparkPath", animState.rt, animState.tiers.rt);
+      setSpark("viewsSparkFill", "viewsSparkPath", animState.views, animState.tiers.views);
+      setSpark("watchSparkFill", "watchSparkPath", animState.watch, animState.tiers.watch);
 
-      // Cleanup Classes
+      // Bar cleanup handled by CSS end state, but good to reset class
       cards.forEach(c => {
-        const sEl = document.getElementById(c.spark);
-        if(sEl) sEl.classList.remove("signal-intercept");
         const bEl = document.getElementById(c.bar);
-        if(bEl) bEl.classList.remove("bar-calibrating");
+        if(bEl) setTimeout(() => bEl.classList.remove("bar-flux"), 500);
       });
 
-      // Glow OFF
       setTimeout(() => {
         elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.remove("aurora-mode"); });
-      }, 500); // lingering glow
+      }, 500); 
     }
   }, 50);
 }
@@ -406,7 +394,7 @@ function render(data, isFirst) {
 
   const weekly = data.weekly || {}, last28 = data.m28?.last28 || {}, prev28 = data.m28?.prev28 || {}, med6m = data.m28?.median6m || {}, hist = data.history28d || [];
 
-  // SAVE DATA FOR ANIMATION RESTORE
+  // SAVE DATA
   animState.subs = hist.map(x => x.netSubs);
   animState.rt = rt.sparkline || [];
   animState.views = hist.map(x => x.views);
@@ -414,6 +402,7 @@ function render(data, isFirst) {
 
   // 1. SUBS
   const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
+  animState.tiers.subs = tSubs;
   setCardTheme("cardSubs", tSubs); setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]); setMainArrow("subsMainArrow", tSubs);
   setSpark("subsSparkFill", "subsSparkPath", animState.subs, tSubs);
   renderPacing("subsWeek", weekly.netSubs, weekly.prevNetSubs);
@@ -432,6 +421,7 @@ function render(data, isFirst) {
   const rtPrev6Avg = Number(rt.avgPrior6d || 0); 
   const vsDelta = Number(rt.vs7dAvgDelta || 0); 
   const tRt = tierRealtime(rtLast24, rtPrev6Avg, 500); 
+  animState.tiers.rt = tRt;
   setCardTheme("cardRealtime", tRt); 
   setChip("rtDot", "rtChipText", tRt, FEEDBACK.realtime[tRt]); 
   setMainArrow("rtMainArrow", tRt);
@@ -450,6 +440,7 @@ function render(data, isFirst) {
 
   // 3. VIEWS
   const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
+  animState.tiers.views = tViews;
   setCardTheme("cardViews", tViews); setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]); setMainArrow("viewsMainArrow", tViews);
   setSpark("viewsSparkFill", "viewsSparkPath", animState.views, tViews);
   renderPacing("viewsWeek", weekly.views, weekly.prevViews);
@@ -465,6 +456,7 @@ function render(data, isFirst) {
 
   // 4. WATCH
   const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
+  animState.tiers.watch = tWatch;
   setCardTheme("cardWatch", tWatch); setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]); setMainArrow("watchMainArrow", tWatch);
   setSpark("watchSparkFill", "watchSparkPath", animState.watch, tWatch);
   renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
@@ -486,7 +478,6 @@ function render(data, isFirst) {
     animateSpeedometer(viewsEl, cur.views, { duration: 650 }); 
     animateSpeedometer(watchEl, cur.watch, { duration: 650, decimals: cur.watch < 100 ? 1 : 0, suffix: "h" });
   } else {
-    // Rolls
     if (Math.round(cur.subs) !== Math.round(state.subs)) { animateCasinoRoll(subsEl, state.subs, cur.subs, { duration: 1800 }); if (cur.subs > state.subs) spawnFloatIcon("cardSubs", "subs"); } else setRollInstant(subsEl, fmt(cur.subs));
     if (Math.round(cur.rt) !== Math.round(state.rt)) { animateCasinoRoll(rtEl, state.rt, cur.rt, { duration: 1800 }); if (cur.rt > state.rt) spawnFloatIcon("cardRealtime", "views"); } else setRollInstant(rtEl, fmt(cur.rt));
     if (Math.round(cur.views) !== Math.round(state.views)) { animateCasinoRoll(viewsEl, state.views, cur.views, { duration: 1800 }); if (cur.views > state.views) spawnFloatIcon("cardViews", "views"); } else setRollInstant(viewsEl, fmt(cur.views));
@@ -495,7 +486,7 @@ function render(data, isFirst) {
   }
 
   state = cur;
-  triggerAdvancedAnimations(); // Trigger the cool animation on every render
+  triggerAdvancedAnimations();
 
   updateHud(data);
 
