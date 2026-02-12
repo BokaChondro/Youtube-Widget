@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/style.css
-   Sci-Fi / Cyberpunk Theme Update (v3 - High Visibility Logo)
+   Sci-Fi Theme v4 (Smooth Waves & Quantum Bars)
    ========================================================= */
 
 :root {
@@ -72,13 +72,13 @@ body {
   content: ""; position: absolute; top: 50%; left: 50%; width: 70%; height: 70%;
   transform: translate(-50%, -50%); background-color: #000; background-image: var(--logo-url);
   background-size: contain; background-repeat: no-repeat; background-position: center;
-  opacity: 0.5; /* Increased Base Opacity */
+  opacity: 0.5;
   mix-blend-mode: screen; filter: grayscale(100%) contrast(1.5); z-index: 0; pointer-events: none;
   animation: logoBreath 6s ease-in-out infinite;
 }
 @keyframes logoBreath { 
   0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); } 
-  50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.2); } /* Higher Peak */
+  50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.2); }
 }
 
 .glare {
@@ -92,13 +92,13 @@ body {
 .cardTop { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .left { display: flex; align-items: center; gap: 12px; }
 
-/* Default Icon: White */
+/* Icon */
 .iconBox { 
   width: 42px; height: 42px; 
   background: rgba(255,255,255,0.05); 
   border: 1px solid rgba(255,255,255,0.1);
   display: flex; align-items: center; justify-content: center; 
-  color: #fff; /* Default White */
+  color: #fff; 
   transition: all 0.5s ease; 
 }
 .icon { width: 22px; height: 22px; fill: currentColor; filter: drop-shadow(0 0 5px currentColor); }
@@ -129,52 +129,34 @@ body {
 .bigNumber { font-family: var(--font-display); display: flex; align-items: baseline; gap: 6px; font-size: 36px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
 .mainArrow { font-size: 18px; transform: translateY(-4px); }
 
-/* Sparkline Container */
+/* Sparkline */
 .spark { width: 120px; height: 40px; overflow: visible; filter: drop-shadow(0 0 5px var(--c-tier)); transition: transform 0.5s; }
 .spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
-
-/* Signal Intercept Animation Class (Applied during noise generation) */
-.signal-intercept {
-  animation: signalShake 0.1s infinite;
-  filter: drop-shadow(0 0 15px var(--c-tier)) brightness(1.5);
-}
-@keyframes signalShake {
-  0% { transform: translateY(0px) scaleY(1); }
-  25% { transform: translateY(-2px) scaleY(1.2); }
-  50% { transform: translateY(2px) scaleY(0.8); }
-  75% { transform: translateY(-1px) scaleY(1.1); }
-  100% { transform: translateY(0px) scaleY(1); }
-}
 
 .milestoneBox { margin-bottom: 16px; background: rgba(255,255,255,0.03); padding: 8px; border: 1px solid rgba(255,255,255,0.05); }
 .milestoneText { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,0.6); margin-bottom: 6px; text-transform: uppercase; }
 .milestoneText b { color: #fff; font-family: var(--font-display); letter-spacing: 1px; }
 .progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); overflow: hidden; position: relative; border-radius: 2px; }
 
-/* Sci-Fi Segmented Bar Look */
+/* Bar Base */
 .progressFill { 
   height: 100%; width: 0%; 
   background: var(--c-tier); 
   box-shadow: 0 0 10px var(--c-tier); 
-  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); /* Smooth Transition */
+  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
   position: relative; 
-  /* Striped pattern */
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 5px,
-    rgba(0,0,0,0.4) 5px,
-    rgba(0,0,0,0.4) 10px
-  );
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.4) 5px, rgba(0,0,0,0.4) 10px);
   background-size: 20px 20px;
 }
 
-/* Calibration Effect (Loading/Glitching width) */
-.bar-calibrating {
-  transition: width 0.1s linear !important; /* Fast jitter */
-  filter: brightness(2);
-  box-shadow: 0 0 20px var(--c-tier);
+/* Quantum Flux Bar Animation */
+@keyframes quantumFlux {
+  0% { width: 0%; background: #fff; opacity: 0.5; }
+  20% { width: 100%; background: #fff; opacity: 1; filter: drop-shadow(0 0 15px #fff); }
+  40% { width: 100%; background: #fff; opacity: 0.8; }
+  100% { width: var(--target-width, 0%); background: var(--c-tier); opacity: 1; }
 }
+.bar-flux { animation: quantumFlux 1.5s ease-out forwards; }
 
 .weekLine { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,0.8); padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; text-transform: uppercase; }
 .metaRow { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
@@ -187,7 +169,7 @@ body {
 .vsNum.neu { color: #888; }
 .vsArrow.pos { color: var(--c-green); } .vsArrow.neg { color: var(--c-red); }
 
-/* Glitch Effects (Triggered by JS) */
+/* Glitch Effects */
 .glitch-active {
   animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
   color: var(--c-tier);
