@@ -1,3 +1,20 @@
+/* =========================================================
+   functions/api/yt-kpis.js — Server KPI aggregator (YouTube Data + Analytics APIs)
+   ---------------------------------------------------------
+       Responsibilities:
+             - Authenticate with OAuth (access token from refresh token / env vars)
+             - Pull channel totals (subs + lifetime views) from YouTube Data API
+             - Pull day-by-day metrics from YouTube Analytics API (views, minutes, subs gained/lost)
+             - Compute rolling windows (last 7d, prev 7d, last 28d, rolling 6M baseline, etc.)
+             - Compute 48H 'realtime-ish' views and an hourly series for the sparkline
+             - Build extra intel lists for the HUD (top videos, CTR, retention, etc.)
+             - Return a single JSON blob for the front-end to render
+
+           Key output consumers:
+             - app.js render() uses window metrics + sparklines
+             - app.js HUD engine uses the 'intel' fields to craft messages
+   ========================================================= */
+
 // functions/api/yt-kpis.js
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -45,6 +62,12 @@ function daysBetween(isoA, isoB) {
   }
 }
 
+/* =========================================================
+   Tiny utilities
+   ---------------------------------------------------------
+       clamp / round1 / pct / uniq / isoDate / shiftDays etc.
+       These keep calculations consistent across all KPI computations.
+   ========================================================= */
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
@@ -97,6 +120,13 @@ async function getAccessToken(env) {
   return data.access_token;
 }
 
+/* =========================================================
+   YouTube HTTP wrappers
+   ---------------------------------------------------------
+       ytDataGET(): calls YouTube Data API (channels, playlistItems, videos)
+       ytAnalyticsGET(): calls YouTube Analytics API (reports/query)
+       safeAnalytics(): same as ytAnalyticsGET but returns null on failure (HUD should degrade gracefully)
+   ========================================================= */
 async function ytDataGET(token, path, params = {}) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
   Object.entries(params).forEach(([k, v]) => {
@@ -137,6 +167,15 @@ async function safeAnalytics(token, params) {
   }
 }
 
+/* =========================================================
+   Channel / upload discovery
+   ---------------------------------------------------------
+       fetchChannelBasics():
+         - channelId, title, publishedAt, logo URL
+         - current subscribers + lifetime views (these power the top card headlines)
+       fetchRecentUploads() + fetchVideos():
+         - gets recent video IDs and pulls titles + publish dates + durations.
+   ========================================================= */
 async function fetchChannelBasics(token) {
   const data = await ytDataGET(token, "channels", {
     part: "snippet,statistics,contentDetails",
@@ -193,6 +232,13 @@ async function fetchVideos(token, ids = []) {
     .filter((x) => x.videoId);
 }
 
+/* =========================================================
+   Window reducers
+   ---------------------------------------------------------
+       sumDailyRows(): sum a slice of the daily array
+       packMetrics(): convert sum into {views, minutes, watchHours, gained, lost, netSubs}
+       These are used for 7D and 28D windows to keep front-end field naming stable.
+   ========================================================= */
 function sumDailyRows(rows, startIdx, endIdx) {
   const out = { views: 0, minutes: 0, gained: 0, lost: 0 };
   if (!Array.isArray(rows)) return out;
@@ -222,6 +268,13 @@ function packMetrics(sum) {
   };
 }
 
+/* =========================================================
+   Daily time-series (the backbone of all window comparisons)
+   ---------------------------------------------------------
+       fetchDailyCore(startIso, endIso):
+         - returns rows per day: views, minutes watched, subs gained/lost
+         - used to compute last 7D / prev 7D, last 28D / prev 28D, and rolling 6M baseline
+   ========================================================= */
 async function fetchDailyCore(token, startIso, endIso) {
   const data = await ytAnalyticsGET(token, {
     startDate: startIso,
@@ -339,6 +392,19 @@ function buildVideoIntelList(videoDetails, maps, endIso) {
   });
 }
 
+/* =========================================================
+   computeKPIs(env) — main orchestrator
+   ---------------------------------------------------------
+       Steps (high level):
+         1) Get access token
+         2) Fetch channel totals + daily analytics series
+         3) Build:
+             - last 7D vs prev 7D
+             - last 28D vs prev 28D
+             - a rolling set of 28D windows to estimate '6M baseline' (median or avg)
+         4) Fetch extra optional metrics (retention, CTR, top videos) for HUD messages
+         5) Return the final JSON shape consumed by app.js
+   ========================================================= */
 async function computeKPIs(env) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
