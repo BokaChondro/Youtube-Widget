@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic Update v2 (Glitch Text, Triangles, Aurora Mode)
+   Sci-Fi Logic Update v3 (Advanced Signal Animation)
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -33,14 +33,13 @@ function safeSetText(id, text) { const el = document.getElementById(id); if (el)
 function safeSetStyle(id, prop, val) { const el = document.getElementById(id); if (el) el.style[prop] = val; }
 function safeSetHTML(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
 
-// --- TRIANGLE ARROWS ---
 function tierArrow(tier) {
   if (tier === "red") return "▼▼";
   if (tier === "orange") return "▼";
   if (tier === "yellow") return "—";
   if (tier === "green") return "▲";
   if (tier === "blue") return "▲▲";
-  return "▲▲▲"; // Purple
+  return "▲▲▲"; 
 }
 
 function tierFromBaseline(last28, median6m, absMin) {
@@ -150,22 +149,29 @@ function ensureSparkGradient(svgEl, gradId, tierHex) {
   return `url(#${gradId})`;
 }
 
+// Sparkline Logic (Handles both static data and noise injection)
 function setSpark(fillId, pathId, values, tier) {
   const fillEl = document.getElementById(fillId);
   const pathEl = document.getElementById(pathId);
   if (!fillEl || !pathEl) return;
+  
   const vals = (values || []).map(Number);
   if (vals.length < 2) return;
   const w = 120, h = 40;
   const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
   const pts = vals.map((v, i) => ({ x: (i / (vals.length - 1)) * w, y: h - ((v - min) / span) * h }));
+  
   let dLine = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
   for (let i = 1; i < pts.length; i++) {
     const p = pts[i - 1], c = pts[i], cx = ((p.x + c.x) / 2).toFixed(1), cy = ((p.y + c.y) / 2).toFixed(1);
     dLine += ` Q ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${cx} ${cy}`;
   }
   dLine += ` T ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`;
-  pathEl.setAttribute("d", dLine); pathEl.style.stroke = COLORS[tier]; pathEl.style.strokeWidth = "2.4";
+  
+  pathEl.setAttribute("d", dLine); 
+  pathEl.style.stroke = COLORS[tier]; 
+  pathEl.style.strokeWidth = "2.4";
+  
   fillEl.setAttribute("d", `${dLine} L ${w} ${h} L 0 ${h} Z`);
   const svgEl = fillEl.closest("svg");
   const gradUrl = ensureSparkGradient(svgEl, `grad-${fillId}`, COLORS[tier]);
@@ -255,22 +261,21 @@ function spawnFloatIcon(cardId, type) {
 }
 
 /* =========================================================
-   Glitch & Periodic Effects
+   Glitch & Advanced Animations
    ========================================================= */
 
-// TEXT SCRAMBLER
+// TEXT SCRAMBLER (Longer duration 12 steps)
 const GLITCH_CHARS = "#@&$-+!^%";
 function scrambleText(el) {
   if (!el || el.dataset.scrambling) return;
   const original = el.textContent;
-  if (!original || original.length < 2) return; // Skip small text
+  if (!original || original.length < 2) return; 
   el.dataset.scrambling = "true";
   let steps = 0;
-  const maxSteps = 4;
+  const maxSteps = 12; // approx 700ms
   
   const interval = setInterval(() => {
     const arr = original.split('');
-    // Scramble 50% of chars
     for(let i=0; i<arr.length; i++) {
       if(Math.random() > 0.5 && arr[i] !== ' ' && arr[i] !== ',') {
         arr[i] = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
@@ -287,73 +292,98 @@ function scrambleText(el) {
 }
 
 function randomGlitchLoop() {
-  const targets = [
-    // Main
-    "subsNow", "rtNow", "viewsTotal", "watchNow",
-    // Sub
-    "subsLast28", "subsPrev28", "rtLast24", "rtPrev24", "viewsLast28", "viewsPrev28", "watchLast28", "watchPrev28"
-  ];
-  
-  // Pick random target
+  const targets = ["subsNow", "rtNow", "viewsTotal", "watchNow", "subsLast28", "subsPrev28", "rtLast24", "rtPrev24", "viewsLast28", "viewsPrev28", "watchLast28", "watchPrev28"];
   const id = targets[Math.floor(Math.random() * targets.length)];
   const el = document.getElementById(id);
   if (el) {
     el.classList.add("glitch-active");
     scrambleText(el);
-    setTimeout(() => el.classList.remove("glitch-active"), 300);
+    setTimeout(() => el.classList.remove("glitch-active"), 800);
   }
-  
-  // HUD Message Random Glitch
   const hudMsg = document.getElementById("hudMessage");
   if (hudMsg && Math.random() > 0.6) {
     hudMsg.classList.add("glitch-active");
     scrambleText(hudMsg);
-    setTimeout(() => hudMsg.classList.remove("glitch-active"), 300);
+    setTimeout(() => hudMsg.classList.remove("glitch-active"), 800);
   }
-
-  // Slightly increased frequency (1s - 4s)
-  setTimeout(randomGlitchLoop, 1000 + Math.random() * 3000);
+  setTimeout(randomGlitchLoop, 1500 + Math.random() * 3000);
 }
 
-// PERIODIC AURORA / NEON EFFECTS (Every 30s + On Load)
-function triggerPeriodicEffects() {
-  const classes = ["aurora-mode"];
-  const elements = [
-    "subsIconBox", "subsChip", 
-    "rtIconBox", "rtChip", 
-    "viewsIconBox", "viewsChip", 
-    "watchIconBox", "watchChip"
+// Store history to restore after animation
+let animState = {
+  subs: [], rt: [], views: [], watch: [],
+  pSubs: 0, pRt: 0, pViews: 0, pWatch: 0
+};
+
+// 30s TRIGGER: SIGNAL INTERCEPT + TARGET CALIBRATION
+function triggerAdvancedAnimations() {
+  const cards = [
+    { id: "subs", spark: "subsSpark", bar: "subsProgressFill" },
+    { id: "rt", spark: "rtSpark", bar: "rtProgressFill" },
+    { id: "views", spark: "viewsSpark", bar: "viewsProgressFill" },
+    { id: "watch", spark: "watchSpark", bar: "watchProgressFill" }
   ];
+
+  const elements = ["subsIconBox", "subsChip", "rtIconBox", "rtChip", "viewsIconBox", "viewsChip", "watchIconBox", "watchChip"];
+  // Glow ON
+  elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add("aurora-mode"); });
+
+  // Start "Signal Intercept" Noise Loop
+  let frames = 0;
+  const maxFrames = 30; // 1.5 seconds at 50ms interval
   
-  // 1. Icon & Chip Glow
-  elements.forEach(id => {
-    const el = document.getElementById(id);
-    if(el) el.classList.add("aurora-mode");
-  });
+  const noiseInterval = setInterval(() => {
+    cards.forEach(c => {
+      // 1. Sparkline Noise
+      const noiseData = Array.from({length: 20}, () => Math.random() * 100);
+      setSpark(`${c.spark}Fill`, `${c.spark}Path`, noiseData, "blue"); // Use blue/purple for signal effect
+      
+      const sEl = document.getElementById(c.spark);
+      if(sEl) sEl.classList.add("signal-intercept");
 
-  // 2. Bar Scan
-  const bars = document.querySelectorAll(".progressFill");
-  bars.forEach(b => {
-    b.classList.remove("scifi-bar-scan");
-    void b.offsetWidth; // force reflow
-    b.classList.add("scifi-bar-scan");
-  });
-
-  // 3. Sparkline Twitch
-  const sparks = document.querySelectorAll(".spark");
-  sparks.forEach(s => {
-    s.classList.remove("spark-twitch");
-    void s.offsetWidth;
-    s.classList.add("spark-twitch");
-  });
-
-  // Cleanup after 2s
-  setTimeout(() => {
-    elements.forEach(id => {
-      const el = document.getElementById(id);
-      if(el) el.classList.remove("aurora-mode");
+      // 2. Progress Bar Calibration (Random Jumping)
+      const bEl = document.getElementById(c.bar);
+      if(bEl) {
+        bEl.classList.add("bar-calibrating");
+        bEl.style.width = Math.floor(Math.random() * 100) + "%";
+      }
     });
-  }, 2500);
+    frames++;
+
+    if (frames >= maxFrames) {
+      clearInterval(noiseInterval);
+      
+      // RESTORE STATE
+      // Subs
+      setSpark("subsSparkFill", "subsSparkPath", animState.subs, tierFromBaseline(animState.subs[animState.subs.length-1], 0, 0));
+      document.getElementById("subsProgressFill").style.width = animState.pSubs + "%";
+      
+      // RT
+      setSpark("rtSparkFill", "rtSparkPath", animState.rt, "green"); // approx tier
+      document.getElementById("rtProgressFill").style.width = animState.pRt + "%";
+      
+      // Views
+      setSpark("viewsSparkFill", "viewsSparkPath", animState.views, "yellow");
+      document.getElementById("viewsProgressFill").style.width = animState.pViews + "%";
+      
+      // Watch
+      setSpark("watchSparkFill", "watchSparkPath", animState.watch, "purple");
+      document.getElementById("watchProgressFill").style.width = animState.pWatch + "%";
+
+      // Cleanup Classes
+      cards.forEach(c => {
+        const sEl = document.getElementById(c.spark);
+        if(sEl) sEl.classList.remove("signal-intercept");
+        const bEl = document.getElementById(c.bar);
+        if(bEl) bEl.classList.remove("bar-calibrating");
+      });
+
+      // Glow OFF
+      setTimeout(() => {
+        elements.forEach(id => { const el = document.getElementById(id); if(el) el.classList.remove("aurora-mode"); });
+      }, 500); // lingering glow
+    }
+  }, 50);
 }
 
 /* =========================================================
@@ -376,16 +406,23 @@ function render(data, isFirst) {
 
   const weekly = data.weekly || {}, last28 = data.m28?.last28 || {}, prev28 = data.m28?.prev28 || {}, med6m = data.m28?.median6m || {}, hist = data.history28d || [];
 
+  // SAVE DATA FOR ANIMATION RESTORE
+  animState.subs = hist.map(x => x.netSubs);
+  animState.rt = rt.sparkline || [];
+  animState.views = hist.map(x => x.views);
+  animState.watch = hist.map(x => x.watchHours);
+
   // 1. SUBS
   const tSubs = tierFromBaseline(last28.netSubs, med6m.netSubs, 30);
   setCardTheme("cardSubs", tSubs); setChip("subsDot", "subsChipText", tSubs, FEEDBACK.subs[tSubs]); setMainArrow("subsMainArrow", tSubs);
-  setSpark("subsSparkFill", "subsSparkPath", hist.map(x => x.netSubs), tSubs);
+  setSpark("subsSparkFill", "subsSparkPath", animState.subs, tSubs);
   renderPacing("subsWeek", weekly.netSubs, weekly.prevNetSubs);
   setVsRG("subsVsNum", "subsVsArrow", (last28.netSubs || 0) - (data.m28?.avg6m?.netSubs || 0));
   safeSetText("subsLast28", (Number(last28.netSubs) >= 0 ? "+" : "") + fmt(last28.netSubs)); safeSetText("subsPrev28", (Number(prev28.netSubs) >= 0 ? "+" : "") + fmt(prev28.netSubs));
   
   const mSubs = getMilestoneLimits(cur.subs, "subs");
   const pSubs = Math.min(100, Math.max(0, ((cur.subs - mSubs.min) / (mSubs.max - mSubs.min)) * 100)).toFixed(1);
+  animState.pSubs = pSubs;
   safeSetText("subsNextGoal", fmt(mSubs.max)); 
   safeSetText("subsNextPct", pSubs + "%"); 
   safeSetStyle("subsProgressFill", "width", pSubs + "%");
@@ -394,13 +431,11 @@ function render(data, isFirst) {
   const rtLast24 = Number(rt.last24h || 0);
   const rtPrev6Avg = Number(rt.avgPrior6d || 0); 
   const vsDelta = Number(rt.vs7dAvgDelta || 0); 
-
   const tRt = tierRealtime(rtLast24, rtPrev6Avg, 500); 
   setCardTheme("cardRealtime", tRt); 
   setChip("rtDot", "rtChipText", tRt, FEEDBACK.realtime[tRt]); 
   setMainArrow("rtMainArrow", tRt);
-  
-  setSpark("rtSparkFill", "rtSparkPath", rt.sparkline || [], tRt);
+  setSpark("rtSparkFill", "rtSparkPath", animState.rt, tRt);
   renderHourlyPacing("rtPacing", rt.lastHour, rt.prevHour);
   setVsRG("rtVsNum", "rtVsArrow", vsDelta);
   safeSetText("rtLast24", fmt(rt.last24h)); 
@@ -408,6 +443,7 @@ function render(data, isFirst) {
   
   const mRt = getMilestoneLimits(cur.rt, "views");
   const pRt = Math.min(100, Math.max(0, ((cur.rt - mRt.min) / (mRt.max - mRt.min)) * 100)).toFixed(1);
+  animState.pRt = pRt;
   safeSetText("rtNextGoal", fmt(mRt.max)); 
   safeSetText("rtNextPct", pRt + "%"); 
   safeSetStyle("rtProgressFill", "width", pRt + "%");
@@ -415,13 +451,14 @@ function render(data, isFirst) {
   // 3. VIEWS
   const tViews = tierFromBaseline(last28.views, med6m.views, 25000);
   setCardTheme("cardViews", tViews); setChip("viewsDot", "viewsChipText", tViews, FEEDBACK.views[tViews]); setMainArrow("viewsMainArrow", tViews);
-  setSpark("viewsSparkFill", "viewsSparkPath", hist.map(x => x.views), tViews);
+  setSpark("viewsSparkFill", "viewsSparkPath", animState.views, tViews);
   renderPacing("viewsWeek", weekly.views, weekly.prevViews);
   setVsRG("viewsVsNum", "viewsVsArrow", (last28.views || 0) - (data.m28?.avg6m?.views || 0));
   safeSetText("viewsLast28", fmt(last28.views)); safeSetText("viewsPrev28", fmt(prev28.views));
   
   const mViews = getMilestoneLimits(cur.views, "views");
   const pViews = Math.min(100, Math.max(0, ((cur.views - mViews.min) / (mViews.max - mViews.min)) * 100)).toFixed(1);
+  animState.pViews = pViews;
   safeSetText("viewsNextGoal", fmt(mViews.max)); 
   safeSetText("viewsNextPct", pViews + "%"); 
   safeSetStyle("viewsProgressFill", "width", pViews + "%");
@@ -429,13 +466,14 @@ function render(data, isFirst) {
   // 4. WATCH
   const tWatch = tierFromBaseline(last28.watchHours, med6m.watchHours, 50);
   setCardTheme("cardWatch", tWatch); setChip("watchDot", "watchChipText", tWatch, FEEDBACK.watch[tWatch]); setMainArrow("watchMainArrow", tWatch);
-  setSpark("watchSparkFill", "watchSparkPath", hist.map(x => x.watchHours), tWatch);
+  setSpark("watchSparkFill", "watchSparkPath", animState.watch, tWatch);
   renderPacing("watchWeek", weekly.watchHours, weekly.prevWatchHours, "h");
   setVsRG("watchVsNum", "watchVsArrow", (last28.watchHours || 0) - (data.m28?.avg6m?.watchHours || 0), 1, "h");
   safeSetText("watchLast28", fmt(last28.watchHours) + "h"); safeSetText("watchPrev28", fmt(prev28.watchHours) + "h");
   
   const mWatch = getMilestoneLimits(cur.watch, "watch");
   const pWatch = Math.min(100, Math.max(0, ((cur.watch - mWatch.min) / (mWatch.max - mWatch.min)) * 100)).toFixed(1);
+  animState.pWatch = pWatch;
   safeSetText("watchNextGoal", fmt(mWatch.max)); 
   safeSetText("watchNextPct", pWatch + "%"); 
   safeSetStyle("watchProgressFill", "width", pWatch + "%");
@@ -457,7 +495,7 @@ function render(data, isFirst) {
   }
 
   state = cur;
-  triggerPeriodicEffects(); // Trigger Aurora/Scan on every render/refresh
+  triggerAdvancedAnimations(); // Trigger the cool animation on every render
 
   updateHud(data);
 
@@ -640,8 +678,7 @@ function updateHud(data) {
       HUD_CONFIG.timer = setInterval(showNextIntel, 16000);
       // START LOOPS
       randomGlitchLoop();
-      // Also interval for 30s animations
-      setInterval(triggerPeriodicEffects, 30000);
+      setInterval(triggerAdvancedAnimations, 30000);
     }, 1200);
   }
 }
