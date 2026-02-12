@@ -22,7 +22,7 @@ const FEEDBACK = {
   subs: { red: "Audience Leak", orange: "Slow Convert", yellow: "Steady Growth", green: "Strong Pull", blue: "Rising Fast", purple: "Exceptional" },
   views: { red: "Reach Down", orange: "Low Reach", yellow: "Stable Reach", green: "Reach Up", blue: "Trending", purple: "Viral" },
   watch: { red: "Poor Engage", orange: "Retention Issue", yellow: "Consistent", green: "Engage Up", blue: "Hooked", purple: "Outstanding" },
-  realtime: { red: "Cooling Off", orange: "Low Traffic", yellow: "Steady Pulse", green: "High Traffic", blue: "Trending Now", purple: "Viral Spike" }
+  realtime: { red: "Big Drop", orange: "Drop Alert", yellow: "Cooling Off", green: "Good Pace", blue: "Uptrend", purple: "On Fire" }
 };
 
 // --- DOM HELPERS ---
