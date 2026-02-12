@@ -3,6 +3,7 @@
    Sci-Fi Logic Update (Glitch Effects + No Tilt)
    ========================================================= */
 
+
 const NF_INT = new Intl.NumberFormat();
 const NF_1 = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
