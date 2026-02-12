@@ -5,40 +5,46 @@
              - Layout (grid of 4 cards)
              - Card look (glass, shadows, glare)
              - Animations (glow pulse, floating icon, rolling digits)
-             - Sci-Fi HUD styles (border trace, tag, glitch, icon box)
+             - Sci‑Fi HUD styles (border trace, tag, glitch, icon box)
 
-           NOTE: App logic lives in app.js; CSS only handles visuals.
+           NOTE: App logic lives in app.js; CSS only handles appearance/animation.
    ========================================================= */
 
+/* =========================================================
+   Theme tokens (CSS variables)
+   ---------------------------------------------------------
+       These variables are the design system knobs:
+         --bg, --card, --line, text opacity colors, and tier colors (if defined here).
+       app.js sets per-card tier via inline CSS vars (e.g., --c-tier).
+   ========================================================= */
 :root {
   --bg-dark: #191919;
-  --glass: rgba(255,255,255,0.06);
-  --glass-border: rgba(255,255,255,0.12);
-  --glass-highlight: rgba(255,255,255,0.14);
+  --card-bg: #000000;
+  
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-highlight: rgba(255, 255, 255, 0.05);
 
-  --c-green: #00FF00;
   --c-red: #fe0000;
-  --c-blue: #0073FF;
+  --c-green: #00ff00;
+  --c-blue: #0073ff;
   --c-yellow: #fdfe02;
   --c-purple: #ab20fd;
-  --c-pink: #FF85EF;
-  --c-orange: #FF9500;
+  --c-pink: #ff85ef;
+  --c-orange: #ff9500;
 
   --c-tier: var(--c-yellow);
+  --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-tech: 'JetBrains Mono', monospace;
+  --font-sci: 'Orbitron', monospace;
 
-  --font-main: "Orbitron", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-tech: "Share Tech Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  /* HUD Timing matches JS */
+  --hud-time: 16s;
 }
 
-/* Base */
-* { box-sizing: border-box; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background: radial-gradient(circle at 18% 10%, rgba(0,115,255,0.18), transparent 55%),
-              radial-gradient(circle at 82% 22%, rgba(171,32,253,0.14), transparent 60%),
-              radial-gradient(circle at 30% 90%, rgba(253,254,2,0.10), transparent 55%),
-              repeating-linear-gradient(180deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 4px),
-              var(--bg-dark);
+  background-color: var(--bg-dark);
   color: #fff;
   font-family: var(--font-main);
   overflow: hidden;
@@ -46,456 +52,243 @@ body {
   display: flex; justify-content: center; align-items: center;
 }
 
-.wrap { width: 100%; max-width: 100vw; padding: clamp(10px, 2vw, 22px); min-width: 320px; }
+.wrap { width: 100%; padding: 10px; } /* Removed max-width for full extension */
+/* =========================================================
+   Grid layout: the 4 Top Cards
+   ---------------------------------------------------------
+       .grid controls the width + column layout.
+       If the number of cards changes in the future, this is where column template will be adjusted.
+   ========================================================= */
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; } /* 4 Columns */
 
-/* Grid */
-.grid { display: grid; grid-template-columns: repeat(4, minmax(240px, 1fr)); gap: clamp(10px, 1.2vw, 16px); }
-
-/* Card */
+/* --- CARD CORE (LOCKED) --- */
+/* =========================================================
+   Card core (glass panel)
+   ---------------------------------------------------------
+       Core card container:
+         - background + border
+         - rounding + overflow (to clip glare and float icons)
+         - transition for hover/tilt and glow pulse
+   ========================================================= */
 .card {
   position: relative;
-  overflow: hidden;
-  padding: 16px 16px 14px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.00) 60%),
+    radial-gradient(circle at 80% 20%, color-mix(in srgb, var(--c-tier) 12%, transparent) 0%, transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.00)),
+    var(--card-bg);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 18px 60px rgba(0,0,0,0.75);
-  transform-style: preserve-3d;
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  border-radius: 20px;
+  padding: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.8);
+  transition: transform 0.1s ease-out, box-shadow 0.3s ease;
   --logo-url: none;
-  --c-tier: var(--c-yellow);
+  opacity: 1;
+  border-left: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--glass-border);
+  min-width: 280px; /* Minimum shrink size */
 }
-
+.card-enter { animation: cardFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+@keyframes cardFadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.card:hover { z-index: 10; box-shadow: 0 20px 60px -10px rgba(0,0,0,0.95), 0 0 30px var(--glass-highlight); transform: scale(1.02); } /* Simple hover: scale and enhanced glow */
 .card::before {
-  content: "";
-  position: absolute;
-  inset: -20px;
-  background-image: var(--logo-url);
-  background-position: center;
-  background-size: 80%;
-  background-repeat: no-repeat;
-  opacity: 0.06;
-  filter: blur(0px) contrast(1.1);
-  animation: logoBreath 5s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 0;
+  content: ""; position: absolute; top: 50%; left: 50%; width: 60%; height: 60%;
+  transform: translate(-50%, -50%); background-color: #000; background-image: var(--logo-url);
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  opacity: 0.5; mix-blend-mode: screen; filter: grayscale(100%) contrast(1.2); z-index: 0; pointer-events: none;
+  animation: logoBreath 10s ease-in-out infinite;
 }
-
-@keyframes logoBreath {
-  0%, 100% { transform: scale(1.02); opacity: 0.05; }
-  50% { transform: scale(1.06); opacity: 0.085; }
-}
-
+@keyframes logoBreath { 0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; } 50% { transform: translate(-50%, -50%) scale(1.4); opacity: 0.6; } }
+/* =========================================================
+   Glare overlay (specular sweep)
+   ---------------------------------------------------------
+       Each card and the HUD contains a .glare element.
+       It sits absolutely positioned on top and uses gradients to simulate light reflections.
+   ========================================================= */
 .glare {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, rgba(255,255,255,0.22), transparent 60%);
-  opacity: 0.12;
-  mix-blend-mode: screen;
-  pointer-events: none;
-  z-index: 2;
+  position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 60%, transparent);
+  transform: skewX(-25deg); pointer-events: none; z-index: 1; animation: glareSweep 6s infinite ease-in-out;
 }
-
-.card:hover { z-index: 10; transform: translateY(-6px) scale(1.01); border-color: color-mix(in srgb, var(--c-tier) 40%, var(--glass-border)); box-shadow: 0 24px 70px -14px rgba(0,0,0,0.95), 0 0 22px color-mix(in srgb, var(--c-tier) 35%, transparent), 0 0 20px var(--glass-highlight); }
-
-.cardTop {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
+@keyframes glareSweep { 0%, 40% { left: -100%; } 100% { left: 200%; } }
+.card::after {
+  content: ""; position: absolute; top: -60px; right: -60px; width: 180px; height: 180px;
+  background: radial-gradient(circle, var(--c-tier) 0%, transparent 70%); opacity: 0.08; filter: blur(50px); z-index: 0; pointer-events: none;
 }
-
+.cardTop, .midRow, .weekLine, .metaRow, .milestoneBox { position: relative; z-index: 2; }
+.cardTop { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
 .left { display: flex; align-items: center; gap: 10px; }
+.iconBox { width: 36px; height: 36px; background: rgba(255,255,255,0.08); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; transition: all 0.3s ease; }
+.icon { width: 20px; height: 20px; fill: currentColor; }
+.titles { display: flex; flex-direction: column; }
+.title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.95); font-family: var(--font-sci); text-transform: uppercase; text-shadow: 0 0 5px rgba(255,255,255,0.5), 0 0 10px var(--c-tier); }
+.subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.5); font-family: var(--font-sci); text-transform: uppercase; letter-spacing: 0.5px; text-shadow: 0 0 3px rgba(255,255,255,0.3); }
+.chip { display: flex; align-items: center; gap: 6px; background: rgba(30,30,30,0.5); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: #555; box-shadow: 0 0 8px currentColor; }
+.chipText { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.8); font-family: var(--font-sci); text-transform: uppercase; text-shadow: 0 0 3px rgba(255,255,255,0.3); }
+.midRow { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; height: 40px; }
+.bigNumber { display: flex; align-items: baseline; gap: 4px; font-size: 28px; font-weight: 700; text-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 10px var(--c-tier), 0 0 20px var(--c-tier); font-feature-settings: "tnum"; color: #fff; font-family: var(--font-sci); text-transform: uppercase; }
+.mainArrow { font-size: 20px; transform: translateY(-2px); }
+.spark { width: 100px; height: 40px; overflow: visible; filter: drop-shadow(0 0 4px var(--c-tier)); }
+.spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.milestoneBox { margin-bottom: 12px; }
+.milestoneText { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 4px; font-family: var(--font-sci); text-transform: uppercase; text-shadow: 0 0 3px rgba(255,255,255,0.3); }
+.milestoneText b { color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.5); }
+.progressBg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+.progressFill { height: 100%; width: 0%; background: var(--c-tier); box-shadow: 0 0 10px var(--c-tier); border-radius: 2px; transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
+.weekLine { font-size: 12px; color: rgba(255,255,255,0.9); padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; font-family: var(--font-sci); text-transform: uppercase; text-shadow: 0 0 3px rgba(255,255,255,0.3); }
+.metaRow { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
+.metaItem { display: flex; flex-direction: column; gap: 2px; }
+.metaLabel { font-size: 10px; color: rgba(255,255,255,0.4); text-transform: uppercase; font-family: var(--font-sci); text-shadow: 0 0 3px rgba(255,255,255,0.3); }
+.metaValue { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.9); font-feature-settings: "tnum"; font-family: var(--font-sci); text-transform: uppercase; text-shadow: 0 0 5px rgba(255,255,255,0.5), 0 0 10px var(--c-tier); }
+.vsNum.pos { color: var(--c-green); } .vsNum.neg { color: var(--c-red); } .vsNum.neu { color: #888; }
+.vsArrow.pos { color: var(--c-green); } .vsArrow.neg { color: var(--c-red); }
+.foot { margin-top: 15px; text-align: center; font-size: 10px; color: rgba(255,255,255,0.2); font-family: var(--font-sci); text-transform: uppercase; }
+.toast { position: absolute; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px); background: rgba(0,255,153,0.15); border: 1px solid rgba(0,255,153,0.3); color: #00ff99; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; opacity: 0; transition: all 0.3s ease; pointer-events: none; z-index: 100; font-family: var(--font-sci); text-transform: uppercase; text-shadow: 0 0 5px #00ff99; }
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+/* =========================================================
+   Floating icon animation (spawnFloatIcon)
+   ---------------------------------------------------------
+       .floatIcon is a temporary element inserted by JS on positive changes.
+       Keyframes control:
+         - upward drift
+         - fade-out
+         - slight scale
+   ========================================================= */
+.floatIcon { position: absolute; bottom: 50%; left: 50%; width: 28px; height: 28px; fill: #fff; filter: drop-shadow(0 0 8px rgba(255,255,255,0.9)); pointer-events: none; z-index: 20; transform: translate(-50%, 0); animation: floatSequence 5s ease-in-out forwards; }
+@keyframes floatSequence { 0% { opacity: 0; transform: translate(-50%, 20px) scale(0.5); } 20%, 80% { opacity: 1; transform: translate(-50%, -10px) scale(1.2); } 100% { opacity: 0; transform: translate(-50%, -60px) scale(1); } }
+/* =========================================================
+   Rolling digits styles (ensureRoll / animateCasinoRoll)
+   ---------------------------------------------------------
+       rollWrap/rollCol/rollLine implement a slot-machine style vertical digit stack.
+       JS changes translateY on .rollCol to roll to the next digit.
+   ========================================================= */
+.rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
+.rollCol { display: flex; flex-direction: column; }
+.rollLine { height: 1.1em; line-height: 1.1em; display: block; }
+@keyframes glowOnceBox { 0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); color: #fff; } 50% { box-shadow: 0 0 18px var(--c-tier); color: var(--c-tier); } }
+@keyframes glowOnceChip { 0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); } 50% { box-shadow: 0 0 18px var(--c-tier); } }
+.card.glow-once .iconBox { animation: glowOnceBox 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
+.card.glow-once .chip { animation: glowOnceChip 4s cubic-bezier(0.22, 1, 0.36, 1) 1; }
 
-.iconBox {
-  width: 38px; height: 38px;
-  border-radius: 10px;
-  display: grid; place-items: center;
-  background: rgba(0,0,0,0.35);
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06), 0 0 18px rgba(0,0,0,0.65);
-}
+@media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .card { margin-bottom: 10px; } }
 
-.icon { width: 20px; height: 20px; fill: rgba(255,255,255,0.8); }
-
-.titles { display: flex; flex-direction: column; gap: 2px; }
-
-.title { font-size: 14px; font-weight: 700; letter-spacing: 0.3px; }
-.subtitle { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.5px; }
-
-.title { font-family: var(--font-main); text-transform: uppercase; letter-spacing: 1.2px; }
-.chipText { font-family: var(--font-tech); letter-spacing: 1.1px; text-transform: uppercase; }
-.milestoneText, .weekLine, .metaValue { font-family: var(--font-tech); }
-.weekLine { text-transform: uppercase; letter-spacing: 0.6px; }
-.metaLabel { letter-spacing: 1.4px; }
-.bigNumber { font-family: var(--font-tech); letter-spacing: 0.6px; }
-
-.chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.25);
-  border: 1px solid rgba(255,255,255,0.10);
-}
-
-.dot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--c-tier);
-  box-shadow: 0 0 10px var(--c-tier);
-}
-
-.chipText { font-size: 11px; opacity: 0.92; }
-
-/* Big number */
-.bigNumber {
-  position: relative;
-  z-index: 3;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.bigNumber > div:first-child {
-  font-size: 28px;
-  font-weight: 700;
-  text-shadow: 0 0 18px rgba(0,0,0,0.75);
-}
-
-.mainArrow {
-  font-size: 18px;
-  font-weight: 800;
-  opacity: 0.95;
-}
-
-/* Sparkline */
-.sparkWrap { position: relative; z-index: 3; margin-top: 10px; }
-.spark { width: 100%; height: 44px; }
-.sparkPath { fill: none; }
-.sparkFill { opacity: 1; }
-
-/* Meta row */
-.metaRow {
-  position: relative;
-  z-index: 3;
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.metaItem {
-  background: rgba(0,0,0,0.22);
-  border: 1px solid rgba(255,255,255,0.08);
+/* --- HUD (SCI-FI TRACE) --- */
+/* =========================================================
+   Sci‑Fi HUD container
+   ---------------------------------------------------------
+       The HUD is a separate component under the grid:
+         - its own glare
+         - an SVG path border (hud-border-svg + hudTracePath)
+         - content area (icon + tag + message)
+         - glitch-active class triggers small distortions
+   ========================================================= */
+.hud-box {
+  position: relative; margin-top: 20px; width: 100%;
+  background: rgba(8, 8, 8, 0.85);
   border-radius: 12px;
-  padding: 8px 10px;
-}
-
-.metaLabel {
-  font-family: var(--font-tech);
-  font-size: 10px;
-  color: rgba(255,255,255,0.45);
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  margin-bottom: 4px;
-}
-
-.metaValue {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-/* VS row coloring */
-.vsNum { margin-right: 4px; }
-.vsNum.pos { color: var(--c-green); }
-.vsNum.neg { color: var(--c-red); }
-.vsNum.neu { color: rgba(255,255,255,0.8); }
-
-.vsArrow { font-weight: 900; }
-.vsArrow.pos { color: var(--c-green); text-shadow: 0 0 10px rgba(0,255,0,0.6); }
-.vsArrow.neg { color: var(--c-red); text-shadow: 0 0 10px rgba(255,0,0,0.6); }
-.vsArrow.neu { color: rgba(255,255,255,0.6); }
-
-/* Week / pacing */
-.weekLine {
-  position: relative;
-  z-index: 3;
-  margin-top: 10px;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 12px;
-  opacity: 0.95;
-}
-
-.weekLine > div { white-space: nowrap; }
-
-/* Milestone bar */
-.milestone {
-  position: relative;
-  z-index: 3;
-  margin-top: 10px;
-  background: rgba(0,0,0,0.18);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 14px;
-  padding: 10px 12px;
-}
-
-.milestoneText {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: 12px;
-  opacity: 0.95;
-  margin-bottom: 8px;
-}
-
-.milestoneLabel { opacity: 0.65; }
-.milestonePct { opacity: 0.85; }
-
-.progressBar {
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.08);
+  padding: 18px 24px;
   overflow: hidden;
-}
-
-.progressFill {
-  height: 100%;
-  width: 0%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.25), var(--c-tier));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--c-tier) 55%, transparent);
-  transition: width 0.6s ease;
-}
-
-/* Card enter + glow once */
-.card-enter { animation: cardEnter 650ms ease-out both; }
-@keyframes cardEnter {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.glow-once { animation: glowOnce 3.5s ease-out both; }
-@keyframes glowOnce {
-  0% { box-shadow: 0 18px 60px rgba(0,0,0,0.75); }
-  20% { box-shadow: 0 26px 80px rgba(0,0,0,0.90), 0 0 22px color-mix(in srgb, var(--c-tier) 45%, transparent); }
-  100% { box-shadow: 0 18px 60px rgba(0,0,0,0.75); }
-}
-
-/* Floating icon burst */
-.floatIcon {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  animation: floatUp 6.5s ease-out forwards;
-  z-index: 5;
-}
-
-.floatIcon svg { width: 28px; height: 28px; fill: var(--c-tier); filter: drop-shadow(0 0 12px color-mix(in srgb, var(--c-tier) 60%, transparent)); }
-
-@keyframes floatUp {
-  0% { transform: translateY(0) scale(0.9); opacity: 0; }
-  10% { opacity: 1; }
-  100% { transform: translateY(-70px) scale(1.1); opacity: 0; }
-}
-
-/* Casino roll */
-.rollWrap { display: inline-block; overflow: hidden; height: 1.15em; vertical-align: baseline; }
-.rollCol { display: inline-block; transform: translateY(0); }
-.rollLine { display: block; height: 1.15em; line-height: 1.15em; }
-
-/* HUD */
-.hudBox {
-  position: relative;
-  margin-top: 14px;
-  width: 100%;
-  padding: 12px 12px;
-  border-radius: 16px;
-  background: rgba(0,0,0,0.28);
-  border: 1px solid rgba(255,255,255,0.10);
-  box-shadow: 0 16px 60px rgba(0,0,0,0.75);
-  overflow: hidden;
+  backdrop-filter: blur(40px); /* Heavy glass */
+  box-shadow: inset 0 0 20px rgba(255,255,255,0.05), 0 20px 50px -10px rgba(0,0,0,0.9);
+  display: flex; flex-direction: column;
   --hud-accent: var(--c-blue); /* Dynamic */
-  --c-tier: var(--hud-accent); /* For glitch overlays */
 }
 
-.hudInner {
-  position: relative;
-  z-index: 3;
-  display: grid;
-  grid-template-columns: 110px 1fr 56px;
-  align-items: center;
-  gap: 10px;
+/* Border Trace SVG (Absolute Overlay) */
+.hud-border-svg {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 10;
+}
+.hud-border-svg path {
+  fill: none;
+  stroke: var(--hud-accent);
+  stroke-width: 3px;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 10px var(--hud-accent));
+  /* Animation controlled by JS transition of dashoffset */
 }
 
-.hudLeft { display: flex; flex-direction: column; gap: 4px; }
+/* Content */
+.hud-content {
+  display: flex; align-items: center; gap: 20px; position: relative; z-index: 2;
+}
 
-.hudSys {
-  font-family: var(--font-tech);
+.hud-icon-box {
+  width: 44px; height: 44px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 15px rgba(0,0,0,0.3);
+  color: var(--hud-accent); /* Icon inherits this */
+}
+.hud-icon svg {
+  width: 24px; height: 24px;
+  fill: currentColor;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+.hud-text-area {
+  display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0;
+}
+
+/* Header */
+.hud-header {
+  display: flex; align-items: center; gap: 10px;
+}
+.hud-sys {
+  font-family: var(--font-sci);
   font-size: 11px;
-  opacity: 0.7;
-  letter-spacing: 1.2px;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-shadow: 0 0 3px rgba(255,255,255,0.3);
 }
-
-.hudTag {
-  font-family: var(--font-tech);
+.hud-tag {
+  font-family: var(--font-sci);
   font-size: 11px;
   font-weight: 700;
   color: var(--hud-accent);
-  letter-spacing: 1.6px;
-  text-shadow: 0 0 10px var(--hud-accent);
+  text-shadow: 0 0 10px var(--hud-accent), 0 0 20px var(--hud-accent);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
 }
 
-.hudMessage {
-  font-family: var(--font-main);
+/* Message */
+.hud-message-mask { overflow: hidden; }
+.hud-message {
+  font-family: var(--font-sci);
   font-size: 15px;
   font-weight: 700;
   color: #fff;
   line-height: 1.3;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.8), 0 0 10px #fff, 0 0 20px var(--hud-accent);
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  text-shadow: 0 2px 10px rgba(0,0,0,0.8);
 }
 
-.hudRight { display: flex; justify-content: flex-end; }
-
-.hudIconBox {
-  width: 44px; height: 44px;
-  border-radius: 12px;
-  display: grid; place-items: center;
-  background: rgba(0,0,0,0.35);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: var(--hud-accent);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--hud-accent) 35%, transparent);
+/* Glitch Animation */
+.glitch-active .hud-tag,
+.glitch-active .hud-message,
+.glitch-active .hud-icon,
+.glitch-active .bigNumber,
+.glitch-active .metaValue {
+  animation: glitchAnim 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
 }
 
-.hudTrace {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+@keyframes glitchAnim {
+  0% { transform: translate(0); opacity: 0; }
+  20% { transform: translate(-2px, 2px); opacity: 1; }
+  40% { transform: translate(2px, -2px); }
+  60% { transform: translate(0); }
+  100% { transform: translate(0); opacity: 1; }
 }
 
-#hudTracePath {
-  fill: none;
-  stroke: var(--hud-accent);
-  stroke-width: 2;
-  opacity: 0.9;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--hud-accent) 60%, transparent));
-}
-
-/* HUD Glitch (swap animation) */
-.hudBox.glitch-active .hudMessage,
-.hudBox.glitch-active .hudTag,
-.hudBox.glitch-active .hudIconBox {
-  animation: hudGlitch 0.3s steps(2, end) both;
-}
-
-@keyframes hudGlitch {
-  0% { transform: translate(0); filter: none; }
-  20% { transform: translate(-1px, 0); filter: drop-shadow(0 0 10px var(--hud-accent)); }
-  40% { transform: translate(2px, -1px); }
-  60% { transform: translate(-2px, 1px); }
-  80% { transform: translate(1px, 0); }
-  100% { transform: translate(0); filter: none; }
-}
-
-/* Footer + toast */
-.footer {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-family: var(--font-tech);
-  font-size: 11px;
-  color: rgba(255,255,255,0.55);
-  letter-spacing: 0.4px;
-}
-
-.toast {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(0,0,0,0.38);
-  border: 1px solid rgba(255,255,255,0.10);
-  opacity: 0;
-  transform: translateY(-6px);
-  transition: opacity 0.25s ease, transform 0.25s ease;
-  pointer-events: none;
-}
-
-.toast.show { opacity: 1; transform: translateY(0); }
-
-/* Responsive */
-@media (max-width: 900px) {
-  .grid { grid-template-columns: repeat(2, 1fr); }
-}
 @media (max-width: 600px) {
-  .grid { grid-template-columns: 1fr; }
-  .hudInner { grid-template-columns: 1fr; gap: 8px; }
-  .hudRight { justify-content: flex-start; }
-}
-
-/* --- RANDOM GLITCH (COUNTERS + HUD MESSAGE) --- */
-.glitchable { position: relative; }
-span.glitchable, b.glitchable { display: inline-block; }
-.glitchable::before,
-.glitchable::after {
-  content: attr(data-glitch);
-  position: absolute;
-  left: 0; top: 0;
-  width: 100%;
-  pointer-events: none;
-  opacity: 0;
-  font: inherit;
-  line-height: inherit;
-  color: inherit;
-  white-space: nowrap;
-}
-
-.glitchable.glitching::before {
-  opacity: 0.90;
-  text-shadow: -2px 0 var(--c-tier);
-  mix-blend-mode: screen;
-  animation: glitchA 240ms steps(2, end) both;
-}
-.glitchable.glitching::after {
-  opacity: 0.75;
-  text-shadow: 2px 0 rgba(255,255,255,0.65);
-  mix-blend-mode: screen;
-  animation: glitchB 240ms steps(2, end) both;
-}
-
-@keyframes glitchA {
-  0%   { transform: translate(0);    clip-path: inset(0 0 65% 0); }
-  25%  { transform: translate(-1px,-1px); clip-path: inset(0 0 35% 0); }
-  50%  { transform: translate(2px,0); clip-path: inset(40% 0 15% 0); }
-  75%  { transform: translate(-2px,1px); clip-path: inset(65% 0 0 0); }
-  100% { transform: translate(0);    clip-path: inset(0 0 0 0); }
-}
-@keyframes glitchB {
-  0%   { transform: translate(0);    clip-path: inset(55% 0 0 0); }
-  25%  { transform: translate(1px,1px); clip-path: inset(25% 0 25% 0); }
-  50%  { transform: translate(-2px,0); clip-path: inset(10% 0 55% 0); }
-  75%  { transform: translate(2px,-1px); clip-path: inset(0 0 70% 0); }
-  100% { transform: translate(0);    clip-path: inset(0 0 0 0); }
+  .hud-box { padding: 14px; }
+  .hud-message { font-size: 13px; }
+  .hud-icon-box { width: 36px; height: 36px; }
 }
