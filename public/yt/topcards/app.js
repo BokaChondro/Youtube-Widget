@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic v11 (Smooth Morph + Scaled Waves + Smarter Glitch)
+   Sci-Fi Logic v12 (20s Sync + Mobile + Smart Glitch)
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -156,13 +156,9 @@ function setSpark(fillId, pathId, values, tier) {
   const vals = (values || []).map(Number);
   if (vals.length < 2) return;
   const w = 120, h = 40;
-  
-  // Calculate Min/Max for SCALED WAVE
   let min = Math.min(...vals);
   let max = Math.max(...vals);
-  
-  // Prevent flatline scaling
-  if (max === min) { max += 1; min -= 1; }
+  if(max === min) { max += 1; min -= 1; }
   const span = max - min;
 
   const pts = vals.map((v, i) => ({ x: (i / (vals.length - 1)) * w, y: h - ((v - min) / span) * h }));
@@ -287,6 +283,7 @@ const SVGS = {
   watch: `<svg viewBox="0 0 24 24"><path d="M15 8H5c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2l4 2.3V7.9l-4 2.3V10c0-1.1-.9-2-2-2Z"/></svg>`,
 };
 
+// CELEBRATION (20s Sync)
 function triggerCelebration(cardId, type, message) {
   const card = document.getElementById(cardId);
   if (!card) return;
@@ -295,14 +292,16 @@ function triggerCelebration(cardId, type, message) {
   el.className = "float-celebration"; 
   el.innerHTML = SVGS[type] || "";
   card.appendChild(el); 
-  setTimeout(() => el.remove(), 16500); 
+  // Total anim time: 1.5s in + 20s hold + 1.5s out = 23s
+  setTimeout(() => el.remove(), 23500); 
 
   const milestoneBox = document.getElementById(type === "subs" ? "subsMilestoneBox" : (type === "rt" ? "rtMilestoneBox" : (type === "views" ? "viewsMilestoneBox" : "watchMilestoneBox")));
   if (milestoneBox) {
     const msgEl = milestoneBox.querySelector(".milestone-celebrate");
     if(msgEl) msgEl.textContent = message;
     milestoneBox.classList.add("celebrating");
-    setTimeout(() => { milestoneBox.classList.remove("celebrating"); }, 15000);
+    // Hold for 20s, then out (match CSS timing)
+    setTimeout(() => { milestoneBox.classList.remove("celebrating"); }, 20000); 
   }
 }
 
@@ -312,19 +311,23 @@ function triggerCelebration(cardId, type, message) {
 
 const GLITCH_CHARS = "#@&$-+!^%";
 
-// SMARTER SCRAMBLER: Respects rolling numbers!
+// SMARTER SCRAMBLER: Now handles Rolling Numbers Safely
 function scrambleText(el) {
   if (!el || el.dataset.scrambling) return;
   
   let target = el;
+  let isRoller = false;
   
   if (el.classList.contains("main-counter")) {
+    isRoller = true;
     const lines = el.querySelectorAll(".rollLine");
     if (lines.length > 0) {
-      target = lines[lines.length - 1]; 
+      target = lines[lines.length - 1]; // Target visible line
     } else {
-        // If simply text (no roll yet)
-        if(el.querySelector(".rollWrap")) return; // rolling structure exists but empty?
+       // If no roll lines (static), target wrapper or el itself
+       const wrap = el.querySelector(".rollWrap");
+       if (!wrap) target = el; // Safe fallback
+       else return; // If rolling but no line, skip to avoid breaking structure
     }
   }
 
@@ -353,7 +356,6 @@ function scrambleText(el) {
 }
 
 function randomGlitchLoop() {
-  // Target IDs for Glitch
   const targets = [
     "subsNow", "rtNow", "viewsTotal", "watchNow", 
     "subsLast28", "subsPrev28", "rtLast24", "rtPrev24", "viewsLast28", "viewsPrev28", "watchLast28", "watchPrev28"
@@ -403,30 +405,26 @@ function triggerAdvancedAnimations() {
     if (!start) start = timestamp;
     const progress = timestamp - start;
     const pct = progress / duration;
-    
-    // Wave Offset
     const waveOffset = progress / 200; 
 
     cards.forEach(c => {
       const realData = animState[c.id] || [];
       const len = realData.length || 20; 
       
-      // Calculate MIN/MAX of REAL DATA to scale wave correctly
       let min = Math.min(...realData);
       let max = Math.max(...realData);
       if(min == max) { min -=1; max +=1; }
       const range = max - min;
       const mid = min + (range / 2);
-      const amp = range * 0.4; // 40% amplitude
+      const amp = range * 0.4;
 
-      // Generate wave localized to data range
       const waveData = Array.from({length: len}, (_, i) => mid + amp * Math.sin((i + waveOffset) * 0.5));
       
       let renderData = [];
       let mix = 0; 
 
       if(pct < 0.15) mix = pct / 0.15; 
-      else if (pct > 0.7) mix = 1 - ((pct - 0.7) / 0.3); // Slower exit (30% duration)
+      else if (pct > 0.7) mix = 1 - ((pct - 0.7) / 0.3); 
       else mix = 1; 
 
       for(let i=0; i<len; i++) {
@@ -613,7 +611,7 @@ async function load(isFirst) {
   catch (e) { document.getElementById("updated").textContent = "FETCH ERROR: " + e.message; }
 }
 
-// ... HUD SAME ...
+// ... HUD, ICONS, KB, HELPER FUNCS (UNCHANGED) ...
 let shownAt = {};
 try { shownAt = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"); } catch(e) { console.warn("HUD Mem Reset"); }
 
