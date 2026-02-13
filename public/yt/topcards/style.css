@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/style.css
-   Sci-Fi Theme v10 (Restored Glitch & 70% Opacity Icon)
+   Sci-Fi Theme v11 (Tech Cut Shape + Quantum Bar Fix)
    ========================================================= */
 
 :root {
@@ -39,27 +39,52 @@ body {
 .wrap { width: 98%; max-width: 100%; padding: 20px; display: flex; flex-direction: column; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; width: 100%; }
 
+/* =========================================================
+   TECH-CUT CARD SHAPE
+   ========================================================= */
 .card {
   position: relative;
   background: var(--card-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: 4px; 
+  /* Tech Cut: Bottom Right Corner */
+  clip-path: polygon(
+    0 0, 
+    100% 0, 
+    100% calc(100% - 25px), 
+    calc(100% - 25px) 100%, 
+    0 100%
+  );
   padding: 24px;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.9);
   transition: all 0.2s ease-out;
-  --logo-url: none;
-  opacity: 1;
-  border-top: 2px solid rgba(255,255,255,0.1);
+  border-top: 2px solid rgba(255,255,255,0.1); /* Top border stays */
+  /* Left/Right/Bottom borders are simulated by clip-path context or filters */
+  border-left: 1px solid rgba(255,255,255,0.1);
+  border-right: 1px solid rgba(255,255,255,0.1); /* Will be clipped at bottom */
+  border-bottom: 1px solid rgba(255,255,255,0.1); /* Will be clipped at right */
 }
+
+/* Neon Corner Accent (The diagonal line) */
+.card::after {
+  content: ""; position: absolute;
+  bottom: 5px; right: -12px;
+  width: 40px; height: 2px;
+  background: var(--c-tier);
+  transform: rotate(-45deg);
+  box-shadow: 0 0 10px var(--c-tier);
+  opacity: 0.5;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.card:hover::after { opacity: 1; }
 
 .card-enter { animation: cardFadeIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
 @keyframes cardFadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
+/* Use Filter for Glow because clip-path hides box-shadow */
 .card:hover { 
   z-index: 10; 
-  border-color: var(--c-tier);
-  box-shadow: 0 0 20px rgba(var(--c-tier), 0.2), inset 0 0 20px rgba(0,0,0,0.8);
+  filter: drop-shadow(0 0 8px var(--c-tier));
 }
 
 .card::before {
@@ -177,14 +202,15 @@ body {
   background-size: 20px 20px;
 }
 
+/* QUANTUM SURGE BAR: Holds at 100% longer */
 @keyframes neonSurge {
   0% { width: 0%; opacity: 0.8; filter: brightness(1.5); }
-  40% { width: calc(var(--target-width) + 10%); opacity: 1; filter: brightness(2) drop-shadow(0 0 10px var(--c-tier)); }
-  60% { width: calc(var(--target-width) - 5%); opacity: 0.9; }
-  80% { width: var(--target-width); filter: brightness(1.5); }
+  20% { width: 100%; opacity: 1; filter: brightness(2) drop-shadow(0 0 10px var(--c-tier)); }
+  50% { width: 100%; opacity: 1; filter: brightness(2) drop-shadow(0 0 15px #fff); } /* HOLD 100% */
+  70% { width: calc(var(--target-width) - 5%); opacity: 0.9; }
   100% { width: var(--target-width); filter: brightness(1); }
 }
-.bar-surge { animation: neonSurge 2s ease-out forwards; }
+.bar-surge { animation: neonSurge 2.5s ease-out forwards; } /* Slower duration */
 
 .weekLine { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,0.8); padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; text-transform: uppercase; }
 .metaRow { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
@@ -197,30 +223,32 @@ body {
 .vsNum.neu { color: #888; }
 .vsArrow.pos { color: var(--c-green); } .vsArrow.neg { color: var(--c-red); }
 
-/* PERFECT GLITCH EFFECTS (Restored) */
+/* GLITCH EFFECTS (Restored + Relative Pos Fix) */
 .glitch-active {
-  animation: glitch-anim 0.3s infinite;
+  animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
   color: var(--c-tier);
   text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue);
-  position: relative;
+  position: relative; 
+  display: inline-block; /* Crucial for skew/translate */
 }
-@keyframes glitch-anim {
-  0% { transform: translate(0); text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue); }
-  25% { transform: translate(-2px, 2px); text-shadow: -2px 0 var(--c-red), 2px 0 var(--c-blue); }
-  50% { transform: translate(2px, -2px); text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue); }
-  75% { transform: translate(-1px, 1px); text-shadow: -1px 0 var(--c-red), 1px 0 var(--c-blue); }
-  100% { transform: translate(0); text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue); }
+@keyframes glitch-skew {
+  0% { transform: translate(0); }
+  20% { transform: translate(-3px, 3px); }
+  40% { transform: translate(3px, -3px); }
+  60% { transform: translate(-3px, -1px); }
+  80% { transform: translate(2px, 1px); }
+  100% { transform: translate(0); }
 }
 
 /* Floating Celebration Icon (70% Opacity, White Glow) */
 .float-celebration {
   position: absolute; 
-  top: 50%; left: 50%; /* Center of Card */
+  top: 50%; left: 50%; 
   width: 140px; height: 140px; 
   transform: translate(-50%, -50%);
   fill: #fff; color: #fff;
-  opacity: 0.7 !important; /* Fixed 70% */
-  filter: drop-shadow(0 0 30px rgba(255,255,255,0.9)); /* Strong white aura */
+  opacity: 0.7 !important; 
+  filter: drop-shadow(0 0 30px rgba(255,255,255,0.9)); 
   pointer-events: none; 
   z-index: 1; 
   animation: celebrateCenter 16.5s ease-in-out forwards;
