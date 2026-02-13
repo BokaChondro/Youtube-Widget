@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- =======================================================
      public/yt/topcards/index.html
-     Sci-Fi Theme v9 (Perfect Celebration Sync)
+     Sci-Fi Theme v10 (Restored Glitch & Polished Celebration)
      ======================================================= -->
 <html>
 <head>
@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="./style.css?v=scifi_v9" />
+  <link rel="stylesheet" href="./style.css?v=scifi_v10" />
 </head>
 <body>
   <div class="wrap">
@@ -31,11 +31,10 @@
           <div class="chip" id="subsChip"><span class="dot" id="subsDot"></span><span class="chipText" id="subsChipText">—</span></div>
         </div>
         <div class="midRow">
-          <!-- ID 'subsNow' is targeted for GLITCH CSS ONLY (No text scramble to avoid bugs) -->
-          <div class="bigNumber"><span id="subsNow" class="roll-target">—</span><span class="mainArrow" id="subsMainArrow">—</span></div>
+          <!-- Removed 'roll-target' class to allow glitch targeting, JS handles safety now -->
+          <div class="bigNumber"><span id="subsNow" class="main-counter">—</span><span class="mainArrow" id="subsMainArrow">—</span></div>
           <svg class="spark" id="subsSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="subsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="subsSparkPath" d="" fill="none" /></svg>
         </div>
-        <!-- Dual Layer Milestone Box -->
         <div class="milestoneBox" id="subsMilestoneBox">
           <div class="milestone-default">
             <div class="milestoneText"><span>NEXT TARGET: <b id="subsNextGoal">—</b></span><span id="subsNextPct">0%</span></div>
@@ -45,8 +44,8 @@
         </div>
         <div class="weekLine" id="subsWeek">LAST 7D: —</div>
         <div class="metaRow">
-          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue glitch-text" id="subsLast28">—</div></div>
-          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue glitch-text" id="subsPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="subsLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="subsPrev28">—</div></div>
           <div class="metaItem"><div class="metaLabel">VS 6M AVG</div><div class="metaValue"><span class="vsNum" id="subsVsNum">—</span><span class="vsArrow" id="subsVsArrow">—</span></div></div>
         </div>
       </div>
@@ -62,7 +61,7 @@
           <div class="chip" id="rtChip"><span class="dot" id="rtDot"></span><span class="chipText" id="rtChipText">—</span></div>
         </div>
         <div class="midRow">
-          <div class="bigNumber"><span id="rtNow" class="roll-target">—</span><span class="mainArrow" id="rtMainArrow">—</span></div>
+          <div class="bigNumber"><span id="rtNow" class="main-counter">—</span><span class="mainArrow" id="rtMainArrow">—</span></div>
           <svg class="spark" id="rtSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="rtSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="rtSparkPath" d="" fill="none" /></svg>
         </div>
         <div class="milestoneBox" id="rtMilestoneBox">
@@ -74,8 +73,8 @@
         </div>
         <div class="weekLine" id="rtPacing">LAST HOUR: —</div>
         <div class="metaRow">
-          <div class="metaItem"><div class="metaLabel">LAST 24H</div><div class="metaValue glitch-text" id="rtLast24">—</div></div>
-          <div class="metaItem"><div class="metaLabel">PREV 24H</div><div class="metaValue glitch-text" id="rtPrev24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">LAST 24H</div><div class="metaValue" id="rtLast24">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 24H</div><div class="metaValue" id="rtPrev24">—</div></div>
           <div class="metaItem"><div class="metaLabel">VS 7D AVG</div><div class="metaValue"><span class="vsNum" id="rtVsNum">—</span><span class="vsArrow" id="rtVsArrow">—</span></div></div>
         </div>
       </div>
@@ -91,7 +90,7 @@
           <div class="chip" id="viewsChip"><span class="dot" id="viewsDot"></span><span class="chipText" id="viewsChipText">—</span></div>
         </div>
         <div class="midRow">
-          <div class="bigNumber"><span id="viewsTotal" class="roll-target">—</span><span class="mainArrow" id="viewsMainArrow">—</span></div>
+          <div class="bigNumber"><span id="viewsTotal" class="main-counter">—</span><span class="mainArrow" id="viewsMainArrow">—</span></div>
           <svg class="spark" id="viewsSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="viewsSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="viewsSparkPath" d="" fill="none" /></svg>
         </div>
         <div class="milestoneBox" id="viewsMilestoneBox">
@@ -103,8 +102,8 @@
         </div>
         <div class="weekLine" id="viewsWeek">LAST 7D: —</div>
         <div class="metaRow">
-          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue glitch-text" id="viewsLast28">—</div></div>
-          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue glitch-text" id="viewsPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="viewsLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="viewsPrev28">—</div></div>
           <div class="metaItem"><div class="metaLabel">VS 6M AVG</div><div class="metaValue"><span class="vsNum" id="viewsVsNum">—</span><span class="vsArrow" id="viewsVsArrow">—</span></div></div>
         </div>
       </div>
@@ -120,7 +119,7 @@
           <div class="chip" id="watchChip"><span class="dot" id="watchDot"></span><span class="chipText" id="watchChipText">—</span></div>
         </div>
         <div class="midRow">
-          <div class="bigNumber"><span id="watchNow" class="roll-target">—</span><span class="mainArrow" id="watchMainArrow">—</span></div>
+          <div class="bigNumber"><span id="watchNow" class="main-counter">—</span><span class="mainArrow" id="watchMainArrow">—</span></div>
           <svg class="spark" id="watchSpark" viewBox="0 0 120 40" preserveAspectRatio="none"><path id="watchSparkFill" d="" fill="rgba(255,255,255,0.1)" /><path id="watchSparkPath" d="" fill="none" /></svg>
         </div>
         <div class="milestoneBox" id="watchMilestoneBox">
@@ -132,8 +131,8 @@
         </div>
         <div class="weekLine" id="watchWeek">LAST 7D: —</div>
         <div class="metaRow">
-          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue glitch-text" id="watchLast28">—</div></div>
-          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue glitch-text" id="watchPrev28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">LAST 28D</div><div class="metaValue" id="watchLast28">—</div></div>
+          <div class="metaItem"><div class="metaLabel">PREV 28D</div><div class="metaValue" id="watchPrev28">—</div></div>
           <div class="metaItem"><div class="metaLabel">VS 6M AVG</div><div class="metaValue"><span class="vsNum" id="watchVsNum">—</span><span class="vsArrow" id="watchVsArrow">—</span></div></div>
         </div>
       </div>
@@ -164,6 +163,6 @@
     <div class="foot" id="updated">SYSTEM INITIALIZING...</div>
   </div>
 
-  <script src="./app.js?v=scifi_v9"></script>
+  <script src="./app.js?v=scifi_v10"></script>
 </body>
 </html>
