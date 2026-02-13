@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/style.css
-   Sci-Fi Theme v9 (Smooth Celebration)
+   Sci-Fi Theme v10 (Restored Glitch & 70% Opacity Icon)
    ========================================================= */
 
 :root {
@@ -126,46 +126,40 @@ body {
 .spark { width: 120px; height: 40px; overflow: visible; filter: drop-shadow(0 0 5px var(--c-tier)); transition: transform 0.5s; }
 .spark path { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 
-/* =========================================================
-   Milestone & Celebration Styles (REFINED)
-   ========================================================= */
+/* Milestone */
 .milestoneBox { 
   position: relative; 
-  height: 50px; /* Adjusted height */
+  height: 54px; 
   margin-bottom: 16px; 
   background: rgba(255,255,255,0.03); 
   border: 1px solid rgba(255,255,255,0.05); 
   overflow: hidden; 
-  z-index: 3; /* ABOVE float icon */
+  z-index: 3; 
 }
 
-/* Default State */
 .milestone-default {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   padding: 8px;
   display: flex; flex-direction: column; justify-content: center;
-  transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease; /* Slower */
+  transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease;
   transform: translateY(0); opacity: 1;
 }
 
-/* Celebration State - BRIGHT WHITE */
 .milestone-celebrate {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-display); 
-  font-size: 26px; /* BIG FONT */
+  font-size: 24px; 
   font-weight: 700; letter-spacing: 1px;
-  color: #fff; /* PURE WHITE */
-  text-shadow: 0 0 20px rgba(255,255,255,0.9); /* WHITE GLOW */
+  color: #fff; text-shadow: 0 0 20px rgba(255,255,255,0.9);
   text-transform: uppercase;
   transform: translateY(100%); opacity: 0;
-  transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease; /* Slower */
+  transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease;
   background: rgba(0,0,0,0.85); 
   text-align: center;
   line-height: 1;
 }
 
-/* Celebration Triggers */
 .milestoneBox.celebrating .milestone-default { transform: translateY(-100%); opacity: 0; }
 .milestoneBox.celebrating .milestone-celebrate { transform: translateY(0); opacity: 1; }
 
@@ -203,43 +197,43 @@ body {
 .vsNum.neu { color: #888; }
 .vsArrow.pos { color: var(--c-green); } .vsArrow.neg { color: var(--c-red); }
 
-/* Glitch Effects */
+/* PERFECT GLITCH EFFECTS (Restored) */
 .glitch-active {
-  animation: glitch-skew 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  animation: glitch-anim 0.3s infinite;
   color: var(--c-tier);
   text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue);
+  position: relative;
 }
-@keyframes glitch-skew {
-  0% { transform: translate(0); }
-  20% { transform: translate(-3px, 3px); }
-  40% { transform: translate(3px, -3px); }
-  60% { transform: translate(-3px, -1px); }
-  80% { transform: translate(2px, 1px); }
-  100% { transform: translate(0); }
+@keyframes glitch-anim {
+  0% { transform: translate(0); text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue); }
+  25% { transform: translate(-2px, 2px); text-shadow: -2px 0 var(--c-red), 2px 0 var(--c-blue); }
+  50% { transform: translate(2px, -2px); text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue); }
+  75% { transform: translate(-1px, 1px); text-shadow: -1px 0 var(--c-red), 1px 0 var(--c-blue); }
+  100% { transform: translate(0); text-shadow: 2px 0 var(--c-red), -2px 0 var(--c-blue); }
 }
 
-/* Floating Celebration Icon (CENTERED) */
+/* Floating Celebration Icon (70% Opacity, White Glow) */
 .float-celebration {
   position: absolute; 
   top: 50%; left: 50%; /* Center of Card */
-  width: 140px; height: 140px; /* Big Icon */
+  width: 140px; height: 140px; 
   transform: translate(-50%, -50%);
-  fill: #fff; color: #fff; /* White */
-  filter: drop-shadow(0 0 30px rgba(255,255,255,0.6)); 
+  fill: #fff; color: #fff;
+  opacity: 0.7 !important; /* Fixed 70% */
+  filter: drop-shadow(0 0 30px rgba(255,255,255,0.9)); /* Strong white aura */
   pointer-events: none; 
-  z-index: 1; /* BEHIND milestone box (z=3) but above BG */
-  opacity: 0;
-  animation: celebrateCenter 16.5s ease-in-out forwards; /* 1.5 in + 15 hold + 1.5 out */
+  z-index: 1; 
+  animation: celebrateCenter 16.5s ease-in-out forwards;
 }
 
 @keyframes celebrateCenter {
-  0% { opacity: 0; transform: translate(-50%, 50%) scale(0.5); } /* Pop Up from Bottom */
-  10% { opacity: 0.15; transform: translate(-50%, -50%) scale(1); } /* Stop Center, Low Opacity */
-  90% { opacity: 0.15; transform: translate(-50%, -60%) scale(1.1); } /* Slow Drift Up */
-  100% { opacity: 0; transform: translate(-50%, -150%) scale(1.2); } /* Fly Out Top */
+  0% { opacity: 0; transform: translate(-50%, 50%) scale(0.5); } 
+  10% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); } 
+  90% { opacity: 0.7; transform: translate(-50%, -60%) scale(1.1); } 
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(1.2); } 
 }
 
-/* Roll Fix */
+/* Roll Structure */
 .rollWrap { display: inline-block; height: 1.1em; overflow: hidden; vertical-align: bottom; position: relative; }
 .rollCol { display: flex; flex-direction: column; text-align: left; }
 .rollLine { height: 1.1em; line-height: 1.1em; display: block; font-family: var(--font-display); }
