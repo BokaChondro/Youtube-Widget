@@ -1,6 +1,6 @@
 /* =========================================================
    public/yt/topcards/app.js
-   Sci-Fi Logic v9 (Strict Roll + Center Celebration)
+   Sci-Fi Logic v10 (Restored Main Glitch + Polished Sync)
    ========================================================= */
 
 const NF_INT = new Intl.NumberFormat();
@@ -191,11 +191,9 @@ function renderHourlyPacing(elId, cur, prev) {
   safeSetHTML(elId, left + right);
 }
 
-// --- CASINO ROLL (STRICT CLEANUP) ---
+// --- CASINO ROLL ---
 function ensureRoll(el) {
-  // If wrapper exists and is attached, reuse it
   if (el._rollWrap && el.contains(el._rollWrap)) return;
-  // Otherwise, clear completely and rebuild
   el.innerHTML = ""; 
   const wrap = document.createElement("span"); 
   wrap.className = "rollWrap";
@@ -228,7 +226,6 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
     return n + suffix;
   };
   
-  // Clean start state
   const startTxt = txt(fromVal);
   const endTxt = txt(toVal);
   
@@ -241,30 +238,18 @@ function animateCasinoRoll(el, fromVal, toVal, opts = {}) {
   const absDiff = Math.abs(diff);
   let steps = [fromVal];
   
-  // Build minimal visual steps
-  if (absDiff <= 5) {
-    // Show every digit for small changes
+  if (absDiff <= 20) {
     const dir = diff > 0 ? 1 : -1;
     for (let i = 1; i <= absDiff; i++) steps.push(fromVal + (i * dir));
   } else { 
-    // Just start, middle blur, end
-    steps.push(fromVal + (diff * 0.5));
-    steps.push(toVal); 
+    steps = [fromVal, fromVal + (diff * 0.2), fromVal + (diff * 0.5), fromVal + (diff * 0.8), toVal]; 
   }
   
-  // Force Clear & Rebuild
-  col.innerHTML = "";
-  steps.forEach(v => {
-    const line = document.createElement("span");
-    line.className = "rollLine";
-    line.innerHTML = txt(v);
-    col.appendChild(line);
-  });
+  col.innerHTML = steps.map((v, i) => `<span class="rollLine">${txt(v)}</span>`).join("");
   
-  // Trigger Animation
   col.style.transition = "none"; 
   col.style.transform = "translateY(0)";
-  void col.offsetHeight; // Reflow
+  void col.offsetHeight; 
   
   col.style.transition = `transform ${duration}ms cubic-bezier(0.18, 0.9, 0.2, 1)`;
   col.style.transform = `translateY(${-1.1 * (steps.length - 1)}em)`;
@@ -320,10 +305,37 @@ function triggerCelebration(cardId, type, message) {
    ========================================================= */
 
 const GLITCH_CHARS = "#@&$-+!^%";
+
+// SMARTER SCRAMBLER: Respects rolling numbers!
 function scrambleText(el) {
   if (!el || el.dataset.scrambling) return;
-  const original = el.textContent;
+  
+  // If element is a Casino Roll (has structure), target the inner text span
+  // The structure is: .rollWrap > .rollCol > .rollLine (visible one is last child usually if rolling, but static is first)
+  // Actually, we should check if it has the class 'main-counter'.
+  
+  let target = el;
+  let isRoller = false;
+  
+  if (el.classList.contains("main-counter")) {
+    isRoller = true;
+    // Find the visible text line. 
+    // If it's static (not rolling), it might just have text, or a simple wrap.
+    // If it is rolling, we probably shouldn't mess with it to avoid breaking layout.
+    // BUT user wants glitch.
+    // Strategy: Scramble the text of the *last* .rollLine (current value) if exists.
+    const lines = el.querySelectorAll(".rollLine");
+    if (lines.length > 0) {
+      target = lines[lines.length - 1]; // Target the visible bottom one
+    } else if (el.querySelector(".rollWrap")) {
+        // If wrapper exists but no lines found (weird), skip
+        return;
+    }
+  }
+
+  const original = target.textContent;
   if (!original || original.length < 2) return; 
+  
   el.dataset.scrambling = "true";
   let steps = 0;
   const maxSteps = 12; 
@@ -331,23 +343,27 @@ function scrambleText(el) {
   const interval = setInterval(() => {
     const arr = original.split('');
     for(let i=0; i<arr.length; i++) {
-      if(Math.random() > 0.5 && arr[i] !== ' ' && arr[i] !== ',') {
+      if(Math.random() > 0.5 && arr[i] !== ' ' && arr[i] !== ',' && arr[i] !== '.') {
         arr[i] = GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
       }
     }
-    el.textContent = arr.join('');
+    target.textContent = arr.join('');
     steps++;
     if(steps >= maxSteps) {
       clearInterval(interval);
-      el.textContent = original;
+      target.textContent = original;
       delete el.dataset.scrambling;
     }
   }, 60);
 }
 
 function randomGlitchLoop() {
-  // EXCLUDE 'subsNow', 'rtNow' etc from text scrambling to prevent roll conflict
-  const targets = ["subsLast28", "subsPrev28", "rtLast24", "rtPrev24", "viewsLast28", "viewsPrev28", "watchLast28", "watchPrev28"];
+  // Now we INCLUDE main counters because we made scrambleText smarter
+  const targets = [
+    "subsNow", "rtNow", "viewsTotal", "watchNow", 
+    "subsLast28", "subsPrev28", "rtLast24", "rtPrev24", "viewsLast28", "viewsPrev28", "watchLast28", "watchPrev28"
+  ];
+  
   const id = targets[Math.floor(Math.random() * targets.length)];
   const el = document.getElementById(id);
   if (el) {
@@ -392,8 +408,6 @@ function triggerAdvancedAnimations() {
     if (!start) start = timestamp;
     const progress = timestamp - start;
     const pct = progress / duration;
-    
-    // Wave Offset
     const waveOffset = progress / 200; 
 
     cards.forEach(c => {
@@ -404,13 +418,9 @@ function triggerAdvancedAnimations() {
       let renderData = [];
       let mix = 0; 
 
-      if(pct < 0.15) {
-        mix = pct / 0.15; 
-      } else if (pct > 0.85) {
-        mix = 1 - ((pct - 0.85) / 0.15); 
-      } else {
-        mix = 1; 
-      }
+      if(pct < 0.15) mix = pct / 0.15; 
+      else if (pct > 0.85) mix = 1 - ((pct - 0.85) / 0.15); 
+      else mix = 1; 
 
       for(let i=0; i<len; i++) {
         const rVal = realData[i] !== undefined ? realData[i] : 50; 
@@ -471,7 +481,6 @@ function render(data, isFirst) {
 
   const weekly = data.weekly || {}, last28 = data.m28?.last28 || {}, prev28 = data.m28?.prev28 || {}, med6m = data.m28?.median6m || {}, hist = data.history28d || [];
 
-  // SAVE DATA
   animState.subs = hist.map(x => x.netSubs);
   animState.rt = rt.sparkline || [];
   animState.views = hist.map(x => x.views);
@@ -597,7 +606,7 @@ async function load(isFirst) {
   catch (e) { document.getElementById("updated").textContent = "FETCH ERROR: " + e.message; }
 }
 
-// ... HUD, ICONS, KB, HELPER FUNCS SAME AS V8 ...
+// ... HUD, KB, ETC (UNCHANGED) ...
 let shownAt = {};
 try { shownAt = JSON.parse(localStorage.getItem("aihud_shownAt") || "{}"); } catch(e) { console.warn("HUD Mem Reset"); }
 
@@ -608,166 +617,14 @@ const HUD_CONFIG = {
   cooldownMs: { freshness: 600000, birthday: 900000, status: 480000, trivia: 60000, tip: 60000, motivation: 90000 }
 };
 
-const HUD_ICONS = {
-  live: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,
-  target: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>`,
-  rocket: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5z"/></svg>`,
-  warn: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
-  up: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
-  down: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,
-  bulb: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,
-  globe: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.93 9h-3.17a15.7 15.7 0 0 0-1.45-6A8.02 8.02 0 0 1 19.93 11zM12 4c.9 1.3 1.7 3.3 2.1 7H9.9C10.3 7.3 11.1 5.3 12 4zM4.07 13h3.17a15.7 15.7 0 0 0 1.45 6A8.02 8.02 0 0 1 4.07 13zm3.17-2H4.07A8.02 8.02 0 0 1 8.69 5a15.7 15.7 0 0 0-1.45 6zm2.66 2h4.2c-.4 3.7-1.2 5.7-2.1 7-.9-1.3-1.7-3.3-2.1-7zm6.86 6a15.7 15.7 0 0 0 1.45-6h3.17A8.02 8.02 0 0 1 15.31 19z"/></svg>`,
-  chat: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`,
-};
-
-const KB = {
-  facts: [
-    "YouTube is the 2nd most visited site in existence.", "The first video 'Me at the zoo' has over 200M views.", "Mobile users visit YouTube twice as often as desktop users.",
-    "Comedy, Music, and Entertainment are top genres.", "YouTube supports 80+ languages.", "More than 500 hours of video are uploaded every minute.",
-    "Algorithm favors Watch Time over View Count.", "Bright thumbnails tend to have higher CTR.", "60% of people prefer online video to TV.",
-    "Videos that keep viewers watching often get recommended more."
-  ],
-  tips: [
-    "Audio is King: Bad video is forgiveable, bad audio is not.", "Hook 'em: The first 5 seconds determine retention.", "Metadata: Keywords in first sentence of description help.",
-    "Hearting comments brings viewers back.", "Use End Screens to link best videos.", "Playlists increase Session Time.", "Use Shorts as a funnel.",
-    "Rule of Thirds works for thumbnails.", "Cut the silence to keep energy up."
-  ],
-  motivation: [
-    "Creation is a marathon. Pace yourself.", "Your next video could change everything.", "Don't compare your Ch 1 to their Ch 20.",
-    "1,000 true fans beats 100,000 ghosts.", "Consistency is the cheat code.", "Focus on the 1 viewer watching."
-  ],
-  nostalgia: [
-    "Remember why you started? Keep that spark.", "Look at your first video. Progress.", "Every big channel started with 0 subs."
-  ]
-};
-
-function daysBetweenISO(aIso, bIso) { try { return Math.floor((new Date(bIso) - new Date(aIso)) / 86400000); } catch { return null; } }
-function pick(arr) { return arr && arr.length ? arr[Math.floor(Math.random() * arr.length)] : null; }
-
-function updateHudPathGeometry() {
-  const path = document.getElementById("hudTracePath");
-  const box = document.getElementById("hudBox");
-  if (!path || !box) return;
-  const w = box.offsetWidth - 2, h = box.offsetHeight - 2;
-  const d = `M 1 1 L 1 ${h} L ${w} ${h} L ${w} 1 L 1 1`;
-  path.setAttribute("d", d);
-  const len = path.getTotalLength() || 1000;
-  path.style.strokeDasharray = len;
-}
-
-function initHudBorder() {
-  updateHudPathGeometry();
-  const path = document.getElementById("hudTracePath");
-  if (!path) return;
-  const len = path.getTotalLength() || 1000;
-  path.style.transition = "none";
-  path.style.strokeDasharray = len;
-  path.style.strokeDashoffset = len;
-  if (!window._hudRo) {
-      const box = document.getElementById("hudBox");
-      if (box) { window._hudRo = new ResizeObserver(() => { updateHudPathGeometry(); }); window._hudRo.observe(box); }
-  }
-}
-
-function animateHudBorder(color) {
-  const path = document.getElementById("hudTracePath");
-  if (!path) return;
-  const len = path.getTotalLength() || 1000;
-  path.style.stroke = color;
-  path.style.transition = "none";
-  path.style.strokeDashoffset = len;
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      path.style.transition = "stroke-dashoffset 16s linear";
-      path.style.strokeDashoffset = "0";
-    });
-  });
-}
-
-function buildIntel(data) {
-  const out = []; const ch = data.channel || {}, w = data.weekly || {}, m28 = data.m28 || {}, hud = data.hud || {}, hist = data.history28d || [];
-  const weekViews = Number(w.views || 0), weekG = Number(w.subscribersGained || 0), weekL = Number(w.subscribersLost || 0), weekNet = Number(w.netSubs || 0);
-  const subsPer1k = weekViews > 0 ? (weekNet / weekViews) * 1000 : 0;
-  
-  const uploadDaysAgo = (hud.uploads?.latest?.publishedAt && hud.statsThrough) ? daysBetweenISO(hud.uploads.latest.publishedAt, hud.statsThrough) : null;
-  if (uploadDaysAgo !== null && uploadDaysAgo > 14) out.push({ key: "warn_gap", cat: "warning", weight: 3, icon: HUD_ICONS.warn, tag: "WARNING", type: "red", text: `UPLOAD BUFFER EMPTY. LAST UPLOAD ${uploadDaysAgo}D AGO.` });
-  else if (uploadDaysAgo !== null && uploadDaysAgo <= 3) out.push({ key: "good_gap", cat: "good", weight: 2, icon: HUD_ICONS.up, tag: "RISING", type: "green", text: `CONSISTENCY DETECTED. LAST UPLOAD ${uploadDaysAgo}D AGO.` });
-
-  if (weekG > 0 || weekL > 0) out.push({ key: "churn", cat: "subs", weight: 3.2, icon: weekL>weekG?HUD_ICONS.down:HUD_ICONS.up, tag: weekL>weekG?"DROPPING":"GROWTH", type: weekL>weekG?"red":"green", text: `NET SUBS: ${weekNet}. GAINED ${weekG}, LOST ${weekL}.` });
-
-  if (weekViews > 0) out.push({ key: "conv", cat: "conversion", weight: 2.6, icon: HUD_ICONS.target, tag: "CONVERSION", type: subsPer1k>=2?"green":"yellow", text: `CONV RATE: ${subsPer1k.toFixed(2)} NET SUBS PER 1K VIEWS.` });
-
-  const thumb = hud.thumb28;
-  if (thumb && thumb.ctr) {
-    const ctr = thumb.ctr;
-    out.push({ key: "ctr", cat: "packaging", weight: 2.1, icon: ctr<2?HUD_ICONS.warn:HUD_ICONS.bulb, tag: ctr<2?"WARNING":"PACKAGING", type: ctr<2?"red":(ctr>8?"green":"yellow"), text: `AVG CTR IS ${ctr.toFixed(1)}%. ${ctr<2?"OPTIMIZE THUMBS.":"HEALTHY METRIC."}` });
-  }
-
-  const ret = hud.retention28;
-  if (ret && ret.avgViewPercentage) {
-    const r = ret.avgViewPercentage;
-    out.push({ key: "ret", cat: "retention", weight: 2, icon: r<35?HUD_ICONS.warn:HUD_ICONS.up, tag: r<35?"WARNING":"RETENTION", type: r<35?"red":"green", text: `AVG VIEW PCT ${r.toFixed(0)}%. ${r<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}` });
-  }
-
-  const lv = hud.latestVideo;
-  if (lv && lv.title) {
-    const vViews = Number(lv.views||0);
-    out.push({ key: "lv_stat", cat: "video", weight: 2.8, icon: HUD_ICONS.rocket, tag: "LATEST", type: "purple", text: `LATEST: "${lv.title.toUpperCase()}" — ${fmt(vViews)} VIEWS.` });
-  }
-
-  const nextSub = getMilestoneLimits(Number(ch.subscribers||0), "subs").max;
-  if (nextSub > Number(ch.subscribers||0)) out.push({ key: "goal", cat: "goal", weight: 1.4, icon: HUD_ICONS.target, tag: "MILESTONE", type: "blue", text: `${fmt(nextSub - Number(ch.subscribers))} SUBS TO ${fmt(nextSub)}.` });
-
-  const tip = pick(KB.tips); if (tip) out.push({ key: "tip", cat: "tip", weight: 0.4, icon: HUD_ICONS.bulb, tag: "TIP", type: "yellow", text: tip.toUpperCase() });
-  const fact = pick(KB.facts); if (fact) out.push({ key: "fact", cat: "trivia", weight: 0.3, icon: HUD_ICONS.bulb, tag: "FACT", type: "pink", text: fact.toUpperCase() });
-  const mot = pick(KB.motivation); if (mot) out.push({ key: "mot", cat: "motivation", weight: 0.2, icon: HUD_ICONS.live, tag: "INSIGHT", type: "purple", text: mot.toUpperCase() });
-
-  return out;
-}
-
-function showNextIntel() {
-  const item = intelQueue.length ? intelQueue[Math.floor(Math.random() * intelQueue.length)] : null;
-  if (!item) return;
-
-  const msg = document.getElementById("hudMessage");
-  const tag = document.getElementById("hudTag");
-  const icon = document.getElementById("hudIcon");
-  const box = document.getElementById("hudBox");
-  
-  box.classList.remove("glitch-active");
-  msg.style.opacity = "0"; tag.style.opacity = "0"; icon.style.opacity = "0";
-
-  setTimeout(() => {
-    msg.textContent = item.text;
-    tag.textContent = item.tag;
-    icon.innerHTML = item.icon || "⚡";
-    updateHudPathGeometry();
-    const c = COLORS[item.type] || COLORS.orange;
-    box.style.setProperty("--hud-accent", c);
-    tag.style.color = c;
-    tag.style.textShadow = `0 0 10px ${c}`;
-    icon.style.color = c;
-    animateHudBorder(c);
-    msg.style.opacity = "1"; tag.style.opacity = "1"; icon.style.opacity = "1";
-    // GLITCH ON SHOW
-    box.classList.add("glitch-active");
-    setTimeout(() => box.classList.remove("glitch-active"), 300);
-  }, 200);
-}
-
-function updateHud(data) {
-  intelQueue = buildIntel(data);
-  if (!HUD_CONFIG.started) {
-    HUD_CONFIG.started = true;
-    setTimeout(() => {
-      initHudBorder();
-      showNextIntel();
-      HUD_CONFIG.timer = setInterval(showNextIntel, 16000);
-      // START LOOPS
-      randomGlitchLoop();
-      setInterval(triggerAdvancedAnimations, 30000);
-    }, 1200);
-  }
-}
-
-(async function init() { await load(true); setInterval(() => load(false), 60 * 1000); })();
+const HUD_ICONS={live:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,target:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>`,rocket:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5z"/></svg>`,warn:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,up:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,down:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,bulb:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,globe:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.93 9h-3.17a15.7 15.7 0 0 0-1.45-6A8.02 8.02 0 0 1 19.93 11zM12 4c.9 1.3 1.7 3.3 2.1 7H9.9C10.3 7.3 11.1 5.3 12 4zM4.07 13h3.17a15.7 15.7 0 0 0 1.45 6A8.02 8.02 0 0 1 4.07 13zm3.17-2H4.07A8.02 8.02 0 0 1 8.69 5a15.7 15.7 0 0 0-1.45 6zm2.66 2h4.2c-.4 3.7-1.2 5.7-2.1 7-.9-1.3-1.7-3.3-2.1-7zm6.86 6a15.7 15.7 0 0 0 1.45-6h3.17A8.02 8.02 0 0 1 15.31 19z"/></svg>`,chat:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`};
+const KB={facts:["YouTube is the 2nd most visited site in existence.","The first video 'Me at the zoo' has over 200M views.","Mobile users visit YouTube twice as often as desktop users.","Comedy, Music, and Entertainment are top genres.","YouTube supports 80+ languages.","More than 500 hours of video are uploaded every minute.","Algorithm favors Watch Time over View Count.","Bright thumbnails tend to have higher CTR.","60% of people prefer online video to TV.","Videos that keep viewers watching often get recommended more."],tips:["Audio is King: Bad video is forgiveable, bad audio is not.","Hook 'em: The first 5 seconds determine retention.","Metadata: Keywords in first sentence of description help.","Hearting comments brings viewers back.","Use End Screens to link best videos.","Playlists increase Session Time.","Use Shorts as a funnel.","Rule of Thirds works for thumbnails.","Cut the silence to keep energy up."],motivation:["Creation is a marathon. Pace yourself.","Your next video could change everything.","Don't compare your Ch 1 to their Ch 20.","1,000 true fans beats 100,000 ghosts.","Consistency is the cheat code.","Focus on the 1 viewer watching."],nostalgia:["Remember why you started? Keep that spark.","Look at your first video. Progress.","Every big channel started with 0 subs."]};
+function daysBetweenISO(a,b){try{return Math.floor((new Date(b)-new Date(a))/86400000)}catch{return null}}
+function pick(a){return a&&a.length?a[Math.floor(Math.random()*a.length)]:null}
+function updateHudPathGeometry(){const a=document.getElementById("hudTracePath"),b=document.getElementById("hudBox");if(!a||!b)return;const c=b.offsetWidth-2,d=b.offsetHeight-2;a.setAttribute("d",`M 1 1 L 1 ${d} L ${c} ${d} L ${c} 1 L 1 1`);const e=a.getTotalLength()||1000;a.style.strokeDasharray=e}
+function initHudBorder(){updateHudPathGeometry();const a=document.getElementById("hudTracePath");if(!a)return;const b=a.getTotalLength()||1000;a.style.transition="none",a.style.strokeDasharray=b,a.style.strokeDashoffset=b;window._hudRo||(window._hudRo=new ResizeObserver(()=>{updateHudPathGeometry()}),window._hudRo.observe(document.getElementById("hudBox")))}
+function animateHudBorder(a){const b=document.getElementById("hudTracePath");if(!b)return;const c=b.getTotalLength()||1000;b.style.stroke=a,b.style.transition="none",b.style.strokeDashoffset=c,requestAnimationFrame(()=>{requestAnimationFrame(()=>{b.style.transition="stroke-dashoffset 16s linear",b.style.strokeDashoffset="0"})})}
+function buildIntel(a){const b=[],c=a.channel||{},d=a.weekly||{},e=a.m28||{},f=a.hud||{},g=a.history28d||[],h=Number(d.views||0),i=Number(d.subscribersGained||0),j=Number(d.subscribersLost||0),k=Number(d.netSubs||0),l=h>0?k/h*1e3:0,m=f.uploads?.latest?.publishedAt&&f.statsThrough?daysBetweenISO(f.uploads.latest.publishedAt,f.statsThrough):null;if(null!==m&&m>14?b.push({key:"warn_gap",cat:"warning",weight:3,icon:HUD_ICONS.warn,tag:"WARNING",type:"red",text:`UPLOAD BUFFER EMPTY. LAST UPLOAD ${m}D AGO.`}):null!==m&&m<=3&&b.push({key:"good_gap",cat:"good",weight:2,icon:HUD_ICONS.up,tag:"RISING",type:"green",text:`CONSISTENCY DETECTED. LAST UPLOAD ${m}D AGO.`}),(i>0||j>0)&&b.push({key:"churn",cat:"subs",weight:3.2,icon:j>i?HUD_ICONS.down:HUD_ICONS.up,tag:j>i?"DROPPING":"GROWTH",type:j>i?"red":"green",text:`NET SUBS: ${k}. GAINED ${i}, LOST ${j}.`}),h>0&&b.push({key:"conv",cat:"conversion",weight:2.6,icon:HUD_ICONS.target,tag:"CONVERSION",type:l>=2?"green":"yellow",text:`CONV RATE: ${l.toFixed(2)} NET SUBS PER 1K VIEWS.`}),f.thumb28&&f.thumb28.ctr){const n=f.thumb28.ctr;b.push({key:"ctr",cat:"packaging",weight:2.1,icon:n<2?HUD_ICONS.warn:HUD_ICONS.bulb,tag:n<2?"WARNING":"PACKAGING",type:n<2?"red":n>8?"green":"yellow",text:`AVG CTR IS ${n.toFixed(1)}%. ${n<2?"OPTIMIZE THUMBS.":"HEALTHY METRIC."}`})}if(f.retention28&&f.retention28.avgViewPercentage){const o=f.retention28.avgViewPercentage;b.push({key:"ret",cat:"retention",weight:2,icon:o<35?HUD_ICONS.warn:HUD_ICONS.up,tag:o<35?"WARNING":"RETENTION",type:o<35?"red":"green",text:`AVG VIEW PCT ${o.toFixed(0)}%. ${o<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}`})}const p=f.latestVideo;if(p&&p.title){const q=Number(p.views||0);b.push({key:"lv_stat",cat:"video",weight:2.8,icon:HUD_ICONS.rocket,tag:"LATEST",type:"purple",text:`LATEST: "${p.title.toUpperCase()}" — ${fmt(q)} VIEWS.`})}const r=getMilestoneLimits(Number(c.subscribers||0),"subs").max;if(r>Number(c.subscribers||0)&&b.push({key:"goal",cat:"goal",weight:1.4,icon:HUD_ICONS.target,tag:"MILESTONE",type:"blue",text:`${fmt(r-Number(c.subscribers))} SUBS TO ${fmt(r)}.`}),pick(KB.tips)&&b.push({key:"tip",cat:"tip",weight:.4,icon:HUD_ICONS.bulb,tag:"TIP",type:"yellow",text:pick(KB.tips).toUpperCase()}),pick(KB.facts)&&b.push({key:"fact",cat:"trivia",weight:.3,icon:HUD_ICONS.bulb,tag:"FACT",type:"pink",text:pick(KB.facts).toUpperCase()}),pick(KB.motivation)){const s=pick(KB.motivation);b.push({key:"mot",cat:"motivation",weight:.2,icon:HUD_ICONS.live,tag:"INSIGHT",type:"purple",text:s.toUpperCase()})}return b}
+function showNextIntel(){const a=intelQueue.length?intelQueue[Math.floor(Math.random()*intelQueue.length)]:null;if(!a)return;const b=document.getElementById("hudMessage"),c=document.getElementById("hudTag"),d=document.getElementById("hudIcon"),e=document.getElementById("hudBox");e.classList.remove("glitch-active"),b.style.opacity="0",c.style.opacity="0",d.style.opacity="0",setTimeout(()=>{b.textContent=a.text,c.textContent=a.tag,d.innerHTML=a.icon||"⚡",updateHudPathGeometry();const f=COLORS[a.type]||COLORS.orange;e.style.setProperty("--hud-accent",f),c.style.color=f,c.style.textShadow=`0 0 10px ${f}`,d.style.color=f,animateHudBorder(f),b.style.opacity="1",c.style.opacity="1",d.style.opacity="1",e.classList.add("glitch-active"),setTimeout(()=>e.classList.remove("glitch-active"),300)},200)}
+function updateHud(a){intelQueue=buildIntel(a),HUD_CONFIG.started||(HUD_CONFIG.started=!0,setTimeout(()=>{initHudBorder(),showNextIntel(),HUD_CONFIG.timer=setInterval(showNextIntel,16e3),randomGlitchLoop(),setInterval(triggerAdvancedAnimations,3e4)},1200))}
+(async function init(){await load(!0),setInterval(()=>load(!1),6e4)})();
