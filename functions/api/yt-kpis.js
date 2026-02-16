@@ -30,6 +30,14 @@ function round1(n) {
   return Math.round(Number(n || 0) * 10) / 10;
 }
 
+// Generic round helper (used by v3 ranking + formatting)
+function round(n, digits = 0) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  const p = Math.pow(10, Number(digits) || 0);
+  return Math.round(x * p) / p;
+}
+
 function median(nums) {
   const arr = (nums || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
   if (!arr.length) return 0;
@@ -922,6 +930,8 @@ async function computeKPIs(env) {
   const ch = await fetchChannelBasics(token);
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
+  // v3 message system needs extra video IDs (we populate this later)
+  let v3VideoIds = [];
   const dailyStart = isoDate(shiftDays(end, -195));
   const daily = await fetchDailyCore(token, dailyStart, endIso);
   const N = daily.length;
@@ -1034,7 +1044,15 @@ async function computeKPIs(env) {
       fetchShortsViewedVsSwiped28(token, last28Start, endIso),
     ]);
 
-  const v3VideoIds = uniq([...(w7dV3?.ids || []), ...(w28V3?.ids || []), ...(w365V3?.ids || [])]);
+  v3VideoIds = uniq([...(w7dV3?.ids || []), ...(w28V3?.ids || []), ...(w365V3?.ids || [])]);
+
+  // Ensure we have metadata for all v3 videos (titles, thumbs, duration, etc.)
+  const missingV3Ids = (v3VideoIds || []).filter((id) => id && !vidsById[id]);
+  if (missingV3Ids.length) {
+    const moreVids = await fetchVideos(token, missingV3Ids);
+    (moreVids || []).forEach((v) => { if (v?.videoId) vidsById[v.videoId] = v; });
+    if (Array.isArray(videoDetails)) videoDetails.push(...(moreVids || []));
+  }
 
   const videoIntelList = buildVideoIntelList(videoDetails, v7dBundle, endIso);
   // -------------------------------------------------------
@@ -1064,7 +1082,7 @@ async function computeKPIs(env) {
   const focusShort = focusShortId ? pickIntelById(intel7V3, focusShortId) || pickIntelById(intel28V3, focusShortId) || pickIntelById(intel365V3, focusShortId) : null;
   const focusLong = focusLongId ? pickIntelById(intel7V3, focusLongId) || pickIntelById(intel28V3, focusLongId) || pickIntelById(intel365V3, focusLongId) : null;
 
-  const trafficTop = (last28?.trafficSources || []).slice().sort((a, b) => (b.views || 0) - (a.views || 0))[0] || null;
+  const trafficTop = (rowsToDimList(traffic28, "insightTrafficSourceType", "views")[0]) || null;
 
   // Estimated intra-day slices from last 24h (approx)
   const last24 = Number(realtime?.last24h || 0);
@@ -1074,10 +1092,7 @@ async function computeKPIs(env) {
     prevViews: Math.round(prev24 / div),
   });
 
-  if (realtime && realtime.vs7dAvg != null && realtime.last24h != null) {
-    realtime.vs7dAvgDelta = Number(realtime.last24h || 0) - Number(realtime.vs7dAvg || 0);
-  }
-
+  
   const v3Docs = {
     emotionColors: HUD_V3_EMOTION_COLORS,
     glossary: HUD_V3_GLOSSARY,
