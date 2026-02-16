@@ -1,9 +1,12 @@
 /* =========================================================
    functions/api/yt-kpis.js — Server KPI aggregator
-   Overhauled for Deep Forensics + Backward Compatibility
+   Features:
+   - Deep Forensic Analytics (Devices, Search Terms, Video Specifics)
+   - Realtime 48h Estimates
+   - Backward compatibility for existing UI Cards
    ========================================================= */
 
-// --- UTILS ---
+// --- UTILITIES ---
 function isoDate(d) { return d.toISOString().slice(0, 10); }
 function shiftDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function round1(n) { return Math.round(Number(n || 0) * 10) / 10; }
@@ -34,7 +37,7 @@ function parseISODurationToSeconds(isoDur) {
   return (Number(m[1]||0) * 3600) + (Number(m[2]||0) * 60) + Number(m[3]||0);
 }
 
-// --- AUTH ---
+// --- AUTHENTICATION ---
 async function getAccessToken(env) {
   const body = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
@@ -52,7 +55,7 @@ async function getAccessToken(env) {
   return data.access_token;
 }
 
-// --- YOUTUBE WRAPPERS ---
+// --- API WRAPPERS ---
 async function ytGet(token, url, params = {}) {
   const u = new URL(url);
   Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null) u.searchParams.set(k, String(v)); });
@@ -67,7 +70,6 @@ async function ytAnalytics(token, params) { return ytGet(token, "https://youtube
 async function safeAnalytics(token, params) { try { return await ytAnalytics(token, params); } catch { return null; } }
 
 // --- DATA FETCHING ---
-
 async function fetchChannelBasics(token) {
   const data = await ytData(token, "channels", { part: "snippet,statistics,contentDetails", mine: "true" });
   const ch = data.items?.[0];
@@ -84,7 +86,7 @@ async function fetchChannelBasics(token) {
 }
 
 async function fetchDailyCore(token, startIso, endIso) {
-  // Added revenue and avd metrics
+  // Added metrics for Revenue and AVD
   const data = await safeAnalytics(token, {
     startDate: startIso, endDate: endIso, dimensions: "day", sort: "day",
     metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost,estimatedRevenue,averageViewDuration",
@@ -101,9 +103,9 @@ async function fetchDailyCore(token, startIso, endIso) {
   }));
 }
 
-// --- DEEP FORENSICS ---
+// --- DEEP DIVE ANALYTICS ---
 async function fetchDeepInsights(token, start28, endIso) {
-  // We run these in parallel to keep the response time fast
+  // Running parallel requests to minimize latency
   const [
     trafficSearch, trafficExt, device,
     topVidsViews, topVidsSubs, topVidsRev, topVidsRetention
@@ -138,7 +140,7 @@ async function fetchDeepInsights(token, start28, endIso) {
 }
 
 async function fetchVideoDetails(token, videoIds) {
-  const ids = uniq(videoIds).slice(0, 50); // API limit
+  const ids = uniq(videoIds).slice(0, 50);
   if (!ids.length) return {};
   const data = await ytData(token, "videos", { part: "snippet,contentDetails,statistics", id: ids.join(",") });
   const map = {};
@@ -177,7 +179,7 @@ function packMetrics(sum) {
   };
 }
 
-// --- MAIN LOGIC ---
+// --- MAIN AGGREGATOR ---
 async function computeKPIs(env) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
@@ -185,20 +187,20 @@ async function computeKPIs(env) {
   const today = new Date();
   const end = shiftDays(today, -1); // Analytics usually 1-2 days delayed
   const endIso = isoDate(end);
-  const startDaily = isoDate(shiftDays(end, -195)); // ~6 months
+  const startDaily = isoDate(shiftDays(end, -195)); // ~6 months history
   const start28 = isoDate(shiftDays(end, -30));
 
-  // 1. Fetch Time Series
+  // 1. Fetch Core Series
   const daily = await fetchDailyCore(token, startDaily, endIso);
   
-  // 2. Fetch Forensics
+  // 2. Fetch Forensics (Parallel)
   const insights = await fetchDeepInsights(token, start28, endIso);
 
-  // 3. Resolve Video Titles
+  // 3. Resolve Titles
   const vidIds = new Set();
   Object.values(insights.videos).forEach(list => list.forEach(v => vidIds.add(v.id)));
   
-  // Also get recent uploads directly
+  // Get recent uploads for "Freshness" check
   const recentRaw = await ytData(token, "playlistItems", { playlistId: ch.uploadsPlaylistId, part: "snippet,contentDetails", maxResults: 10 });
   const recent = (recentRaw.items || []).map(i => ({
     id: i.contentDetails?.videoId,
@@ -223,7 +225,7 @@ async function computeKPIs(env) {
     recentUploads: recent.map(v => ({ ...v, ...vidMap[v.id] }))
   };
 
-  // 5. CALCULATE WINDOWS (For Cards)
+  // 5. Build Windows (for Legacy Cards)
   const N = daily.length;
   // Weekly
   const weekSum = N >= 7 ? sumDailyRows(daily, N - 7, N - 1) : {};
@@ -260,7 +262,7 @@ async function computeKPIs(env) {
     views48h,
     last24h: lastDay.views,
     prev24h: prevDay.views,
-    lastHour: Math.round(lastDay.views / 24), // Estimate
+    lastHour: Math.round(lastDay.views / 24), // Approx
     prevHour: Math.round(prevDay.views / 24),
     avgPrior6d: round1(avgPrior6d),
     vs7dAvgDelta: round1(lastDay.views - avgPrior6d),
@@ -276,11 +278,10 @@ async function computeKPIs(env) {
     m28,
     realtime,
     lifetime: { watchHours: life.totalHours },
-    history28d: winResults.map(w => w.metrics), // For charts
-    // HUD Data (Legacy structure to prevent breaks, partially populated)
-    hud: { uploads: { latest: forensics.recentUploads[0] } }, 
-    // NEW DEEP DATA
-    forensics
+    history28d: winResults.map(w => w.metrics), 
+    // New Structure
+    forensics,
+    dailySeries: daily
   };
 }
 
