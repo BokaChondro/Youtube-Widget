@@ -95,7 +95,7 @@ function getMilestoneLimits(val, type) {
 }
 
 async function fetchJSON(url) {
-  const r = await fetch(url, { cache: "no-store" });
+  const r = await fetch(url, { cache: "force-cache" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -622,6 +622,8 @@ const HUD_CONFIG = {
   cooldownMs: { freshness: 600000, birthday: 900000, status: 480000, trivia: 60000, tip: 60000, motivation: 90000 }
 };
 
+let intelQueue = [];
+
 const HUD_ICONS={live:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>`,target:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm0-14a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>`,rocket:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5s-4 4.88-4 10.38c0 3.31 1.34 4.88 1.34 4.88L9 22h6l-.34-4.25s1.34-1.56 1.34-4.88S12 2.5 12 2.5z"/></svg>`,warn:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,up:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,down:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 18l2.29-2.29-4.88-4.88-4 4L2 7.41 3.41 6l6 6 4-4 6.3 6.29L22 12v6z"/></svg>`,bulb:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>`,globe:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.93 9h-3.17a15.7 15.7 0 0 0-1.45-6A8.02 8.02 0 0 1 19.93 11zM12 4c.9 1.3 1.7 3.3 2.1 7H9.9C10.3 7.3 11.1 5.3 12 4zM4.07 13h3.17a15.7 15.7 0 0 0 1.45 6A8.02 8.02 0 0 1 4.07 13zm3.17-2H4.07A8.02 8.02 0 0 1 8.69 5a15.7 15.7 0 0 0-1.45 6zm2.66 2h4.2c-.4 3.7-1.2 5.7-2.1 7-.9-1.3-1.7-3.3-2.1-7zm6.86 6a15.7 15.7 0 0 0 1.45-6h3.17A8.02 8.02 0 0 1 15.31 19z"/></svg>`,chat:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v12H5.17L4 17.17V4zm2 2v7.17L6.83 14H18V6H6z"/></svg>`};
 const KB={facts:["YouTube is the 2nd most visited site in existence.","The first video 'Me at the zoo' has over 200M views.","Mobile users visit YouTube twice as often as desktop users.","Comedy, Music, and Entertainment are top genres.","YouTube supports 80+ languages.","More than 500 hours of video are uploaded every minute.","Algorithm favors Watch Time over View Count.","Bright thumbnails tend to have higher CTR.","60% of people prefer online video to TV.","Videos that keep viewers watching often get recommended more."],tips:["Audio is King: Bad video is forgiveable, bad audio is not.","Hook 'em: The first 5 seconds determine retention.","Metadata: Keywords in first sentence of description help.","Hearting comments brings viewers back.","Use End Screens to link best videos.","Playlists increase Session Time.","Use Shorts as a funnel.","Rule of Thirds works for thumbnails.","Cut the silence to keep energy up."],motivation:["Creation is a marathon. Pace yourself.","Your next video could change everything.","Don't compare your Ch 1 to their Ch 20.","1,000 true fans beats 100,000 ghosts.","Consistency is the cheat code.","Focus on the 1 viewer watching."],nostalgia:["Remember why you started? Keep that spark.","Look at your first video. Progress.","Every big channel started with 0 subs."]};
 function daysBetweenISO(a,b){try{return Math.floor((new Date(b)-new Date(a))/86400000)}catch{return null}}
@@ -630,6 +632,116 @@ function updateHudPathGeometry(){const a=document.getElementById("hudTracePath")
 function initHudBorder(){updateHudPathGeometry();const a=document.getElementById("hudTracePath");if(!a)return;const b=a.getTotalLength()||1000;a.style.transition="none",a.style.strokeDasharray=b,a.style.strokeDashoffset=b;window._hudRo||(window._hudRo=new ResizeObserver(()=>{updateHudPathGeometry()}),window._hudRo.observe(document.getElementById("hudBox")))}
 function animateHudBorder(a){const b=document.getElementById("hudTracePath");if(!b)return;const c=b.getTotalLength()||1000;b.style.stroke=a,b.style.transition="none",b.style.strokeDashoffset=c,requestAnimationFrame(()=>{requestAnimationFrame(()=>{b.style.transition="stroke-dashoffset 16s linear",b.style.strokeDashoffset="0"})})}
 function buildIntel(a){const b=[],c=a.channel||{},d=a.weekly||{},e=a.m28||{},f=a.hud||{},g=a.history28d||[],h=Number(d.views||0),i=Number(d.subscribersGained||0),j=Number(d.subscribersLost||0),k=Number(d.netSubs||0),l=h>0?k/h*1e3:0,m=f.uploads?.latest?.publishedAt&&f.statsThrough?daysBetweenISO(f.uploads.latest.publishedAt,f.statsThrough):null;if(null!==m&&m>14?b.push({key:"warn_gap",cat:"warning",weight:3,icon:HUD_ICONS.warn,tag:"WARNING",type:"red",text:`UPLOAD BUFFER EMPTY. LAST UPLOAD ${m}D AGO.`}):null!==m&&m<=3&&b.push({key:"good_gap",cat:"good",weight:2,icon:HUD_ICONS.up,tag:"RISING",type:"green",text:`CONSISTENCY DETECTED. LAST UPLOAD ${m}D AGO.`}),(i>0||j>0)&&b.push({key:"churn",cat:"subs",weight:3.2,icon:j>i?HUD_ICONS.down:HUD_ICONS.up,tag:j>i?"DROPPING":"GROWTH",type:j>i?"red":"green",text:`NET SUBS: ${k}. GAINED ${i}, LOST ${j}.`}),h>0&&b.push({key:"conv",cat:"conversion",weight:2.6,icon:HUD_ICONS.target,tag:"CONVERSION",type:l>=2?"green":"yellow",text:`CONV RATE: ${l.toFixed(2)} NET SUBS PER 1K VIEWS.`}),f.thumb28&&f.thumb28.ctr){const n=f.thumb28.ctr;b.push({key:"ctr",cat:"packaging",weight:2.1,icon:n<2?HUD_ICONS.warn:HUD_ICONS.bulb,tag:n<2?"WARNING":"PACKAGING",type:n<2?"red":n>8?"green":"yellow",text:`AVG CTR IS ${n.toFixed(1)}%. ${n<2?"OPTIMIZE THUMBS.":"HEALTHY METRIC."}`})}if(f.retention28&&f.retention28.avgViewPercentage){const o=f.retention28.avgViewPercentage;b.push({key:"ret",cat:"retention",weight:2,icon:o<35?HUD_ICONS.warn:HUD_ICONS.up,tag:o<35?"WARNING":"RETENTION",type:o<35?"red":"green",text:`AVG VIEW PCT ${o.toFixed(0)}%. ${o<35?"TIGHTEN INTROS.":"AUDIENCE ENGAGED."}`})}const p=f.latestVideo;if(p&&p.title){const q=Number(p.views||0);b.push({key:"lv_stat",cat:"video",weight:2.8,icon:HUD_ICONS.rocket,tag:"LATEST",type:"purple",text:`LATEST: "${p.title.toUpperCase()}" — ${fmt(q)} VIEWS.`})}const r=getMilestoneLimits(Number(c.subscribers||0),"subs").max;if(r>Number(c.subscribers||0)&&b.push({key:"goal",cat:"goal",weight:1.4,icon:HUD_ICONS.target,tag:"MILESTONE",type:"blue",text:`${fmt(r-Number(c.subscribers))} SUBS TO ${fmt(r)}.`}),pick(KB.tips)&&b.push({key:"tip",cat:"tip",weight:.4,icon:HUD_ICONS.bulb,tag:"TIP",type:"yellow",text:pick(KB.tips).toUpperCase()}),pick(KB.facts)&&b.push({key:"fact",cat:"trivia",weight:.3,icon:HUD_ICONS.bulb,tag:"FACT",type:"pink",text:pick(KB.facts).toUpperCase()}),pick(KB.motivation)){const s=pick(KB.motivation);b.push({key:"mot",cat:"motivation",weight:.2,icon:HUD_ICONS.live,tag:"INSIGHT",type:"purple",text:s.toUpperCase()})}return b}
-function showNextIntel(){const a=intelQueue.length?intelQueue[Math.floor(Math.random()*intelQueue.length)]:null;if(!a)return;const b=document.getElementById("hudMessage"),c=document.getElementById("hudTag"),d=document.getElementById("hudIcon"),e=document.getElementById("hudBox");e.classList.remove("glitch-active"),b.style.opacity="0",c.style.opacity="0",d.style.opacity="0",setTimeout(()=>{b.textContent=a.text,c.textContent=a.tag,d.innerHTML=a.icon||"⚡",updateHudPathGeometry();const f=COLORS[a.type]||COLORS.orange;e.style.setProperty("--hud-accent",f),c.style.color=f,c.style.textShadow=`0 0 10px ${f}`,d.style.color=f,animateHudBorder(f),b.style.opacity="1",c.style.opacity="1",d.style.opacity="1",e.classList.add("glitch-active"),setTimeout(()=>e.classList.remove("glitch-active"),300)},200)}
-function updateHud(a){intelQueue=buildIntel(a),HUD_CONFIG.started||(HUD_CONFIG.started=!0,setTimeout(()=>{initHudBorder(),showNextIntel(),HUD_CONFIG.timer=setInterval(showNextIntel,16e3),randomGlitchLoop(),setInterval(triggerAdvancedAnimations,3e4)},1200))}
-(async function init(){await load(!0),setInterval(()=>load(!1),6e4)})();
+
+
+// --- HUD v3 MESSAGE ENGINE (templates + v3Data) ---
+function _normTag(t){return String(t||"").trim().toUpperCase()}
+function _resolvePath(obj, path){
+  if(!obj||!path) return undefined;
+  const p=String(path).replace(/\[(\d+)\]/g,".$1").split(".").map(s=>s.trim()).filter(Boolean);
+  let cur=obj;
+  for(const k of p){ if(cur==null) return undefined; cur=cur[k]; }
+  return cur;
+}
+function _extractTokens(s){
+  const out=[];
+  String(s||"").replace(/\{([^}]+)\}/g,(_,a)=>{out.push(a.trim()); return _;});
+  return [...new Set(out)];
+}
+function _fmtToken(val, path){
+  if(val==null) return "";
+  if(typeof val==="number"){
+    if(!Number.isFinite(val)) return "";
+    const p=String(path||"");
+    if(/(revenue|rpm|cpm)$/i.test(p)) return val.toFixed(2);
+    if(/(pct|ctr)$/i.test(p)) return (Math.round(val*10)/10).toFixed(1);
+    if(/avgViewDurationSec$/i.test(p)) return fmt(Math.round(val));
+    return fmt(Math.round(val));
+  }
+  if(typeof val==="boolean") return val?"YES":"NO";
+  return String(val);
+}
+function _v3Icon(tag){
+  tag=_normTag(tag);
+  if(tag==="WARNING"||tag==="ALERT") return HUD_ICONS.warn;
+  if(tag==="SHORTS"||tag==="GROWTH"||tag==="TRENDING") return HUD_ICONS.rocket;
+  if(tag==="MONEY") return HUD_ICONS.target;
+  if(tag==="RETENTION") return HUD_ICONS.up;
+  if(tag==="PACKAGING") return HUD_ICONS.bulb;
+  if(tag==="AUDIENCE") return HUD_ICONS.globe;
+  return HUD_ICONS.chat;
+}
+function _v3Weight(tag){
+  tag=_normTag(tag);
+  if(tag==="SHORTS") return 3.2;
+  if(tag==="ALERT"||tag==="WARNING") return 2.6;
+  if(tag==="GROWTH"||tag==="TRENDING") return 2.2;
+  if(tag==="MONEY") return 1.8;
+  return 1.4;
+}
+function buildIntelV3(payload){
+  const docs=payload?.hud?.v3Docs;
+  const v3=payload?.hud?.v3Data;
+  const templates=docs?.messageTemplates;
+  if(!v3||!Array.isArray(templates)||!templates.length) return [];
+  const colors=docs?.emotionColors||{};
+  const ctx={...payload, v3};
+  const out=[];
+  for(const t of templates){
+    const raw=String(t?.text||"").trim();
+    if(!raw) continue;
+    const tokens=_extractTokens(raw);
+    let ok=true;
+    let text=raw;
+    for(const token of tokens){
+      const v=_resolvePath(ctx, token);
+      if(v==null||v===""){ ok=false; break; }
+      const esc=token.replace(/[.*+?^${}()|[\\]\\]/g,"\\$&");
+      text=text.replace(new RegExp("\\{\\s*"+esc+"\\s*\\}","g"), _fmtToken(v, token));
+    }
+    if(!ok) continue;
+    const tag=_normTag(t?.tag||"INSIGHT");
+    const color=colors[tag]||colors[tag.replace(/\s+/g," ")]||null;
+    out.push({
+      key: t?.id ? "v3_"+t.id : "v3_"+Math.random().toString(36).slice(2),
+      cat: "v3",
+      weight: _v3Weight(tag),
+      icon: _v3Icon(tag),
+      tag,
+      type: color || "purple",
+      text
+    });
+  }
+  return out;
+}
+
+function pickWeighted(list){
+  if(!list||!list.length) return null;
+  let total=0;
+  for(const it of list) total += Number(it?.weight||1);
+  if(total<=0) return list[Math.floor(Math.random()*list.length)];
+  let r=Math.random()*total;
+  for(const it of list){
+    r -= Number(it?.weight||1);
+    if(r<=0) return it;
+  }
+  return list[list.length-1];
+}
+
+function showNextIntel(){const a=pickWeighted(intelQueue);if(!a)return;const b=document.getElementById("hudMessage"),c=document.getElementById("hudTag"),d=document.getElementById("hudIcon"),e=document.getElementById("hudBox");e.classList.remove("glitch-active"),b.style.opacity="0",c.style.opacity="0",d.style.opacity="0",setTimeout(()=>{b.textContent=a.text,c.textContent=a.tag,d.innerHTML=a.icon||"⚡",updateHudPathGeometry();const f=(typeof a.type==='string'&&a.type[0]==='#')?a.type:(COLORS[a.type]||a.type||COLORS.orange);e.style.setProperty("--hud-accent",f),c.style.color=f,c.style.textShadow=`0 0 10px ${f}`,d.style.color=f,animateHudBorder(f),b.style.opacity="1",c.style.opacity="1",d.style.opacity="1",e.classList.add("glitch-active"),setTimeout(()=>e.classList.remove("glitch-active"),300)},200)}
+function updateHud(a){intelQueue=buildIntelV3(a).concat(buildIntel(a)),HUD_CONFIG.started||(HUD_CONFIG.started=!0,setTimeout(()=>{initHudBorder(),showNextIntel(),HUD_CONFIG.timer=setInterval(showNextIntel,16e3),randomGlitchLoop(),setInterval(triggerAdvancedAnimations,3e4)},1200))}
+const DATA_POLL_FAST=60000,DATA_POLL_SLOW=300000,DATA_POLL_HIDDEN=900000;
+function startDataPoll(){
+  const u=new URL(location.href);
+  const fast=u.searchParams.get("fast")==="1";
+  let timer=null;
+  const schedule=()=>{
+    if(timer) clearTimeout(timer);
+    const base=fast?DATA_POLL_FAST:DATA_POLL_SLOW;
+    const ms=document.hidden?Math.max(base,DATA_POLL_HIDDEN):base;
+    timer=setTimeout(async()=>{await load(!1); schedule();}, ms);
+  };
+  document.addEventListener("visibilitychange", schedule);
+  schedule();
+}
+(async function init(){await load(!0); startDataPoll();})();
