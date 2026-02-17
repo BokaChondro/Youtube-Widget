@@ -472,7 +472,7 @@ async function fetchDailyCore(token, startIso, endIso) {
     sort: "day",
     maxResults: "500",
   });
-  return (data.rows || []).map((r) => ({
+  return (data?.rows || []).map((r) => ({
     day: r[0],
     views: Number(r[1] || 0),
     minutes: Number(r[2] || 0),
@@ -488,7 +488,7 @@ async function fetchLifetimeWatchHours(token, publishedAt, endIso) {
     endDate: endIso,
     metrics: "estimatedMinutesWatched",
   });
-  const minutes = Number(data.rows?.[0]?.[0] || 0);
+  const minutes = Number(data?.rows?.[0]?.[0] || 0);
   return { startIso, totalHours: round1(minutes / 60) };
 }
 
@@ -957,7 +957,7 @@ async function fetchMoney28(token, startIso, endIso) {
     endDate: endIso,
     metrics: "estimatedRevenue,rpm,cpm",
   });
-  const r = (money.rows && money.rows[0]) || null;
+  const r = money?.rows?.[0] || null;
   if (!r) return { estimatedRevenue: null, rpm: null, cpm: null };
   return { estimatedRevenue: round(r[0], 2), rpm: round(r[1], 2), cpm: round(r[2], 2) };
 }
@@ -970,7 +970,7 @@ async function fetchViewerType28(token, startIso, endIso) {
     metrics: "views",
     dimensions: "viewerType",
   });
-  const rows = vt.rows || [];
+  const rows = vt?.rows || [];
   let newViews = 0,
     retViews = 0;
   for (const r of rows) {
@@ -995,7 +995,7 @@ async function fetchChannelEngagement28(token, startIso, endIso) {
     endDate: endIso,
     metrics: "shares,cardClicks,endScreenClicks",
   });
-  const r = (eng.rows && eng.rows[0]) || null;
+  const r = eng?.rows?.[0] || null;
   if (!r) return { shares: null, cardClicks: null, endScreenClicks: null };
   return { shares: Number(r[0] ?? 0), cardClicks: Number(r[1] ?? 0), endScreenClicks: Number(r[2] ?? 0) };
 }
@@ -1008,7 +1008,7 @@ async function fetchShortsViewedVsSwiped28(token, startIso, endIso) {
     endDate: endIso,
     metrics: "views,engagedViews",
   });
-  const r = (row.rows && row.rows[0]) || null;
+  const r = row?.rows?.[0] || null;
   if (!r) return { views: null, engagedViews: null, viewedRatePct: null, swipeAwayRatePct: null };
   const views = Number(r[0] ?? 0);
   const engaged = Number(r[1] ?? 0);
