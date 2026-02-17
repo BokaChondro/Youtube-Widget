@@ -693,101 +693,146 @@ function buildRanksFromIntel(intelList) {
 }
 
 async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) {
-  const base = await safeAnalytics(token, {
+  const common = {
     ids: "channel==MINE",
     startDate: startIso,
     endDate: endIso,
-    metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost",
     dimensions: "video",
-    sort: "-views",
     maxResults,
-  });
+  };
 
-  const retention = await safeAnalytics(token, {
-    ids: "channel==MINE",
-    startDate: startIso,
-    endDate: endIso,
-    metrics: "averageViewDuration,averageViewPercentage",
-    dimensions: "video",
-    sort: "-views",
-    maxResults,
-  });
+  // Try a single "super" query first (fewer API calls). If it's not supported for your channel/scopes,
+  // we fall back to the split queries below.
+  const superMetrics = "views,estimatedMinutesWatched,subscribersGained,subscribersLost,averageViewDuration,averageViewPercentage,videoThumbnailImpressions,videoThumbnailImpressionsClickRate,likes,comments,shares,engagedViews";
+  const superResp = await safeAnalytics(token, { ...common, metrics: superMetrics, sort: "-views" });
 
-  const thumbs = await safeAnalytics(token, {
-    ids: "channel==MINE",
-    startDate: startIso,
-    endDate: endIso,
-    metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
-    dimensions: "video",
-    sort: "-videoThumbnailImpressions",
-    maxResults,
-  });
-
-  const engage = await safeAnalytics(token, {
-    ids: "channel==MINE",
-    startDate: startIso,
-    endDate: endIso,
-    metrics: "likes,comments,shares",
-    dimensions: "video",
-    sort: "-views",
-    maxResults,
-  });
-
-  const shorts = await safeAnalytics(token, {
-    ids: "channel==MINE",
-    startDate: startIso,
-    endDate: endIso,
-    metrics: "engagedViews",
-    dimensions: "video",
-    sort: "-views",
-    maxResults,
-  });
-
-  const ids = uniq([
-    ...((base.rows || []).map((r) => r?.[0]).filter(Boolean)),
-    ...((retention.rows || []).map((r) => r?.[0]).filter(Boolean)),
-    ...((thumbs.rows || []).map((r) => r?.[0]).filter(Boolean)),
-    ...((engage.rows || []).map((r) => r?.[0]).filter(Boolean)),
-    ...((shorts.rows || []).map((r) => r?.[0]).filter(Boolean)),
-  ]);
-
-  const viewsMap = rowsToMap(base.rows, 0, 1);
-  const minutesMap = rowsToMap(base.rows, 0, 2);
-  const subsGMap = rowsToMap(base.rows, 0, 3);
-  const subsLMap = rowsToMap(base.rows, 0, 4);
-
+  let ids = [];
+  const viewsMap = {};
+  const minutesMap = {};
+  const subsGMap = {};
+  const subsLMap = {};
   const avdMap = {};
   const avpMap = {};
-  (retention.rows || []).forEach((r) => {
-    const id = r?.[0];
-    if (!id) return;
-    avdMap[id] = r?.[1] != null ? Number(r[1]) : null;
-    avpMap[id] = r?.[2] != null ? Number(r[2]) : null;
-  });
-
   const impMap = {};
   const ctrMap = {};
-  (thumbs.rows || []).forEach((r) => {
-    const id = r?.[0];
-    if (!id) return;
-    impMap[id] = r?.[1] != null ? Number(r[1]) : null;
-    ctrMap[id] = r?.[2] != null ? Number(r[2]) : null;
-  });
-
   const likesMap = {};
   const commentsMap = {};
   const sharesMap = {};
-  (engage.rows || []).forEach((r) => {
-    const id = r?.[0];
+  const engagedMap = {};
+
+  const applyRow = (id, idx, val) => {
     if (!id) return;
-    likesMap[id] = r?.[1] != null ? Number(r[1]) : null;
-    commentsMap[id] = r?.[2] != null ? Number(r[2]) : null;
-    sharesMap[id] = r?.[3] != null ? Number(r[3]) : null;
-  });
+    const n = val != null ? Number(val) : null;
+    if (idx === 1) viewsMap[id] = n;
+    else if (idx === 2) minutesMap[id] = n;
+    else if (idx === 3) subsGMap[id] = n;
+    else if (idx === 4) subsLMap[id] = n;
+    else if (idx === 5) avdMap[id] = n;
+    else if (idx === 6) avpMap[id] = n;
+    else if (idx === 7) impMap[id] = n;
+    else if (idx === 8) ctrMap[id] = n;
+    else if (idx === 9) likesMap[id] = n;
+    else if (idx === 10) commentsMap[id] = n;
+    else if (idx === 11) sharesMap[id] = n;
+    else if (idx === 12) engagedMap[id] = n;
+  };
 
-  const engagedMap = rowsToMap(shorts.rows, 0, 1);
+  let didSplitThumbsCall = false;
 
-  return { ids, startDate: startIso, endDate: endIso, viewsMap, minutesMap, subsGMap, subsLMap, avdMap, avpMap, impMap, ctrMap, likesMap, commentsMap, sharesMap, engagedMap };
+  if (superResp?.rows?.length) {
+    for (const r of superResp.rows) {
+      const id = r?.[0];
+      if (!id) continue;
+      ids.push(id);
+      // metrics are in the same order as "superMetrics"
+      for (let i = 1; i <= 12; i++) applyRow(id, i, r?.[i]);
+    }
+
+    // Expand coverage for CTR/Impressions by pulling top-impression videos too.
+    // This preserves "best CTR" style intel without needing 5 separate calls.
+    const thumbsExtra = await safeAnalytics(token, {
+      ids: "channel==MINE",
+      startDate: startIso,
+      endDate: endIso,
+      metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
+      dimensions: "video",
+      sort: "-videoThumbnailImpressions",
+      maxResults,
+    });
+
+    (thumbsExtra?.rows || []).forEach((r) => {
+      const id = r?.[0];
+      if (!id) return;
+      ids.push(id);
+      impMap[id] = r?.[1] != null ? Number(r[1]) : null;
+      ctrMap[id] = r?.[2] != null ? Number(r[2]) : null;
+    });
+  } else {
+    const base = await safeAnalytics(token, { ...common, metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost", sort: "-views" });
+    const retention = await safeAnalytics(token, { ...common, metrics: "averageViewDuration,averageViewPercentage", sort: "-views" });
+    const thumbs = await safeAnalytics(token, { ...common, metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate", sort: "-videoThumbnailImpressions" });
+    const engage = await safeAnalytics(token, { ...common, metrics: "likes,comments,shares", sort: "-views" });
+    const shorts = await safeAnalytics(token, { ...common, metrics: "engagedViews", sort: "-views" });
+
+    didSplitThumbsCall = true;
+
+    ids = uniq([
+      ...((base?.rows || []).map((r) => r?.[0]).filter(Boolean)),
+      ...((retention?.rows || []).map((r) => r?.[0]).filter(Boolean)),
+      ...((thumbs?.rows || []).map((r) => r?.[0]).filter(Boolean)),
+      ...((engage?.rows || []).map((r) => r?.[0]).filter(Boolean)),
+      ...((shorts?.rows || []).map((r) => r?.[0]).filter(Boolean)),
+    ]);
+
+    Object.assign(viewsMap, rowsToMap(base?.rows || [], 0, 1));
+    Object.assign(minutesMap, rowsToMap(base?.rows || [], 0, 2));
+    Object.assign(subsGMap, rowsToMap(base?.rows || [], 0, 3));
+    Object.assign(subsLMap, rowsToMap(base?.rows || [], 0, 4));
+
+    (retention?.rows || []).forEach((r) => {
+      const id = r?.[0];
+      if (!id) return;
+      avdMap[id] = r?.[1] != null ? Number(r[1]) : null;
+      avpMap[id] = r?.[2] != null ? Number(r[2]) : null;
+    });
+
+    (thumbs?.rows || []).forEach((r) => {
+      const id = r?.[0];
+      if (!id) return;
+      impMap[id] = r?.[1] != null ? Number(r[1]) : null;
+      ctrMap[id] = r?.[2] != null ? Number(r[2]) : null;
+    });
+
+    (engage?.rows || []).forEach((r) => {
+      const id = r?.[0];
+      if (!id) return;
+      likesMap[id] = r?.[1] != null ? Number(r[1]) : null;
+      commentsMap[id] = r?.[2] != null ? Number(r[2]) : null;
+      sharesMap[id] = r?.[3] != null ? Number(r[3]) : null;
+    });
+
+    Object.assign(engagedMap, rowsToMap(shorts?.rows || [], 0, 1));
+  }
+
+  ids = uniq(ids);
+
+  return {
+    ids,
+    startDate: startIso,
+    endDate: endIso,
+    viewsMap,
+    minutesMap,
+    subsGMap,
+    subsLMap,
+    avdMap,
+    avpMap,
+    impMap,
+    ctrMap,
+    likesMap,
+    commentsMap,
+    sharesMap,
+    engagedMap,
+  };
 }
 
 function buildVideoIntelFromBundle(bundle, videoMap) {
@@ -842,6 +887,58 @@ function buildVideoIntelFromBundle(bundle, videoMap) {
     });
   }
   return out;
+
+function buildLegacyVideoIntelListFromV3(intel7List, endIso) {
+  const list = (intel7List || []).slice(0, 50);
+  return list.map((v) => {
+    const publishedIso = v?.publishedAt ? isoDate(new Date(v.publishedAt)) : null;
+    const ageDays = publishedIso ? daysBetween(publishedIso, endIso) : null;
+    const daysOnline = ageDays === null ? 7 : clamp(ageDays + 1, 1, 7);
+    const views7d = Number(v?.views || 0);
+    const minutes7d = Number(v?.minutesWatched || 0);
+    const subsG7d = Number(v?.subsGained || 0);
+    const subsL7d = Number(v?.subsLost || 0);
+
+    const impressions = toNumOrNull(v?.impressions);
+    const ctr = toNumOrNull(v?.ctr);
+    const avgViewDurationSec = toNumOrNull(v?.avgViewDurationSec);
+    const avgViewPercentage = toNumOrNull(v?.avgViewPercentage);
+
+    const likes = toNumOrNull(v?.likes);
+    const comments = toNumOrNull(v?.comments);
+    const shares = toNumOrNull(v?.shares);
+
+    const viewsPerDay = round1(views7d / Math.max(1, daysOnline));
+    const netSubs = subsG7d - subsL7d;
+
+    return {
+      videoId: v?.videoId || null,
+      title: v?.title || "",
+      publishedAt: v?.publishedAt || null,
+      ageDays,
+      durationSec: v?.durationSec ?? null,
+      a7d: {
+        views: views7d,
+        subsGained: subsG7d,
+        subsLost: subsL7d,
+        impressions: impressions ?? 0,
+        ctr: ctr == null ? null : pct(ctr),
+        avgViewDurationSec: avgViewDurationSec ?? 0,
+        avgViewPercentage: avgViewPercentage == null ? null : pct(avgViewPercentage),
+        likes: likes ?? 0,
+        comments: comments ?? 0,
+        shares: shares ?? 0,
+      },
+      derived: {
+        viewsPerDay,
+        minsPerView: views7d > 0 ? round1(minutes7d / views7d) : 0,
+        subsPer1kViews: views7d > 0 ? round1((netSubs / views7d) * 1000) : 0,
+        churnPct: (subsG7d + subsL7d) > 0 ? round1((subsL7d / (subsG7d + subsL7d)) * 100) : 0,
+      },
+    };
+  }).filter((x) => x.videoId);
+}
+
 }
 
 function pickNewestByType(videoDetails, wantShort) {
@@ -1026,8 +1123,6 @@ async function computeKPIs(env) {
   const trafficPrev28 = await safeAnalytics(token, { startDate: prev28.startDate || isoDate(shiftDays(end, -55)), endDate: prev28.endDate || isoDate(shiftDays(end, -28)), dimensions: "insightTrafficSourceType", metrics: "views", sort: "-views", maxResults: "10" });
   const subStatus28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "subscribedStatus", metrics: "views", sort: "-views", maxResults: "5" });
   const country28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "country", metrics: "views", sort: "-views", maxResults: "5" });
-
-  const v7dBundle = await fetchVideoAnalytics7dBundle(token, weeklyStart, endIso, 25);
   const yearStart = isoDate(shiftDays(end, -364));
 
   // -------------------------------------------------------
@@ -1054,7 +1149,6 @@ async function computeKPIs(env) {
     if (Array.isArray(videoDetails)) videoDetails.push(...(moreVids || []));
   }
 
-  const videoIntelList = buildVideoIntelList(videoDetails, v7dBundle, endIso);
   // -------------------------------------------------------
   // Build V3 intel + ranks (additive)
   // -------------------------------------------------------
@@ -1066,6 +1160,8 @@ async function computeKPIs(env) {
   const intel7V3 = buildVideoIntelFromBundle(w7dV3 || { ids: [] }, videoMap);
   const intel28V3 = buildVideoIntelFromBundle(w28V3 || { ids: [] }, videoMap);
   const intel365V3 = buildVideoIntelFromBundle(w365V3 || { ids: [] }, videoMap);
+
+  const videoIntelList = buildLegacyVideoIntelListFromV3(intel7V3, endIso);
 
   const rank7 = buildRanksFromIntel(intel7V3);
   const rank28 = buildRanksFromIntel(intel28V3);
@@ -1113,7 +1209,7 @@ async function computeKPIs(env) {
     money28: money28V3 || { estimatedRevenue: null, rpm: null, cpm: null },
     loyalty28: loyalty28V3 || { newViews: null, returningViews: null, newPct: null, returningPct: null },
     engagement28: channelEngage28V3 || { shares: null, cardClicks: null, endScreenClicks: null },
-    traffic28: { topSource: trafficTop?.source || null },
+    traffic28: { topSource: trafficTop?.key || null },
     time: {
       h1: mkSlice(24),
       h2: mkSlice(12),
@@ -1184,13 +1280,23 @@ async function computeKPIs(env) {
 
 export async function onRequest(context) {
   try {
+    const url = new URL(context.request.url);
+    const bypassCache = url.searchParams.get("fresh") === "1";
+
     const cache = caches.default;
-    const cacheKey = new Request(new URL(context.request.url).toString(), { method: "GET" });
-    const cached = await cache.match(cacheKey);
-    if (cached) return cached;
+    const cacheKey = new Request(url.toString(), { method: "GET" });
+
+    if (!bypassCache) {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    }
+
     const data = await computeKPIs(context.env);
-    const res = Response.json(data, { headers: { "Cache-Control": "public, max-age=55" } });
-    context.waitUntil(cache.put(cacheKey, res.clone()));
+    const res = Response.json(data, {
+      headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=300" },
+    });
+
+    if (!bypassCache) context.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 });
