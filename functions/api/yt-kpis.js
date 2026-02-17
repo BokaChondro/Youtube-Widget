@@ -557,64 +557,64 @@ async function fetchVideoAnalytics7dBundle(token, startIso, endIso, maxResults =
   const common = { startDate: startIso, endDate: endIso, dimensions: "video", sort: "-views", maxResults: String(clamp(maxResults, 1, 50)) };
   
   const base = await safeAnalytics(token, { ...common, metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost" });
-  const retention = await safeAnalytics(token, { ...common, metrics: "averageViewDuration,averageViewPercentage" });
-  const thumbs = await safeAnalytics(token, { ...common, metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate" });
-  const engage = await safeAnalytics(token, { ...common, metrics: "likes,comments,shares" });
+  const retention = await safeAnalytics(token, { ...common, metrics: "views,averageViewDuration,averageViewPercentage" });
+  const thumbs = await safeAnalytics(token, { ...common, metrics: "views,videoThumbnailImpressions,videoThumbnailImpressionsClickRate" });
+  const engage = await safeAnalytics(token, { ...common, metrics: "views,likes,comments,shares" });
 
   return {
-    baseMap: parseVideoRows(base, ["views7d", "minutes7d", "subsGained7d", "subsLost7d"]),
-    retentionMap: parseVideoRows(retention, ["avgViewDurationSec7d", "avgViewPercentage7d"]),
-    thumbsMap: parseVideoRows(thumbs, ["impressions7d", "ctr7d"]),
-    engageMap: parseVideoRows(engage, ["likes7d", "comments7d", "shares7d"]),
+    baseMap: parseVideoRows(base, ["views7d", "minutes7d", "subsG7d", "subsL7d"]),
+    retentionMap: parseVideoRows(retention, ["viewsRet7d","avgViewDurationSec7d", "avgViewPercentage7d"]),
+    thumbsMap: parseVideoRows(thumbs, ["viewsThumb7d","impressions7d", "ctr7d"]),
+    engageMap: parseVideoRows(engage, ["viewsEng7d","likes7d", "comments7d", "shares7d"]),
     rawOk: { base: !!base, retention: !!retention, thumbs: !!thumbs, engage: !!engage },
   };
 }
 
-function buildVideoIntelList(videoDetails, maps, endIso) {
-  const vids = (videoDetails || []).slice(0, 50);
-  return vids.map((v) => {
-    const id = v.videoId;
-    const base = maps.baseMap[id] || {};
-    const ret = maps.retentionMap[id] || {};
-    const th = maps.thumbsMap[id] || {};
-    const en = maps.engageMap[id] || {};
+function buildVideoIntelList(videoMap, baseMap, retentionMap, thumbsMap, engageMap, days, label) {
+  const out = Object.keys(baseMap)
+    .map((id) => {
+      const v = videoMap[id] || {};
+      const b = baseMap[id] || {};
+      const ret = retentionMap[id] || {};
+      const th = thumbsMap[id] || {};
+      const en = engageMap[id] || {};
 
-    const views7d = Number(base.views7d || 0);
-    const minutes7d = Number(base.minutes7d || 0);
-    const subsG7d = Number(base.subsGained7d || 0);
-    const subsL7d = Number(base.subsLost7d || 0);
+      const views7d = Number(b.views7d || 0);
+      const minutes7d = Number(b.minutes7d || 0);
+      const subsG7d = Number(b.subsG7d || 0);
+      const subsL7d = Number(b.subsL7d || 0);
 
-    const publishedIso = v.publishedAt ? isoDate(new Date(v.publishedAt)) : null;
-    const ageDays = publishedIso ? daysBetween(publishedIso, endIso) : null;
-    const daysOnline = ageDays === null ? 7 : clamp(ageDays + 1, 1, 7);
-    const viewsPerDay = round1(views7d / Math.max(1, daysOnline));
+      const viewsPerDay = days > 0 ? round1(views7d / days) : 0;
 
-    return {
-      videoId: id,
-      title: v.title || "",
-      publishedAt: v.publishedAt || null,
-      ageDays: ageDays,
-      durationSec: v.durationSec || null,
-      a7d: {
-        views: views7d,
-        subsGained: subsG7d,
-        subsLost: subsL7d,
-        impressions: Number(th.impressions7d || 0),
-        ctr: pct(th.ctr7d),
-        avgViewDurationSec: Number(ret.avgViewDurationSec7d || 0),
-        avgViewPercentage: pct(ret.avgViewPercentage7d),
-        likes: Number(en.likes7d || 0),
-        comments: Number(en.comments7d || 0),
-        shares: Number(en.shares7d || 0),
-      },
-      derived: {
-        viewsPerDay,
-        minsPerView: views7d > 0 ? round1(minutes7d / views7d) : 0,
-        subsPer1kViews: views7d > 0 ? round1((subsG7d / views7d) * 1000) : 0,
-        churnPct: (subsG7d + subsL7d) > 0 ? round1((subsL7d / (subsG7d + subsL7d)) * 100) : 0,
-      },
-    };
-  });
+      return {
+        id,
+        title: v.title || null,
+        publishedAt: v.publishedAt || null,
+        type: v.type || null,
+        raw: {
+          views: views7d,
+          minutesWatched: minutes7d,
+          subsGained: subsG7d,
+          subsLost: subsL7d,
+          impressions: toNumOrNull(th.impressions7d),
+          ctr: pct(th.ctr7d),
+          avgViewDurationSec: toNumOrNull(ret.avgViewDurationSec7d),
+          avgViewPercentage: pct(ret.avgViewPercentage7d),
+          likes: toNumOrNull(en.likes7d),
+          comments: toNumOrNull(en.comments7d),
+          shares: toNumOrNull(en.shares7d),
+        },
+        derived: {
+          viewsPerDay,
+          minsPerView: views7d > 0 ? round1(minutes7d / views7d) : 0,
+          subsPer1kViews: views7d > 0 ? round1((subsG7d / views7d) * 1000) : 0,
+          churnPct: (subsG7d + subsL7d) > 0 ? round1((subsL7d / (subsG7d + subsL7d)) * 100) : 0,
+        },
+      };
+    })
+    .sort((a, b) => (b.raw.views || 0) - (a.raw.views || 0));
+
+  return { label, days, items: out };
 }
 
 /* =========================================================
@@ -730,23 +730,28 @@ function buildRanksFromIntel(intelList) {
 }
 
 async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) {
-  // Strategy:
-  //  1) Get top videos by views for the window (dimensions=video).
-  //  2) Re-query additional metric groups using filters=video==id1,id2,... and dimensions=video.
-  //     This makes metrics like impressions/CTR/retention much more reliable across reports.
+  // Get top videos by views, then fetch additional per-video metrics for the same window.
+  // NOTE: We keep all calls as "top by views" (no multi-value filter) for compatibility.
   const common = {
     ids: "channel==MINE",
     startDate: startIso,
     endDate: endIso,
     dimensions: "video",
     maxResults: String(maxResults),
+    sort: "-views",
   };
 
-  const base = await safeAnalytics(token, {
+  // Base (views/watch/subs). Try with engagedViews; if it errors (not supported), retry without it.
+  let base = await safeAnalytics(token, {
     ...common,
     metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost,engagedViews",
-    sort: "-views",
   });
+  if (!base) {
+    base = await safeAnalytics(token, {
+      ...common,
+      metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost",
+    });
+  }
 
   const baseRows = base?.rows || [];
   const ids = baseRows.map(r => r?.[0]).filter(Boolean);
@@ -764,47 +769,23 @@ async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) 
     minsMap[vid] = toNumOrNull(r?.[2]);
     subsGMap[vid] = toNumOrNull(r?.[3]);
     subsLMap[vid] = toNumOrNull(r?.[4]);
+    // Only present if the engagedViews metric is supported
     engagedViewsMap[vid] = toNumOrNull(r?.[5]);
   }
 
-  // If we couldn't get an id list, return just base maps (downstream will fallback to uploads list)
-  if (!ids.length) {
-    return {
-      ids,
-      viewsMap,
-      minsMap,
-      subsGMap,
-      subsLMap,
-      engagedViewsMap,
-      impMap: {},
-      ctrMap: {},
-      avdMap: {},
-      avpMap: {},
-      likesMap: {},
-      commentsMap: {},
-      sharesMap: {},
-    };
-  }
-
-  const filterList = ids.join(",");
-  const filters = `video==${filterList}`;
-
-  // Re-query other metric groups using filters + dimensions=video
+  // Other metric groups (add "views" so sort=-views is always valid)
   const [ret, thumbs, engage] = await Promise.all([
     safeAnalytics(token, {
       ...common,
-      filters,
-      metrics: "averageViewDuration,averageViewPercentage",
+      metrics: "views,averageViewDuration,averageViewPercentage",
     }),
     safeAnalytics(token, {
       ...common,
-      filters,
-      metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
+      metrics: "views,videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
     }),
     safeAnalytics(token, {
       ...common,
-      filters,
-      metrics: "likes,comments,shares",
+      metrics: "views,likes,comments,shares",
     }),
   ]);
 
@@ -813,8 +794,8 @@ async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) 
   for (const r of ret?.rows || []) {
     const vid = r?.[0];
     if (!vid) continue;
-    avdMap[vid] = toNumOrNull(r?.[1]);
-    avpMap[vid] = toNumOrNull(r?.[2]);
+    avdMap[vid] = toNumOrNull(r?.[2]); // r[1] = views
+    avpMap[vid] = toNumOrNull(r?.[3]);
   }
 
   const impMap = {};
@@ -822,8 +803,8 @@ async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) 
   for (const r of thumbs?.rows || []) {
     const vid = r?.[0];
     if (!vid) continue;
-    impMap[vid] = toNumOrNull(r?.[1]);
-    ctrMap[vid] = toNumOrNull(r?.[2]); // percent
+    impMap[vid] = toNumOrNull(r?.[2]); // r[1] = views
+    ctrMap[vid] = toNumOrNull(r?.[3]); // percent
   }
 
   const likesMap = {};
@@ -832,9 +813,9 @@ async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) 
   for (const r of engage?.rows || []) {
     const vid = r?.[0];
     if (!vid) continue;
-    likesMap[vid] = toNumOrNull(r?.[1]);
-    commentsMap[vid] = toNumOrNull(r?.[2]);
-    sharesMap[vid] = toNumOrNull(r?.[3]);
+    likesMap[vid] = toNumOrNull(r?.[2]); // r[1] = views
+    commentsMap[vid] = toNumOrNull(r?.[3]);
+    sharesMap[vid] = toNumOrNull(r?.[4]);
   }
 
   return {
@@ -853,7 +834,6 @@ async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) 
     sharesMap,
   };
 }
-
 
 function buildVideoIntelFromBundle(bundle, videoMap) {
   const out = [];
@@ -1032,6 +1012,11 @@ async function fetchViewerType28(token, startIso, endIso) {
   };
 }
 
+async function fetchLoyalty28(token, startIso, endIso) {
+  // Backward-compatible alias (older code expects fetchLoyalty28)
+  return fetchViewerType28(token, startIso, endIso);
+}
+
 async function fetchChannelEngagement28(token, startIso, endIso) {
   const eng = await safeAnalytics(token, {
     ids: "channel==MINE",
@@ -1160,8 +1145,8 @@ async function computeKPIs(env) {
   const top7Video = top7VideoId ? vidsById[top7VideoId] || null : null;
 
   const last28Start = last28.startDate || isoDate(shiftDays(end, -27));
-  const thumb28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate" });
-  const ret28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, metrics: "averageViewDuration,averageViewPercentage" });
+  const thumb28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, metrics: "views,videoThumbnailImpressions,videoThumbnailImpressionsClickRate" });
+  const ret28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, metrics: "views,averageViewDuration,averageViewPercentage" });
   const uniq28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, metrics: "uniqueViewers" });
   const traffic28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "insightTrafficSourceType", metrics: "views", sort: "-views", maxResults: "10" });
   const trafficPrev28 = await safeAnalytics(token, { startDate: prev28.startDate || isoDate(shiftDays(end, -55)), endDate: prev28.endDate || isoDate(shiftDays(end, -28)), dimensions: "insightTrafficSourceType", metrics: "views", sort: "-views", maxResults: "10" });
