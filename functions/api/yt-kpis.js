@@ -88,6 +88,43 @@ async function safeReadJson(r) {
     return { raw: txt };
   }
 }
+/* =========================================================
+   In-memory cache (fallback when Cache API is ineffective)
+   ---------------------------------------------------------
+   - Final response is memoized for 5 minutes to protect
+     YouTube API quotas if the UI polls frequently.
+   - Segment cache keeps long windows (28d/365d) from being
+     recomputed too often even when the response cache misses.
+========================================================= */
+
+const __MEM = globalThis.__YT_KPIS_MEM || (globalThis.__YT_KPIS_MEM = { ts: 0, key: "", body: "", headers: null });
+const __SEG = globalThis.__YT_KPIS_SEG || (globalThis.__YT_KPIS_SEG = new Map());
+
+async function withSegCache(key, ttlSec, fn) {
+  const now = Date.now();
+  const entry = __SEG.get(key);
+
+  if (entry?.value && (now - entry.ts) < ttlSec * 1000) return entry.value;
+  if (entry?.inflight) return entry.inflight;
+
+  const inflight = (async () => {
+    const value = await fn();
+    __SEG.set(key, { ts: Date.now(), value });
+    return value;
+  })();
+
+  __SEG.set(key, { ts: entry?.ts || 0, value: entry?.value, inflight });
+  try {
+    return await inflight;
+  } finally {
+    const cur = __SEG.get(key);
+    if (cur?.inflight === inflight) {
+      delete cur.inflight;
+      __SEG.set(key, cur);
+    }
+  }
+}
+
 
 function uniq(arr) {
   return [...new Set((arr || []).filter(Boolean))];
@@ -693,169 +730,171 @@ function buildRanksFromIntel(intelList) {
 }
 
 async function fetchVideoWindowBundle(token, startIso, endIso, maxResults = 25) {
+  // Strategy:
+  //  1) Get top videos by views for the window (dimensions=video).
+  //  2) Re-query additional metric groups using filters=video==id1,id2,... and dimensions=video.
+  //     This makes metrics like impressions/CTR/retention much more reliable across reports.
   const common = {
     ids: "channel==MINE",
     startDate: startIso,
     endDate: endIso,
     dimensions: "video",
-    maxResults,
+    maxResults: String(maxResults),
   };
 
-  // Try a single "super" query first (fewer API calls). If it's not supported for your channel/scopes,
-  // we fall back to the split queries below.
-  const superMetrics = "views,estimatedMinutesWatched,subscribersGained,subscribersLost,averageViewDuration,averageViewPercentage,videoThumbnailImpressions,videoThumbnailImpressionsClickRate,likes,comments,shares,engagedViews";
-  const superResp = await safeAnalytics(token, { ...common, metrics: superMetrics, sort: "-views" });
+  const base = await safeAnalytics(token, {
+    ...common,
+    metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost,engagedViews",
+    sort: "-views",
+  });
 
-  let ids = [];
+  const baseRows = base?.rows || [];
+  const ids = baseRows.map(r => r?.[0]).filter(Boolean);
+
+  // Build base maps
   const viewsMap = {};
-  const minutesMap = {};
+  const minsMap = {};
   const subsGMap = {};
   const subsLMap = {};
+  const engagedViewsMap = {};
+  for (const r of baseRows) {
+    const vid = r?.[0];
+    if (!vid) continue;
+    viewsMap[vid] = toNumOrNull(r?.[1]);
+    minsMap[vid] = toNumOrNull(r?.[2]);
+    subsGMap[vid] = toNumOrNull(r?.[3]);
+    subsLMap[vid] = toNumOrNull(r?.[4]);
+    engagedViewsMap[vid] = toNumOrNull(r?.[5]);
+  }
+
+  // If we couldn't get an id list, return just base maps (downstream will fallback to uploads list)
+  if (!ids.length) {
+    return {
+      ids,
+      viewsMap,
+      minsMap,
+      subsGMap,
+      subsLMap,
+      engagedViewsMap,
+      impMap: {},
+      ctrMap: {},
+      avdMap: {},
+      avpMap: {},
+      likesMap: {},
+      commentsMap: {},
+      sharesMap: {},
+    };
+  }
+
+  const filterList = ids.join(",");
+  const filters = `video==${filterList}`;
+
+  // Re-query other metric groups using filters + dimensions=video
+  const [ret, thumbs, engage] = await Promise.all([
+    safeAnalytics(token, {
+      ...common,
+      filters,
+      metrics: "averageViewDuration,averageViewPercentage",
+    }),
+    safeAnalytics(token, {
+      ...common,
+      filters,
+      metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
+    }),
+    safeAnalytics(token, {
+      ...common,
+      filters,
+      metrics: "likes,comments,shares",
+    }),
+  ]);
+
   const avdMap = {};
   const avpMap = {};
+  for (const r of ret?.rows || []) {
+    const vid = r?.[0];
+    if (!vid) continue;
+    avdMap[vid] = toNumOrNull(r?.[1]);
+    avpMap[vid] = toNumOrNull(r?.[2]);
+  }
+
   const impMap = {};
   const ctrMap = {};
+  for (const r of thumbs?.rows || []) {
+    const vid = r?.[0];
+    if (!vid) continue;
+    impMap[vid] = toNumOrNull(r?.[1]);
+    ctrMap[vid] = toNumOrNull(r?.[2]); // percent
+  }
+
   const likesMap = {};
   const commentsMap = {};
   const sharesMap = {};
-  const engagedMap = {};
-
-  const applyRow = (id, idx, val) => {
-    if (!id) return;
-    const n = val != null ? Number(val) : null;
-    if (idx === 1) viewsMap[id] = n;
-    else if (idx === 2) minutesMap[id] = n;
-    else if (idx === 3) subsGMap[id] = n;
-    else if (idx === 4) subsLMap[id] = n;
-    else if (idx === 5) avdMap[id] = n;
-    else if (idx === 6) avpMap[id] = n;
-    else if (idx === 7) impMap[id] = n;
-    else if (idx === 8) ctrMap[id] = n;
-    else if (idx === 9) likesMap[id] = n;
-    else if (idx === 10) commentsMap[id] = n;
-    else if (idx === 11) sharesMap[id] = n;
-    else if (idx === 12) engagedMap[id] = n;
-  };
-
-  let didSplitThumbsCall = false;
-
-  if (superResp?.rows?.length) {
-    for (const r of superResp.rows) {
-      const id = r?.[0];
-      if (!id) continue;
-      ids.push(id);
-      // metrics are in the same order as "superMetrics"
-      for (let i = 1; i <= 12; i++) applyRow(id, i, r?.[i]);
-    }
-
-    // Expand coverage for CTR/Impressions by pulling top-impression videos too.
-    // This preserves "best CTR" style intel without needing 5 separate calls.
-    const thumbsExtra = await safeAnalytics(token, {
-      ids: "channel==MINE",
-      startDate: startIso,
-      endDate: endIso,
-      metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
-      dimensions: "video",
-      sort: "-videoThumbnailImpressions",
-      maxResults,
-    });
-
-    (thumbsExtra?.rows || []).forEach((r) => {
-      const id = r?.[0];
-      if (!id) return;
-      ids.push(id);
-      impMap[id] = r?.[1] != null ? Number(r[1]) : null;
-      ctrMap[id] = r?.[2] != null ? Number(r[2]) : null;
-    });
-  } else {
-    const base = await safeAnalytics(token, { ...common, metrics: "views,estimatedMinutesWatched,subscribersGained,subscribersLost", sort: "-views" });
-    const retention = await safeAnalytics(token, { ...common, metrics: "averageViewDuration,averageViewPercentage", sort: "-views" });
-    const thumbs = await safeAnalytics(token, { ...common, metrics: "videoThumbnailImpressions,videoThumbnailImpressionsClickRate", sort: "-videoThumbnailImpressions" });
-    const engage = await safeAnalytics(token, { ...common, metrics: "likes,comments,shares", sort: "-views" });
-    const shorts = await safeAnalytics(token, { ...common, metrics: "engagedViews", sort: "-views" });
-
-    didSplitThumbsCall = true;
-
-    ids = uniq([
-      ...((base?.rows || []).map((r) => r?.[0]).filter(Boolean)),
-      ...((retention?.rows || []).map((r) => r?.[0]).filter(Boolean)),
-      ...((thumbs?.rows || []).map((r) => r?.[0]).filter(Boolean)),
-      ...((engage?.rows || []).map((r) => r?.[0]).filter(Boolean)),
-      ...((shorts?.rows || []).map((r) => r?.[0]).filter(Boolean)),
-    ]);
-
-    Object.assign(viewsMap, rowsToMap(base?.rows || [], 0, 1));
-    Object.assign(minutesMap, rowsToMap(base?.rows || [], 0, 2));
-    Object.assign(subsGMap, rowsToMap(base?.rows || [], 0, 3));
-    Object.assign(subsLMap, rowsToMap(base?.rows || [], 0, 4));
-
-    (retention?.rows || []).forEach((r) => {
-      const id = r?.[0];
-      if (!id) return;
-      avdMap[id] = r?.[1] != null ? Number(r[1]) : null;
-      avpMap[id] = r?.[2] != null ? Number(r[2]) : null;
-    });
-
-    (thumbs?.rows || []).forEach((r) => {
-      const id = r?.[0];
-      if (!id) return;
-      impMap[id] = r?.[1] != null ? Number(r[1]) : null;
-      ctrMap[id] = r?.[2] != null ? Number(r[2]) : null;
-    });
-
-    (engage?.rows || []).forEach((r) => {
-      const id = r?.[0];
-      if (!id) return;
-      likesMap[id] = r?.[1] != null ? Number(r[1]) : null;
-      commentsMap[id] = r?.[2] != null ? Number(r[2]) : null;
-      sharesMap[id] = r?.[3] != null ? Number(r[3]) : null;
-    });
-
-    Object.assign(engagedMap, rowsToMap(shorts?.rows || [], 0, 1));
+  for (const r of engage?.rows || []) {
+    const vid = r?.[0];
+    if (!vid) continue;
+    likesMap[vid] = toNumOrNull(r?.[1]);
+    commentsMap[vid] = toNumOrNull(r?.[2]);
+    sharesMap[vid] = toNumOrNull(r?.[3]);
   }
-
-  ids = uniq(ids);
 
   return {
     ids,
-    startDate: startIso,
-    endDate: endIso,
     viewsMap,
-    minutesMap,
+    minsMap,
     subsGMap,
     subsLMap,
-    avdMap,
-    avpMap,
+    engagedViewsMap,
     impMap,
     ctrMap,
+    avdMap,
+    avpMap,
     likesMap,
     commentsMap,
     sharesMap,
-    engagedMap,
   };
 }
 
+
 function buildVideoIntelFromBundle(bundle, videoMap) {
   const out = [];
-  for (const id of bundle.ids || []) {
-    const vd = videoMap[id];
-    if (!vd) continue;
-    const views = Number(bundle.viewsMap[id] || 0);
-    const minutes = Number(bundle.minutesMap[id] || 0);
-    const gained = Number(bundle.subsGMap[id] || 0);
-    const lost = Number(bundle.subsLMap[id] || 0);
+  const ids = bundle?.ids || [];
+  for (const id of ids) {
+    const vd = videoMap?.[id] || {};
+
+    const views = toNumOrNull(bundle?.viewsMap?.[id]) ?? 0;
+    const minutes = toNumOrNull(bundle?.minsMap?.[id]) ?? 0;
+    const gained = toNumOrNull(bundle?.subsGMap?.[id]) ?? 0;
+    const lost = toNumOrNull(bundle?.subsLMap?.[id]) ?? 0;
     const netSubs = gained - lost;
 
-    const impressions = toNumOrNull(bundle.impMap[id]);
-    const ctr = toNumOrNull(bundle.ctrMap[id]);
-    const avgViewDurationSec = toNumOrNull(bundle.avdMap[id]);
-    const avgViewPercentage = toNumOrNull(bundle.avpMap[id]);
+    const engagedViews = toNumOrNull(bundle?.engagedViewsMap?.[id]);
 
-    const likes = toNumOrNull(bundle.likesMap[id]);
-    const comments = toNumOrNull(bundle.commentsMap[id]);
-    const shares = toNumOrNull(bundle.sharesMap[id]);
+    const impressions = toNumOrNull(bundle?.impMap?.[id]);
+    const ctr = toNumOrNull(bundle?.ctrMap?.[id]); // percent
 
-    const engagedViews = toNumOrNull(bundle.engagedMap[id]);
+    let avgViewDurationSec = toNumOrNull(bundle?.avdMap?.[id]);
+    let avgViewPercentage = toNumOrNull(bundle?.avpMap?.[id]);
+
+    const likesWindow = toNumOrNull(bundle?.likesMap?.[id]);
+    const commentsWindow = toNumOrNull(bundle?.commentsMap?.[id]);
+    const shares = toNumOrNull(bundle?.sharesMap?.[id]);
+
+    // Data API fallbacks (lifetime totals) if window-level engagement is unavailable.
+    const likesTotal = toNumOrNull(vd.likes);
+    const commentsTotal = toNumOrNull(vd.comments);
+
+    const likes = (likesWindow != null ? likesWindow : likesTotal);
+    const comments = (commentsWindow != null ? commentsWindow : commentsTotal);
+
+    const durationSec = vd.durationSec || null;
+
+    // Retention fallbacks: derive avg duration/pct from watch time + views (+ duration if available).
+    if (avgViewDurationSec == null && views > 0 && minutes > 0) {
+      avgViewDurationSec = (minutes * 60) / views;
+    }
+    if (avgViewPercentage == null && avgViewDurationSec != null && durationSec) {
+      avgViewPercentage = (avgViewDurationSec / durationSec) * 100;
+    }
 
     const likeRatePct = views > 0 && likes != null ? (likes / views) * 100 : null;
     const subsPer1kViews = views > 0 ? (netSubs / views) * 1000 : null;
@@ -865,8 +904,8 @@ function buildVideoIntelFromBundle(bundle, videoMap) {
       videoId: id,
       title: vd.title || "",
       publishedAt: vd.publishedAt || null,
-      durationSec: vd.durationSec || null,
-      isShort: isShortByDurationSec(vd.durationSec),
+      durationSec: durationSec,
+      isShort: isShortByDurationSec(durationSec),
       views,
       minutesWatched: minutes,
       watchHours: round(minutes / 60, 2),
@@ -884,11 +923,15 @@ function buildVideoIntelFromBundle(bundle, videoMap) {
       likeRatePct,
       subsPer1kViews,
       watchMinPerView,
+
+      // Optional: helps you understand why likes/comments might not match the selected window.
+      likesScope: likesWindow != null ? "window" : (likesTotal != null ? "lifetime" : null),
+      commentsScope: commentsWindow != null ? "window" : (commentsTotal != null ? "lifetime" : null),
     });
   }
   return out;
-
 }
+
 
 function buildLegacyVideoIntelListFromV3(intel7List, endIso) {
   const list = (intel7List || []).slice(0, 50);
@@ -1129,15 +1172,15 @@ async function computeKPIs(env) {
   // -------------------------------------------------------
   // HUD V3: top videos by window + Shorts-first extras
   // -------------------------------------------------------
-  const [w7dV3, w28V3, w365V3, money28V3, loyalty28V3, channelEngage28V3, shorts28V3] =
+    const [w7dV3, w28V3, w365V3, money28V3, loyalty28V3, channelEngage28V3, shorts28V3] =
     await Promise.all([
-      fetchVideoWindowBundle(token, weeklyStart, endIso, 25),
-      fetchVideoWindowBundle(token, last28Start, endIso, 50),
-      fetchVideoWindowBundle(token, yearStart, endIso, 25),
-      fetchMoney28(token, last28Start, endIso),
-      fetchViewerType28(token, last28Start, endIso),
-      fetchChannelEngagement28(token, last28Start, endIso),
-      fetchShortsViewedVsSwiped28(token, last28Start, endIso),
+      withSegCache(`w7dV3:${weeklyStart}:${endIso}`, 10 * 60, () => fetchVideoWindowBundle(token, weeklyStart, endIso, 25)),
+      withSegCache(`w28V3:${last28Start}:${endIso}`, 30 * 60, () => fetchVideoWindowBundle(token, last28Start, endIso, 50)),
+      withSegCache(`w365V3:${yearStart}:${endIso}`, 6 * 60 * 60, () => fetchVideoWindowBundle(token, yearStart, endIso, 50)),
+      withSegCache(`money28V3:${last28Start}:${endIso}`, 60 * 60, () => fetchMoney28(token, last28Start, endIso)),
+      withSegCache(`loyalty28V3:${last28Start}:${endIso}`, 60 * 60, () => fetchLoyalty28(token, last28Start, endIso)),
+      withSegCache(`channelEngage28V3:${last28Start}:${endIso}`, 60 * 60, () => fetchChannelEngage28(token, last28Start, endIso)),
+      withSegCache(`shorts28V3:${last28Start}:${endIso}`, 30 * 60, () => fetchShorts28(token, last28Start, endIso)),
     ]);
 
   v3VideoIds = uniq([...(w7dV3?.ids || []), ...(w28V3?.ids || []), ...(w365V3?.ids || [])]);
@@ -1281,25 +1324,62 @@ async function computeKPIs(env) {
 
 export async function onRequest(context) {
   try {
-    const url = new URL(context.request.url);
-    const bypassCache = url.searchParams.get("fresh") === "1";
+    const rawUrl = new URL(context.request.url);
+    const bypassCache = rawUrl.searchParams.get("fresh") === "1";
 
-    const cache = caches.default;
+    // Normalize cache key (ignore fresh=1 so it doesn't destroy cache hit-rate)
+    const url = new URL(rawUrl.toString());
+    url.searchParams.delete("fresh");
     const cacheKey = new Request(url.toString(), { method: "GET" });
 
-    if (!bypassCache) {
+    const now = Date.now();
+    const MEM_TTL_MS = 5 * 60 * 1000;
+
+    // In-memory cache (works even if Cache API isn't effective for your setup)
+    if (!bypassCache && __MEM.body && __MEM.key === cacheKey.url && (now - __MEM.ts) < MEM_TTL_MS) {
+      return new Response(__MEM.body, { headers: __MEM.headers });
+    }
+
+    // Cache API (edge cache)
+    let cache = null;
+    try { cache = caches.default; } catch { cache = null; }
+
+    if (!bypassCache && cache) {
       const cached = await cache.match(cacheKey);
-      if (cached) return cached;
+      if (cached) {
+        // also seed in-memory cache
+        try {
+          __MEM.ts = now;
+          __MEM.key = cacheKey.url;
+          __MEM.body = await cached.clone().text();
+          __MEM.headers = new Headers(cached.headers);
+        } catch {}
+        return cached;
+      }
     }
 
     const data = await computeKPIs(context.env);
     const res = Response.json(data, {
-      headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=300" },
+      headers: { "Cache-Control": "public, max-age=300, s-maxage=300" },
     });
 
-    if (!bypassCache) context.waitUntil(cache.put(cacheKey, res.clone()));
+    // Seed in-memory cache
+    try {
+      __MEM.ts = now;
+      __MEM.key = cacheKey.url;
+      __MEM.body = await res.clone().text();
+      __MEM.headers = new Headers(res.headers);
+    } catch {}
+
+    if (!bypassCache && cache) {
+      context.waitUntil(cache.put(cacheKey, res.clone()));
+    }
+
     return res;
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
+    return Response.json(
+      { error: String(e?.message || e || "Unknown error") },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }
