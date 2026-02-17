@@ -1026,13 +1026,16 @@ async function fetchChannelEngagement28(token, startIso, endIso) {
   });
   const r = eng?.rows?.[0] || null;
   if (!r) return { shares: null, cardClicks: null, endScreenClicks: null };
-  return { shares: Number(r[0] ?? 0), cardClicks: Number(r[1] ?? 0), endScreenClicks: Number(r[2] ?? 0) };
+  return {
+    shares: Number(r[0] ?? 0),
+    cardClicks: Number(r[1] ?? 0),
+    endScreenClicks: Number(r[2] ?? 0),
+  };
+}
 
 // Backward-compatible alias (older code expects fetchChannelEngage28)
 async function fetchChannelEngage28(token, startIso, endIso) {
   return fetchChannelEngagement28(token, startIso, endIso);
-}
-
 }
 
 async function fetchShortsViewedVsSwiped28(token, startIso, endIso) {
@@ -1054,13 +1057,13 @@ async function fetchShortsViewedVsSwiped28(token, startIso, endIso) {
     viewedRatePct: viewedRate != null ? round(viewedRate, 1) : null,
     swipeAwayRatePct: viewedRate != null ? round(100 - viewedRate, 1) : null,
   };
+}
 
 // Backward-compatible alias (older code expects fetchShorts28)
 async function fetchShorts28(token, startIso, endIso) {
   return fetchShortsViewedVsSwiped28(token, startIso, endIso);
 }
 
-}
 
 
 async function computeKPIs(env) {
@@ -1368,3 +1371,15 @@ export async function onRequest(context) {
       __MEM.headers = new Headers(res.headers);
     } catch {}
 
+    if (!bypassCache && cache) {
+      context.waitUntil(cache.put(cacheKey, res.clone()));
+    }
+
+    return res;
+  } catch (e) {
+    return Response.json(
+      { error: String(e?.message || e || "Unknown error") },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+}
