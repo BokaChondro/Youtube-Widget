@@ -888,6 +888,8 @@ function buildVideoIntelFromBundle(bundle, videoMap) {
   }
   return out;
 
+}
+
 function buildLegacyVideoIntelListFromV3(intel7List, endIso) {
   const list = (intel7List || []).slice(0, 50);
   return list.map((v) => {
@@ -939,7 +941,6 @@ function buildLegacyVideoIntelListFromV3(intel7List, endIso) {
   }).filter((x) => x.videoId);
 }
 
-}
 
 function pickNewestByType(videoDetails, wantShort) {
   const list = (videoDetails || [])
