@@ -10,7 +10,10 @@
  *
  * ENV:
  *  - YT_API_KEY
- *  - YT_OAUTH_TOKEN   (OAuth access token for YouTube Analytics API)
+ *  - YT_OAUTH_TOKEN      (legacy/manual OAuth access token for YouTube Analytics API)
+ *  - YT_REFRESH_TOKEN    (recommended: auto-refresh)
+ *  - YT_CLIENT_ID        (required for refresh)
+ *  - YT_CLIENT_SECRET    (required for refresh)
  *  - YT_CHANNEL_ID    (optional fallback)
  */
 
@@ -118,16 +121,116 @@ async function ytAnalyticsGET(oauthToken, params = {}) {
   return { error: false, data: j };
 }
 
+
+/* ---------------------- OAuth Auto-Refresh (Production) ----------------------
+ * If you provide:
+ *   - YT_CLIENT_ID
+ *   - YT_CLIENT_SECRET
+ *   - YT_REFRESH_TOKEN
+ * this function will auto-refresh access tokens (no manual updates).
+ *
+ * Notes:
+ * - Access tokens expire quickly (often ~1 hour).
+ * - In Google Cloud "OAuth consent screen" Testing mode, authorizations (and refresh tokens)
+ *   for test users can expire after ~7 days. Put the app in "In production" for long-lived tokens.
+ */
+
+const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+
+// Best-effort in-memory cache (works across warm requests on the same isolate)
+let _tokenCache = { accessToken: "", expiresAtMs: 0 };
+
+function hasRefreshConfig(env) {
+  return Boolean(env?.YT_CLIENT_ID && env?.YT_CLIENT_SECRET && env?.YT_REFRESH_TOKEN);
+}
+
+async function refreshAccessTokenFromGoogle(env) {
+  const body = new URLSearchParams({
+    client_id: env.YT_CLIENT_ID,
+    client_secret: env.YT_CLIENT_SECRET,
+    refresh_token: env.YT_REFRESH_TOKEN,
+    grant_type: "refresh_token"
+  });
+
+  const r = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j?.access_token) {
+    const msg = j?.error_description || j?.error || `OAuth refresh failed (HTTP ${r.status})`;
+    throw new Error(msg);
+  }
+
+  const expiresInSec = Number(j.expires_in) || 3600;
+  _tokenCache.accessToken = String(j.access_token);
+  _tokenCache.expiresAtMs = Date.now() + expiresInSec * 1000;
+  return _tokenCache.accessToken;
+}
+
+async function getValidAccessToken(env, forceRefresh = false) {
+  if (!hasRefreshConfig(env)) return "";
+
+  const now = Date.now();
+  const safetyWindowMs = 60 * 1000; // refresh 60s early
+
+  if (
+    !forceRefresh &&
+    _tokenCache.accessToken &&
+    _tokenCache.expiresAtMs &&
+    now < (_tokenCache.expiresAtMs - safetyWindowMs)
+  ) {
+    return _tokenCache.accessToken;
+  }
+
+  return await refreshAccessTokenFromGoogle(env);
+}
+
+/**
+ * Select OAuth token in this order:
+ *  1) Authorization: Bearer <token> header (manual override / debugging)
+ *  2) Auto-refresh via refresh-token envs (preferred for production)
+ *  3) env.YT_OAUTH_TOKEN (legacy/manual)
+ */
+async function resolveOAuthToken(env, request) {
+  const headerAuth = request?.headers?.get("Authorization") || "";
+  const headerToken = headerAuth.toLowerCase().startsWith("bearer ") ? headerAuth.slice(7).trim() : "";
+  if (headerToken) return headerToken;
+
+  if (hasRefreshConfig(env)) {
+    return await getValidAccessToken(env, false);
+  }
+
+  return (env?.YT_OAUTH_TOKEN || "").trim();
+}
+
 /**
  * ✅ Safe Analytics:
  * Always returns { rows:[], columnHeaders:[] } on errors
  * so no TypeError: cannot read rows.
  */
-async function safeAnalytics(oauthToken, params = {}) {
+async function safeAnalytics(env, oauthToken, params = {}) {
   const fallback = { columnHeaders: [], rows: [] };
   try {
-    const res = await ytAnalyticsGET(oauthToken, params);
+    let token = (oauthToken || "").trim();
+
+    // If caller didn't pass a token, try to auto-refresh here.
+    if (!token && hasRefreshConfig(env)) {
+      token = await getValidAccessToken(env, false);
+    }
+
+    let res = await ytAnalyticsGET(token, params);
+
+    // If token is stale/invalid and we have refresh credentials, refresh and retry once.
+    if (res.error && (res.status === 401 || res.status === 403) && hasRefreshConfig(env)) {
+      token = await getValidAccessToken(env, true);
+      res = await ytAnalyticsGET(token, params);
+    }
+
     if (res.error) return fallback;
+
     const data = res.data || {};
     return {
       columnHeaders: Array.isArray(data.columnHeaders) ? data.columnHeaders : [],
@@ -701,7 +804,7 @@ function pickTop(rows, dimIndex = 0, metricIndex = 1) {
 
 /* -------------------------- Core KPI Builder -------------------------- */
 
-async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
+async function buildV3Data({ apiKey, env, oauthToken, channelBasics, uploads }) {
   const now = new Date();
 
   // Analytics dates are based on Pacific time days; using "yesterday" reduces partial-day weirdness.
@@ -830,7 +933,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Channel daily stats (views + watch time)
   // --------------------------
-  const daily9 = await safeAnalytics(oauthToken, {
+  const daily9 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start9,
     endDate: latestDay,
@@ -879,7 +982,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Per-video performance (7d + 28d)
   // --------------------------
-  const perVideo28 = await safeAnalytics(oauthToken, {
+  const perVideo28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -908,7 +1011,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   const focusRow = pv28Rows?.find(r => r.video === focusId) || pv28Rows?.[0] || {};
 
   // Video details for focus + uploads + top short + top engaged
-  const perVideo7 = await safeAnalytics(oauthToken, {
+  const perVideo7 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start7,
     endDate: latestDay,
@@ -946,7 +1049,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   }
 
   // Shorts top video (28d)
-  const perShorts28 = await safeAnalytics(oauthToken, {
+  const perShorts28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1003,7 +1106,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Traffic sources (28d) + browse pct + notifications
   // --------------------------
-  const traffic28 = await safeAnalytics(oauthToken, {
+  const traffic28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1023,7 +1126,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   const shortsRef = trafficList.find(x => x.dim === "SHORTS")?.value || 0;
   v3.shorts.discoveryPct = Math.round(percent(shortsRef, totalTrafficViews) * 10) / 10;
 
-  const playback28 = await safeAnalytics(oauthToken, {
+  const playback28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1040,7 +1143,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Country
   // --------------------------
-  const country28 = await safeAnalytics(oauthToken, {
+  const country28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1054,7 +1157,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Subscribed split (7d)
   // --------------------------
-  const sub7 = await safeAnalytics(oauthToken, {
+  const sub7 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start7,
     endDate: latestDay,
@@ -1076,7 +1179,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
     "Balanced reach + loyalty";
 
   // Viewer logged-in percentage (28d)
-  const logged28 = await safeAnalytics(oauthToken, {
+  const logged28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1089,7 +1192,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Content type split (Shorts traffic %)
   // --------------------------
-  const type28 = await safeAnalytics(oauthToken, {
+  const type28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1105,7 +1208,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Shorts momentum (7d vs previous 7d)
   // --------------------------
-  const shorts7 = await safeAnalytics(oauthToken, {
+  const shorts7 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start7,
     endDate: latestDay,
@@ -1119,7 +1222,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
 
   const prev7Start = isoDate(shiftDays(now, -14));
   const prev7End = isoDate(shiftDays(now, -8));
-  const shortsPrev7 = await safeAnalytics(oauthToken, {
+  const shortsPrev7 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: prev7Start,
     endDate: prev7End,
@@ -1134,7 +1237,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   v3.shorts.subsPer1kPct = shorts7Views > 0 ? Math.round((shorts7Subs / shorts7Views) * 1000 * 10) / 10 : 0;
 
   // "48h shorts views" approximated via last 2 full days of shorts views
-  const shorts2 = await safeAnalytics(oauthToken, {
+  const shorts2 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start2,
     endDate: latestDay,
@@ -1183,7 +1286,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // Focus: keyword, website, playlist detail (requires focus + traffic source detail)
   // --------------------------
   if (focusId) {
-    const kw = await safeAnalytics(oauthToken, {
+    const kw = await safeAnalytics(env, oauthToken, {
       ids: "channel==MINE",
       startDate: start28,
       endDate: latestDay,
@@ -1196,7 +1299,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
     const kwTop = pickTop(kw.rows, 0, 1)?.dim || "";
     v3.discovery.keyword = String(kwTop || "").trim() || (v3.focus.title.split(/\s+/).slice(0, 3).join(" ") || "your topic");
 
-    const ext = await safeAnalytics(oauthToken, {
+    const ext = await safeAnalytics(env, oauthToken, {
       ids: "channel==MINE",
       startDate: start28,
       endDate: latestDay,
@@ -1209,7 +1312,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
     const extTop = pickTop(ext.rows, 0, 1)?.dim || "";
     v3.discovery.website = hostnameFromUrl(extTop) || "external websites";
 
-    const pl = await safeAnalytics(oauthToken, {
+    const pl = await safeAnalytics(env, oauthToken, {
       ids: "channel==MINE",
       startDate: start28,
       endDate: latestDay,
@@ -1229,7 +1332,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
     }
     v3.discovery.playlistName = playlistName || "your playlists";
 
-    const shareSvc = await safeAnalytics(oauthToken, {
+    const shareSvc = await safeAnalytics(env, oauthToken, {
       ids: "channel==MINE",
       startDate: start28,
       endDate: latestDay,
@@ -1242,7 +1345,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
     const shareTop = pickTop(shareSvc.rows, 0, 1)?.dim || "";
     v3.discovery.sharingService = titleizeEnum(shareTop) || "Other";
 
-    const card = await safeAnalytics(oauthToken, {
+    const card = await safeAnalytics(env, oauthToken, {
       ids: "channel==MINE",
       startDate: start28,
       endDate: latestDay,
@@ -1257,7 +1360,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Comments up % (7d vs prev 7d)
   // --------------------------
-  const c7 = await safeAnalytics(oauthToken, {
+  const c7 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start7,
     endDate: latestDay,
@@ -1267,7 +1370,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   const c7Row = c7.rows?.[0] ? rowObj(c7Idx, c7.rows[0]) : {};
   const comments7 = safeNum(c7Row.comments, 0);
 
-  const cPrev = await safeAnalytics(oauthToken, {
+  const cPrev = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: prev7Start,
     endDate: prev7End,
@@ -1290,7 +1393,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Money (28d + latest day) — requires yt-analytics-monetary scope to populate
   // --------------------------
-  const money28 = await safeAnalytics(oauthToken, {
+  const money28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1303,7 +1406,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   v3.money.cpm = Math.round(safeNum(moneyRow.cpm, 0) * 100) / 100;
   v3.money.rpm = views28 > 0 ? Math.round((v3.money.estimatedRevenue28d / views28) * 1000 * 100) / 100 : 0;
 
-  const moneyDay = await safeAnalytics(oauthToken, {
+  const moneyDay = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: latestDay,
     endDate: latestDay,
@@ -1314,7 +1417,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   const mdRow = moneyDay.rows?.[0] ? rowObj(mdIdx, moneyDay.rows[0]) : {};
   v3.money.estimatedRevenueToday = Math.round(safeNum(mdRow.estimatedRevenue, 0) * 100) / 100;
 
-  const revTop10 = await safeAnalytics(oauthToken, {
+  const revTop10 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1338,7 +1441,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
 
   const prev28Start = isoDate(shiftDays(now, -56));
   const prev28End = isoDate(shiftDays(now, -29));
-  const prev28 = await safeAnalytics(oauthToken, {
+  const prev28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: prev28Start,
     endDate: prev28End,
@@ -1353,7 +1456,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   // --------------------------
   // Live (if present)
   // --------------------------
-  const live28 = await safeAnalytics(oauthToken, {
+  const live28 = await safeAnalytics(env, oauthToken, {
     ids: "channel==MINE",
     startDate: start28,
     endDate: latestDay,
@@ -1371,7 +1474,7 @@ async function buildV3Data({ apiKey, oauthToken, channelBasics, uploads }) {
   v3.live.peakConcurrent = Math.round(safeNum(liveTop.peakConcurrentViewers, 0));
 
   if (liveId) {
-    const liveTraffic = await safeAnalytics(oauthToken, {
+    const liveTraffic = await safeAnalytics(env, oauthToken, {
       ids: "channel==MINE",
       startDate: start28,
       endDate: latestDay,
@@ -1426,11 +1529,7 @@ export async function onRequest(context) {
   const env = context.env || {};
 
   const apiKey = env.YT_API_KEY || "";
-  const headerAuth = req.headers.get("Authorization") || "";
-  const oauthToken =
-    env.YT_OAUTH_TOKEN ||
-    (headerAuth.toLowerCase().startsWith("bearer ") ? headerAuth.slice(7).trim() : "");
-
+  const oauthToken = await resolveOAuthToken(env, req);
   const channelId =
     url.searchParams.get("channelId") ||
     url.searchParams.get("cid") ||
@@ -1441,7 +1540,7 @@ export async function onRequest(context) {
     return jsonResponse({ ok: false, error: "Missing env.YT_API_KEY" }, 500);
   }
   if (!oauthToken) {
-    return jsonResponse({ ok: false, error: "Missing OAuth token (env.YT_OAUTH_TOKEN or Authorization: Bearer ...)" }, 401);
+    return jsonResponse({ ok: false, error: "Missing OAuth configuration. Provide (YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN) for auto-refresh, or set env.YT_OAUTH_TOKEN, or send Authorization: Bearer <access_token>." }, 401);
   }
   if (!channelId) {
     return jsonResponse({ ok: false, error: "Missing channelId (query ?channelId=... or env.YT_CHANNEL_ID)" }, 400);
@@ -1457,7 +1556,7 @@ export async function onRequest(context) {
   const uploads = uploadsPlaylistId ? await fetchRecentUploads(apiKey, uploadsPlaylistId, 25) : [];
 
   // Build v3Data + safe templates
-  const v3 = await buildV3Data({ apiKey, oauthToken, channelBasics, uploads });
+  const v3 = await buildV3Data({ apiKey, env, oauthToken, channelBasics, uploads });
   const templates = buildHUDMessageTemplatesV3(v3);
   const sample = pickRandom(templates, 3);
 
