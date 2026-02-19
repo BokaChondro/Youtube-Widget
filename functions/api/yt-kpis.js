@@ -77,7 +77,17 @@ async function safeReadJson(r) {
   try {
     return JSON.parse(txt);
   } catch {
-    return { raw: txt };
+    const warnings = [];
+  if (!ch?.ok && ch?.error) {
+    const msg = (typeof ch.error === 'string' ? ch.error : JSON.stringify(ch.error));
+    if (msg.toLowerCase().includes('insufficient') || msg.toLowerCase().includes('scope')) {
+      warnings.push('OAuth token missing YouTube Data API scope. Re-generate refresh token with youtube.readonly (or set YT_API_KEY for Data API calls).');
+    } else {
+      warnings.push('Could not fetch channel metadata from YouTube Data API.');
+    }
+  }
+
+  return { raw: txt };
   }
 }
 
@@ -101,68 +111,41 @@ function pct(n) {
   return round1(x);
 }
 
-/* ---------------------- OAuth Auto-Refresh (Production) ----------------------
- * Required ENV:
- *   - YT_CLIENT_ID
- *   - YT_CLIENT_SECRET
- *   - YT_REFRESH_TOKEN
- *
- * This function auto-refreshes Google OAuth access tokens so you never manually update tokens.
- */
-const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
-
-// Best-effort in-memory cache (works across warm requests on the same isolate)
-let _tokenCache = { accessToken: "", expiresAtMs: 0 };
-
-function hasRefreshConfig(env) {
-  return Boolean(env?.YT_CLIENT_ID && env?.YT_CLIENT_SECRET && env?.YT_REFRESH_TOKEN);
+function getEnv(env, ...keys) {
+  for (const k of keys) {
+    const v = env?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
 }
 
-async function refreshAccessTokenFromGoogle(env) {
+async function getAccessToken(env) {
+  const clientId = getEnv(env, "GOOGLE_CLIENT_ID", "YT_CLIENT_ID", "CLIENT_ID");
+  const clientSecret = getEnv(env, "GOOGLE_CLIENT_SECRET", "YT_CLIENT_SECRET", "CLIENT_SECRET");
+  const refreshToken = getEnv(env, "GOOGLE_REFRESH_TOKEN", "YT_REFRESH_TOKEN", "REFRESH_TOKEN");
+
+  if (!clientId) throw new Error("Missing env.GOOGLE_CLIENT_ID (or YT_CLIENT_ID)");
+  if (!clientSecret) throw new Error("Missing env.GOOGLE_CLIENT_SECRET (or YT_CLIENT_SECRET)");
+  if (!refreshToken) throw new Error("Missing env.GOOGLE_REFRESH_TOKEN (or YT_REFRESH_TOKEN)");
+
   const body = new URLSearchParams({
-    client_id: env.YT_CLIENT_ID,
-    client_secret: env.YT_CLIENT_SECRET,
-    refresh_token: env.YT_REFRESH_TOKEN,
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
     grant_type: "refresh_token",
   });
 
-  const r = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+  const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
 
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j?.access_token) {
-    const msg = j?.error_description || j?.error || `OAuth refresh failed (HTTP ${r.status})`;
-    throw new Error(msg);
-  }
-
-  const expiresInSec = Number(j.expires_in) || 3600;
-  _tokenCache.accessToken = String(j.access_token);
-  _tokenCache.expiresAtMs = Date.now() + expiresInSec * 1000;
-  return _tokenCache.accessToken;
+  const data = await safeReadJson(r);
+  if (!data.access_token) throw new Error(JSON.stringify(data));
+  return data.access_token;
 }
 
-async function getAccessToken(env, forceRefresh = false) {
-  if (!hasRefreshConfig(env)) {
-    throw new Error("Missing OAuth env. Set YT_CLIENT_ID, YT_CLIENT_SECRET, and YT_REFRESH_TOKEN.");
-  }
-
-  const now = Date.now();
-  const safetyWindowMs = 60 * 1000; // refresh 60s early
-
-  if (
-    !forceRefresh &&
-    _tokenCache.accessToken &&
-    _tokenCache.expiresAtMs &&
-    now < (_tokenCache.expiresAtMs - safetyWindowMs)
-  ) {
-    return _tokenCache.accessToken;
-  }
-
-  return await refreshAccessTokenFromGoogle(env);
-}
 
 /* =========================================================
    YouTube HTTP wrappers
@@ -171,653 +154,6 @@ async function getAccessToken(env, forceRefresh = false) {
        ytAnalyticsGET(): calls YouTube Analytics API (reports/query)
        safeAnalytics(): same as ytAnalyticsGET but returns null on failure (HUD should degrade gracefully)
    ========================================================= */
-/* ------------------- V3 HUD Templates + Safe Rendering ------------------- */
-
-function percent(part, total) {
-  total = safeNum(total, 0);
-  part = safeNum(part, 0);
-  if (total <= 0) return 0;
-  return (part / total) * 100;
-}
-
-function hostnameFromUrl(input) {
-  try {
-    if (!input) return "";
-    let u = String(input).trim();
-    if (!u) return "";
-    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-    return new URL(u).hostname.replace(/^www\./i, "");
-  } catch {
-    return String(input || "").trim();
-  }
-}
-
-function titleizeEnum(s) {
-  const raw = String(s || "").trim();
-  if (!raw) return "";
-  return raw
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function pickRandomN(arr, n = 3) {
-  const a = Array.isArray(arr) ? arr.slice() : [];
-  const out = [];
-  while (a.length && out.length < n) {
-    const i = Math.floor(Math.random() * a.length);
-    out.push(a.splice(i, 1)[0]);
-  }
-  return out;
-}
-
-function extractTokens(text) {
-  const re = /{([a-zA-Z0-9_.]+)}/g;
-  const tokens = [];
-  let m;
-  while ((m = re.exec(text))) tokens.push(m[1]);
-  return tokens;
-}
-
-function resolvePath(obj, path) {
-  if (!obj || !path) return undefined;
-  const parts = path.split(".");
-  let cur = obj;
-  for (const p of parts) {
-    if (cur == null) return undefined;
-    cur = cur[p];
-  }
-  return cur;
-}
-
-function renderTemplate(templateText, v3Data) {
-  if (typeof templateText !== "string") return "";
-  const re = /{([a-zA-Z0-9_.]+)}/g;
-  return templateText.replace(re, (_, token) => {
-    const v = resolvePath({ v3: v3Data }, token);
-    if (v === undefined || v === null) return "";
-    return String(v);
-  });
-}
-
-function isSafeTemplate(templateText, v3Data) {
-  const tokens = extractTokens(templateText);
-  for (const t of tokens) {
-    const v = resolvePath({ v3: v3Data }, t);
-    if (v === undefined || v === null) return false;
-    if (typeof v === "string" && v.trim() === "") return false;
-  }
-  return true;
-}
-
-/* -------------------------- 380 Template Decks ------------------------- */
-
-const HUD_TEMPLATE_DECKS_V3 = {
-  PULSE: [
-    "I'm tracking {v3.realtime.viewsLastHour} views in the last hour. You're moving faster than yesterday.",
-    "The channel heartbeat is strong. {v3.realtime.estimatedConcurrent} people are watching you right this second.",
-    "I've detected a surge. Your 48-hour performance is {v3.realtime.vsBaseline48hPct}% above your baseline.",
-    "Current pace: You are capturing about {v3.realtime.attentionHoursPerDay} hours of human attention every single day.",
-    "It's a bit too quiet. Real-time velocity is {v3.realtime.vsBaseline48hPct}% off normal. Do we need a new upload?",
-    "We are cruising at a steady altitude of {v3.realtime.avgViewsPerDay7d} views per day. No turbulence detected.",
-    "Momentum is building. Today is running {v3.realtime.vsYesterdayPct}% above yesterday.",
-    "We just crossed your highest single-day view count this week: {v3.realtime.bestDayViews7d}. High five.",
-    "You have managed to grab {v3.realtime.viewsLast48Hours} views in the last 48 hours. That is strong work.",
-    "If you keep this pace up, you will beat last week's total by mid-week."
-  ],
-
-  SHORTS: [
-    "Too many people are swiping away from '{v3.shorts.title}'. We need to make the first second louder.",
-    "You own the feed right now. '{v3.shorts.title}' has a Viewed Rate of {v3.shorts.viewedRatePct}%. That is elite.",
-    "I think people are watching '{v3.shorts.title}' twice. Retention is over {v3.shorts.loopRetentionPct}%. The loop is perfect.",
-    "Just so you know, your Shorts are currently driving {v3.shorts.trafficPct}% of your total traffic.",
-    "Shorts are converting subscribers {v3.shorts.subsPer1kPct}% faster than your long-form videos right now.",
-    "Viral trigger: '{v3.shorts.title}' just passed {v3.shorts.viewsSpotlight} views in the feed.",
-    "Discovery mode: {v3.shorts.discoveryPct}% of your new viewers found you via Shorts surfaces.",
-    "Only {v3.shorts.stopRatePct}% of people stopped to watch. The competition in the feed is fierce today.",
-    "Vertical Velocity! Your Shorts views are up {v3.shorts.vsLastWeekPct}% this week.",
-    "Volume check: You got {v3.shorts.views48h} Shorts views in the last ~48 hours."
-  ],
-
-  CTR: [
-    "'{v3.focus.title}' is a click beast. The CTR is {v3.packaging.ctrPct}%. Whatever you did, do it again.",
-    "We have a packaging issue. '{v3.focus.title}' has high impressions but very low clicks.",
-    "Remember the 2% rule. If CTR is under 2%, the video is effectively invisible.",
-    "Impression spike! YouTube showed '{v3.focus.title}' to {v3.packaging.impressions} people recently.",
-    "For every 1,000 people who saw '{v3.focus.title}', {v3.packaging.clicksPer1kImpressions} decided to watch. That's the math."
-  ],
-
-  RETENTION: [
-    "Great hook! '{v3.focus.title}' retained {v3.retention.avgViewPct}%. Strong opening.",
-    "Glue Factor: High. '{v3.focus.title}' has an Average View Duration of {v3.retention.avdMinutes} minutes.",
-    "Completionist: {v3.retention.completionPct}% of viewers watched '{v3.focus.title}' to the end.",
-    "Retention is the engine. Your high AVD is triggering more recommendations.",
-    "On average, a viewer watches {v3.retention.avgViewPct}% of your videos before leaving."
-  ],
-};
-
-Object.assign(HUD_TEMPLATE_DECKS_V3, buildRemainingDecksV3());
-ensureTemplateCountExact(HUD_TEMPLATE_DECKS_V3, 380);
-
-function buildRemainingDecksV3() {
-  return {
-    MONEY: [
-      "Estimated Revenue for the last 28 days is ${v3.money.estimatedRevenue28d}.",
-      "Your current revenue per 1,000 views is ${v3.money.rpm}.",
-      "CPM Update: Your niche is currently paying ${v3.money.cpm} per 1,000 views.",
-      "Your top 10 videos are generating {v3.money.top10IncomePct}% of your total income."
-    ],
-
-    LOYALTY: [
-      "Fresh Blood: {v3.audience.newViewerPct}% of viewers on '{v3.focus.title}' are brand new.",
-      "The Core: You have about {v3.audience.coreViewers} unique viewers who watch everything.",
-      "Unique Viewers: {v3.audience.uniqueViewers28} individual humans watched you this month.",
-      "Avg Views per Viewer: {v3.audience.avgViewsPerViewer28}. They are watching multiple videos per session.",
-      "Subscribed viewers are {v3.audience.subscribedViewsPct}% today. That's stability."
-    ],
-
-    TRAFFIC: [
-      "Algo Love: {v3.discovery.browsePct}% of traffic is coming from Browse Features (Homepage).",
-      "Notification Squad: {v3.discovery.notificationPct}% of traffic came from the bell.",
-      "Search Win: People are finding you by typing '{v3.discovery.keyword}'.",
-      "External Spike: Traffic coming from {v3.discovery.website}. Who shared you?",
-      "Playlist Power: '{v3.discovery.playlistName}' is driving binge sessions."
-    ],
-
-    ENGAGEMENT: [
-      "People aren't just watching — they're reacting. {v3.engagement.focusLikes} likes on '{v3.focus.title}' is a strong signal.",
-      "'{v3.focus.title}' is getting shared {v3.engagement.focusShares} times. That's free distribution.",
-      "Your audience is in chat mode today. Comments are up {v3.engagement.commentsUpPct}%.",
-      "Your best engagement today is coming from '{v3.engagement.topEngagedTitle}'. That's your current audience language."
-    ],
-
-    PLAYLISTS: [
-      "Your best binge starter is '{v3.playlists.bingeStarterTitle}'. It's acting like an entry ramp.",
-      "End Screen: push viewers from '{v3.focus.title}' into '{v3.playlists.nextVideoTitle}'.",
-      "Think like Netflix: each video should feel like next episode energy."
-    ],
-
-    AUDIENCE_QUALITY: [
-      "Unsubscribed viewers are {v3.audience.unsubscribedViewsPct}%. Discovery is the growth lever.",
-      "Subscribed vs unsubscribed split is telling a story. Today's story: {v3.audience.storyLine}.",
-      "Your engagement is strongest from {v3.audience.topCountry} right now. That's where loyal fans live."
-    ],
-
-    CADENCE: [
-      "It's been {v3.cadence.daysSinceUpload} days since the last upload. Momentum decays when the feed goes quiet.",
-      "Your audience is most active around {v3.cadence.bestHour}. That's a safe upload window."
-    ],
-
-    SYSTEMS: [
-      "Signal check: {v3.realtime.avgViewsPerDay7d} views/day pace. Keep the flywheel spinning.",
-      "Your discovery door is {v3.discovery.topTrafficSource}. Make the next upload fit that door.",
-      "Retention on '{v3.focus.title}' is {v3.retention.avgViewPct}%. Keep the pacing tight.",
-      "Real-time 48h views: {v3.realtime.viewsLast48Hours}. That's the current momentum."
-    ],
-  };
-}
-
-/**
- * Ensures we have exactly N templates:
- * - If under target: appends safe patterns.
- * - If over target: trims from the end (stable ordering).
- */
-function ensureTemplateCountExact(decks, target = 380) {
-  const count = () =>
-    Object.values(decks).reduce((acc, v) => acc + (Array.isArray(v) ? v.length : 0), 0);
-
-  const tags = [
-    "GROWTH",
-    "ALGORITHM",
-    "COMMUNITY",
-    "QUALITY",
-    "FORMAT",
-    "STRATEGY",
-    "SYSTEMS",
-    "DISCOVERY",
-    "PACKAGING",
-    "RETENTION_PLUS",
-  ];
-
-  const patterns = [
-    "Signal check: {v3.realtime.avgViewsPerDay7d} views/day pace. Keep the flywheel spinning.",
-    "Your discovery door is {v3.discovery.topTrafficSource}. Make the next upload fit that door.",
-    "If CTR stays at {v3.packaging.ctrPct}%, the algorithm will keep testing you. Keep refining packaging.",
-    "Your watch-time engine is {v3.realtime.attentionHoursPerDay} hours/day. That's compounding attention.",
-    "Subscribed views are {v3.audience.subscribedViewsPct}%. Loyalty stabilizes your channel.",
-    "Unsubscribed views are {v3.audience.unsubscribedViewsPct}%. Discovery is your growth lever.",
-    "Your top search phrase is '{v3.discovery.keyword}'. Make a sequel targeting the same intent.",
-    "External traffic is coming from {v3.discovery.website}. Double down on that distribution channel.",
-    "Playlist sessions matter: push viewers from '{v3.focus.title}' into '{v3.playlists.nextVideoTitle}'.",
-    "Retention on '{v3.focus.title}' is {v3.retention.avgViewPct}%. Tight pacing wins."
-  ];
-
-  let total = count();
-  let i = 0;
-
-  while (total < target) {
-    const tag = tags[i % tags.length];
-    if (!decks[tag]) decks[tag] = [];
-    decks[tag].push(patterns[i % patterns.length]);
-    i++;
-    total = count();
-  }
-
-  // Trim if over target
-  if (total > target) {
-    const deckKeys = Object.keys(decks);
-    // stable trim from the end of last decks
-    while (total > target && deckKeys.length) {
-      const k = deckKeys[deckKeys.length - 1];
-      if (Array.isArray(decks[k]) && decks[k].length) {
-        decks[k].pop();
-        total--;
-      } else {
-        deckKeys.pop();
-      }
-    }
-  }
-}
-
-function buildHUDMessageTemplatesV3(v3Data) {
-  const decks = HUD_TEMPLATE_DECKS_V3;
-  const templates = [];
-  let id = 1;
-
-  for (const [tag, list] of Object.entries(decks)) {
-    for (const raw of (Array.isArray(list) ? list : [])) {
-      if (typeof raw !== "string") continue;
-      const text = raw.trim();
-      if (!text) continue;
-      if (!isSafeTemplate(text, v3Data)) continue;
-      const rendered = renderTemplate(text, v3Data).trim();
-      if (!rendered) continue;
-      templates.push({ id: `v3_${id++}`, tag, text: rendered });
-    }
-  }
-  return templates;
-}
-
-/* -------------------------- V3 Data Builder (Minimal) ------------------------ */
-
-async function safeAnalyticsTable(token, params = {}) {
-  try {
-    const p = { ids: "channel==MINE", ...params };
-    const data = await ytAnalyticsGET(token, p);
-    return {
-      columnHeaders: Array.isArray(data?.columnHeaders) ? data.columnHeaders : [],
-      rows: Array.isArray(data?.rows) ? data.rows : [],
-    };
-  } catch {
-    return { columnHeaders: [], rows: [] };
-  }
-}
-
-function buildHeaderIndex(columnHeaders = []) {
-  const idx = {};
-  for (let i = 0; i < columnHeaders.length; i++) {
-    const name = columnHeaders[i]?.name;
-    if (name) idx[name] = i;
-  }
-  return idx;
-}
-
-function rowObj(headersIdx, row) {
-  const o = {};
-  for (const [k, i] of Object.entries(headersIdx)) o[k] = row?.[i];
-  return o;
-}
-
-function rowsToDimListSimple(rows, dimIndex = 0, metricIndex = 1) {
-  if (!Array.isArray(rows)) return [];
-  return rows
-    .map(r => ({ dim: r?.[dimIndex], value: safeNum(r?.[metricIndex], 0) }))
-    .filter(x => x.dim !== undefined && x.dim !== null && String(x.dim).trim() !== "")
-    .sort((a, b) => b.value - a.value);
-}
-
-function pickTop(rows, dimIndex = 0, metricIndex = 1) {
-  const list = rowsToDimListSimple(rows, dimIndex, metricIndex);
-  return list?.[0] || null;
-}
-
-async function buildV3DataFromKpis({
-  token,
-  endIso,
-  start7Iso,
-  start14Iso,
-  start28Iso,
-  channelTitle,
-  uploads,
-  vidsById,
-  latestVideo,
-  weekly,
-  m28,
-  realtime,
-  hud,
-  videoIntelList,
-}) {
-  const v3 = {
-    focus: { title: (latestVideo?.title || channelTitle || "Your latest video") },
-
-    realtime: {
-      viewsLastHour: safeNum(realtime?.lastHour, 0),
-      estimatedConcurrent: 0,
-      vsBaseline48hPct: 0,
-      attentionHoursPerDay: 0,
-      avgViewsPerDay7d: 0,
-      vsYesterdayPct: safeNum(realtime?.last24hDelta, 0),
-      bestDayViews7d: 0,
-      viewsLast48Hours: safeNum(realtime?.views48h, 0),
-    },
-
-    shorts: {
-      title: "Your Shorts",
-      viewedRatePct: 0,
-      loopRetentionPct: 0,
-      trafficPct: 0,
-      views48h: 0,
-      subsPer1kPct: 0,
-      last3DropPct: 0,
-      viewsSpotlight: 0,
-      discoveryPct: 0,
-      stopRatePct: 0,
-      vsLastWeekPct: 0,
-    },
-
-    packaging: { impressions: 0, ctrPct: 0, clicksPer1kImpressions: 0 },
-
-    retention: { avgViewPct: 0, avdMinutes: 0, avdSeconds: 0, completionPct: 0 },
-
-    engagement: {
-      focusLikes: 0,
-      focusShares: 0,
-      focusCardClicks: 0,
-      commentsUpPct: 0,
-      topEngagedTitle: latestVideo?.title || "Your top video",
-    },
-
-    discovery: {
-      keyword: "",
-      website: "",
-      sharingService: "Other",
-      playlistName: "your playlists",
-      browsePct: 0,
-      notificationPct: 0,
-      topTrafficSource: "Unknown",
-    },
-
-    playlists: {
-      bingeStarterTitle: latestVideo?.title || "Your best binge starter",
-      nextVideoTitle: (uploads?.[1]?.title || latestVideo?.title || "Your next video"),
-    },
-
-    audience: {
-      subscribedViewsPct: 0,
-      unsubscribedViewsPct: 0,
-      viewerLoggedInPct: 0,
-      newViewerPct: 0,
-      coreViewers: 0,
-      uniqueViewers28: safeNum(hud?.uniqueViewers28, 0),
-      uniqueGrowthPct: 0,
-      avgViewsPerViewer28: 1.2,
-      topCountry: String((hud?.countries28?.[0]?.dim || "Unknown")),
-      storyLine: "",
-    },
-
-    cadence: {
-      daysSinceUpload: 0,
-      bestHour: "18:00 UTC",
-    },
-
-    live: {
-      concurrentNow: 0,
-      peakConcurrent: 0,
-      minuteMark: "5:00",
-      topTrafficSource: "Unknown",
-    },
-
-    money: {
-      estimatedRevenueToday: 0,
-      estimatedRevenue28d: 0,
-      cpm: 0,
-      rpm: 0,
-      top10IncomePct: 0,
-    },
-  };
-
-  /* ---------- cadence from uploads ---------- */
-  try {
-    const latestUploadAt = uploads?.[0]?.publishedAt;
-    if (latestUploadAt) v3.cadence.daysSinceUpload = daysBetween(latestUploadAt, new Date().toISOString());
-
-    const hours = (uploads || [])
-      .map(u => u?.publishedAt)
-      .filter(Boolean)
-      .map(ts => new Date(ts).getUTCHours());
-
-    if (hours.length) {
-      const freq = new Map();
-      for (const h of hours) freq.set(h, (freq.get(h) || 0) + 1);
-      let bestH = hours[0], bestC = -1;
-      for (const [h, c] of freq.entries()) {
-        if (c > bestC) { bestC = c; bestH = h; }
-      }
-      v3.cadence.bestHour = `${String(bestH).padStart(2, "0")}:00 UTC`;
-    }
-  } catch {}
-
-  /* ---------- realtime derived ---------- */
-  try {
-    const baseline48 = safeNum(realtime?.avgPrior6d, 0) * 2;
-    const last48 = safeNum(realtime?.views48h, 0);
-    v3.realtime.vsBaseline48hPct = baseline48 > 0 ? Math.round(((last48 - baseline48) / baseline48) * 100) : 0;
-
-    const spark = Array.isArray(realtime?.sparkline) ? realtime.sparkline : [];
-    if (spark.length) {
-      v3.realtime.avgViewsPerDay7d = Math.round(spark.reduce((a, x) => a + safeNum(x, 0), 0) / spark.length);
-      v3.realtime.bestDayViews7d = spark.reduce((m, x) => Math.max(m, safeNum(x, 0)), 0);
-    } else {
-      v3.realtime.avgViewsPerDay7d = Math.round(safeNum(weekly?.views, 0) / 7);
-      v3.realtime.bestDayViews7d = 0;
-    }
-
-    v3.realtime.attentionHoursPerDay = Math.round(safeNum(weekly?.watchHours, 0) / 7);
-  } catch {}
-
-  /* ---------- focus video + packaging/retention/engagement ---------- */
-  try {
-    const focusId = latestVideo?.videoId || uploads?.[0]?.videoId || "";
-    const focusIntel = (videoIntelList || []).find(v => v?.videoId === focusId) || (videoIntelList || [])[0] || null;
-
-    if (focusIntel?.title) v3.focus.title = focusIntel.title;
-
-    if (focusIntel?.a7d) {
-      v3.packaging.impressions = Math.round(safeNum(focusIntel.a7d.impressions, 0));
-      v3.packaging.ctrPct = Math.round(safeNum(focusIntel.a7d.ctr, 0) * 100) / 100;
-      v3.packaging.clicksPer1kImpressions = Math.round((v3.packaging.ctrPct / 100) * 1000);
-
-      const avdSec = Math.round(safeNum(focusIntel.a7d.avgViewDurationSec, 0));
-      v3.retention.avdSeconds = avdSec;
-      v3.retention.avdMinutes = Math.round((avdSec / 60) * 10) / 10;
-      v3.retention.avgViewPct = Math.round(safeNum(focusIntel.a7d.avgViewPercentage, 0) * 10) / 10;
-      v3.retention.completionPct = Math.round(v3.retention.avgViewPct);
-
-      v3.engagement.focusLikes = Math.round(safeNum(focusIntel.a7d.likes, 0));
-      v3.engagement.focusShares = Math.round(safeNum(focusIntel.a7d.shares, 0));
-    }
-
-    // engagement leader
-    let topEng = null, bestScore = -1;
-    for (const r of (videoIntelList || [])) {
-      const a7 = r?.a7d || {};
-      const score = safeNum(a7.likes, 0) + safeNum(a7.comments, 0) * 2 + safeNum(a7.shares, 0) * 3;
-      if (score > bestScore) { bestScore = score; topEng = r; }
-    }
-    if (topEng?.title) v3.engagement.topEngagedTitle = topEng.title;
-  } catch {}
-
-  /* ---------- traffic + notifications + shorts discovery ---------- */
-  try {
-    const trafficList = Array.isArray(hud?.traffic28) ? hud.traffic28 : [];
-    const total = trafficList.reduce((a, x) => a + safeNum(x.value, 0), 0);
-
-    const top = trafficList[0]?.dim ? trafficList[0] : null;
-    v3.discovery.topTrafficSource = titleizeEnum(top?.dim || "UNKNOWN") || "Unknown";
-
-    const notif = trafficList.find(x => x.dim === "NOTIFICATION")?.value || 0;
-    v3.discovery.notificationPct = Math.round(percent(notif, total) * 10) / 10;
-
-    const browse = trafficList.find(x => x.dim === "BROWSE")?.value || trafficList.find(x => x.dim === "BROWSE_FEATURES")?.value || 0;
-    v3.discovery.browsePct = Math.round(percent(browse, total) * 10) / 10;
-
-    const shortsSurf = trafficList.find(x => x.dim === "SHORTS")?.value || 0;
-    v3.shorts.discoveryPct = Math.round(percent(shortsSurf, total) * 10) / 10;
-
-    // lightweight defaults for string fields (so templates always render)
-    v3.discovery.keyword = (v3.focus.title.split(/\s+/).slice(0, 3).join(" ") || "your topic");
-    v3.discovery.website = "external websites";
-  } catch {}
-
-  /* ---------- subscribed vs unsubscribed (28d) ---------- */
-  try {
-    const subList = Array.isArray(hud?.subscribed28) ? hud.subscribed28 : [];
-    const total = subList.reduce((a, x) => a + safeNum(x.value, 0), 0);
-    const subViews = subList.find(x => x.dim === "SUBSCRIBED")?.value || 0;
-    const unsubViews = subList.find(x => x.dim === "UNSUBSCRIBED")?.value || 0;
-    v3.audience.subscribedViewsPct = Math.round(percent(subViews, total) * 10) / 10;
-    v3.audience.unsubscribedViewsPct = Math.round(percent(unsubViews, total) * 10) / 10;
-    v3.audience.newViewerPct = Math.round(v3.audience.unsubscribedViewsPct);
-
-    v3.audience.storyLine =
-      v3.audience.unsubscribedViewsPct >= 70 ? "Discovery-heavy day" :
-      v3.audience.subscribedViewsPct >= 40 ? "Loyalty is strong" :
-      "Balanced reach + loyalty";
-  } catch {}
-
-  /* ---------- unique viewers + growth (approx) ---------- */
-  try {
-    const views28 = safeNum(m28?.last28?.views, 0);
-    const unique28 = safeNum(v3.audience.uniqueViewers28, 0);
-    if (unique28 > 0) {
-      v3.audience.avgViewsPerViewer28 = Math.round((views28 / unique28) * 10) / 10;
-    }
-    // approximate "core viewers"
-    const subList = Array.isArray(hud?.subscribed28) ? hud.subscribed28 : [];
-    const subViews = subList.find(x => x.dim === "SUBSCRIBED")?.value || 0;
-    v3.audience.coreViewers = Math.round((subViews / 28) / Math.max(0.8, v3.audience.avgViewsPerViewer28));
-
-    const prevViews28 = safeNum(m28?.prev28?.views, 0);
-    const prevUniqueApprox = Math.round(prevViews28 / Math.max(1, v3.audience.avgViewsPerViewer28));
-    const curUniqueApprox = Math.round(views28 / Math.max(1, v3.audience.avgViewsPerViewer28));
-    v3.audience.uniqueGrowthPct = prevUniqueApprox > 0 ? Math.round(((curUniqueApprox - prevUniqueApprox) / prevUniqueApprox) * 100) : 0;
-  } catch {}
-
-  /* ---------- Shorts metrics (minimal extra analytics calls) ---------- */
-  try {
-    // Content type split (28d)
-    const type28 = await safeAnalyticsTable(token, {
-      startDate: start28Iso,
-      endDate: endIso,
-      dimensions: "creatorContentType",
-      metrics: "views",
-      sort: "-views",
-      maxResults: "10",
-    });
-    const typeList = rowsToDimListSimple(type28.rows, 0, 1);
-    const totalTypeViews = typeList.reduce((a, x) => a + x.value, 0);
-    const shortsTypeViews = typeList.find(x => x.dim === "SHORTS")?.value || 0;
-    v3.shorts.trafficPct = Math.round(percent(shortsTypeViews, totalTypeViews) * 10) / 10;
-
-    // Shorts 7d + prev 7d
-    const shorts7 = await safeAnalyticsTable(token, {
-      startDate: start7Iso,
-      endDate: endIso,
-      filters: "creatorContentType==SHORTS",
-      metrics: "views,subscribersGained",
-    });
-    const s7Idx = buildHeaderIndex(shorts7.columnHeaders);
-    const s7Row = shorts7.rows?.[0] ? rowObj(s7Idx, shorts7.rows[0]) : {};
-    const shorts7Views = safeNum(s7Row.views, 0);
-    const shorts7Subs = safeNum(s7Row.subscribersGained, 0);
-
-    const prev7End = isoDate(shiftDays(new Date(start7Iso), -1));
-    const prev7Start = isoDate(shiftDays(new Date(prev7End), -6));
-    const shortsPrev7 = await safeAnalyticsTable(token, {
-      startDate: prev7Start,
-      endDate: prev7End,
-      filters: "creatorContentType==SHORTS",
-      metrics: "views",
-    });
-    const spIdx = buildHeaderIndex(shortsPrev7.columnHeaders);
-    const spRow = shortsPrev7.rows?.[0] ? rowObj(spIdx, shortsPrev7.rows[0]) : {};
-    const shortsPrevViews = safeNum(spRow.views, 0);
-
-    v3.shorts.vsLastWeekPct = shortsPrevViews > 0 ? Math.round(((shorts7Views - shortsPrevViews) / shortsPrevViews) * 100) : 0;
-    v3.shorts.subsPer1kPct = shorts7Views > 0 ? Math.round((shorts7Subs / shorts7Views) * 1000 * 10) / 10 : 0;
-
-    // top Shorts video (28d)
-    const shortsTop = await safeAnalyticsTable(token, {
-      startDate: start28Iso,
-      endDate: endIso,
-      dimensions: "video",
-      filters: "creatorContentType==SHORTS",
-      metrics: "views,averageViewDuration,averageViewPercentage",
-      sort: "-views",
-      maxResults: "1",
-    });
-    const stIdx = buildHeaderIndex(shortsTop.columnHeaders);
-    const stRow = shortsTop.rows?.[0] ? rowObj(stIdx, shortsTop.rows[0]) : {};
-    const topShortId = String(stRow.video || "").trim();
-
-    if (topShortId) {
-      const d = vidsById?.[topShortId] || null;
-      if (d?.title) v3.shorts.title = d.title;
-
-      const topShortViews = safeNum(stRow.views, 0);
-      const avp = safeNum(stRow.averageViewPercentage, 0);
-      const avd = safeNum(stRow.averageViewDuration, 0);
-      const dur = safeNum(d?.durationSec, 0) || 60;
-
-      v3.shorts.viewsSpotlight = Math.round(topShortViews);
-      v3.shorts.stopRatePct = Math.round(avp * 10) / 10;
-      v3.shorts.viewedRatePct = v3.shorts.stopRatePct;
-      v3.shorts.loopRetentionPct = Math.round((avd / Math.max(1, dur)) * 100 * 10) / 10;
-    } else {
-      // fallback: use latest short upload title if present
-      const latestShort = (uploads || []).map(u => vidsById?.[u.videoId]).find(v => v && v.durationSec > 0 && v.durationSec <= 60);
-      if (latestShort?.title) v3.shorts.title = latestShort.title;
-    }
-
-    // approx shorts views48h using share of 28d views applied to 48h total
-    v3.shorts.views48h = Math.round((v3.shorts.trafficPct / 100) * safeNum(realtime?.views48h, 0));
-
-    // last3DropPct from last 6 Shorts uploads (lifetime views proxy)
-    const shortUploads = (uploads || [])
-      .map(u => vidsById?.[u.videoId])
-      .filter(v => v && v.durationSec > 0 && v.durationSec <= 60)
-      .slice(0, 6);
-
-    const last3 = shortUploads.slice(0, 3).map(v => safeNum(v.views, 0));
-    const prev3 = shortUploads.slice(3, 6).map(v => safeNum(v.views, 0));
-    const avgLast3 = last3.reduce((a, x) => a + x, 0) / Math.max(1, last3.length);
-    const avgPrev3 = prev3.reduce((a, x) => a + x, 0) / Math.max(1, prev3.length);
-    v3.shorts.last3DropPct = avgPrev3 > 0 ? Math.round(((avgLast3 - avgPrev3) / avgPrev3) * 100) : 0;
-  } catch {}
-
-  // Ensure string fields are never empty (template safety)
-  if (!v3.discovery.keyword) v3.discovery.keyword = (v3.focus.title.split(/\s+/).slice(0, 3).join(" ") || "your topic");
-  if (!v3.discovery.website) v3.discovery.website = "external websites";
-  if (!v3.discovery.sharingService) v3.discovery.sharingService = "Other";
-  if (!v3.discovery.playlistName) v3.discovery.playlistName = "your playlists";
-  if (!v3.discovery.topTrafficSource) v3.discovery.topTrafficSource = "Unknown";
-  if (!v3.audience.topCountry) v3.audience.topCountry = "Unknown";
-  if (!v3.cadence.bestHour) v3.cadence.bestHour = "18:00 UTC";
-  if (!v3.shorts.title) v3.shorts.title = "Your Shorts";
-
-  return v3;
-}
-
 async function ytDataGET(token, path, params = {}) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
   Object.entries(params).forEach(([k, v]) => {
@@ -850,11 +186,35 @@ async function ytAnalyticsGET(token, params = {}) {
   return data;
 }
 
-async function safeAnalytics(token, params) {
+async function safeAnalytics(token, params = {}, env = null) {
+  // ✅ Never return null (prevents TypeError: cannot read rows)
+  const fallback = { columnHeaders: [], rows: [], _error: null };
+
   try {
-    return await ytAnalyticsGET(token, params);
-  } catch {
-    return null;
+    const data = await ytAnalyticsGET(token, params);
+    return {
+      columnHeaders: Array.isArray(data?.columnHeaders) ? data.columnHeaders : [],
+      rows: Array.isArray(data?.rows) ? data.rows : [],
+      _error: null
+    };
+  } catch (e) {
+    // Best-effort single retry using refresh token env (if provided)
+    if (env && typeof getAccessToken === "function") {
+      try {
+        const t2 = await getAccessToken(env);
+        const data2 = await ytAnalyticsGET(t2, params);
+        return {
+          columnHeaders: Array.isArray(data2?.columnHeaders) ? data2.columnHeaders : [],
+          rows: Array.isArray(data2?.rows) ? data2.rows : [],
+          _error: null
+        };
+      } catch (e2) {
+        fallback._error = String(e2);
+        return fallback;
+      }
+    }
+    fallback._error = String(e);
+    return fallback;
   }
 }
 
@@ -868,59 +228,122 @@ async function safeAnalytics(token, params) {
          - gets recent video IDs and pulls titles + publish dates + durations.
    ========================================================= */
 async function fetchChannelBasics(token) {
-  const data = await ytDataGET(token, "channels", {
+  const res = await ytDataGET(token, "channels", {
     part: "snippet,statistics,contentDetails",
-    mine: "true",
+    mine: "true"
   });
+
+  if (res?.error) {
+    return {
+      ok: false,
+      error: res.data || res,
+      channelId: "",
+      title: "Your Channel",
+      publishedAt: "",
+      subscribers: 0,
+      totalViews: 0,
+      videos: 0,
+      thumbnail: "",
+      uploadsPlaylistId: ""
+    };
+  }
+
+  const data = res.data || res;
   const ch = data.items?.[0];
-  const thumbs = ch?.snippet?.thumbnails || {};
-  const logo = thumbs.high?.url || thumbs.medium?.url || thumbs.default?.url || "";
+  if (!ch) {
+    return {
+      ok: false,
+      error: "No channel returned from Data API.",
+      channelId: "",
+      title: "Your Channel",
+      publishedAt: "",
+      subscribers: 0,
+      totalViews: 0,
+      videos: 0,
+      thumbnail: "",
+      uploadsPlaylistId: ""
+    };
+  }
+
   return {
-    channelId: ch?.id || null,
-    title: ch?.snippet?.title || "",
-    publishedAt: ch?.snippet?.publishedAt || null,
-    logo,
-    uploadsPlaylistId: ch?.contentDetails?.relatedPlaylists?.uploads || "",
-    subscribers: Number(ch?.statistics?.subscriberCount || 0),
-    totalViews: Number(ch?.statistics?.viewCount || 0),
+    ok: true,
+    channelId: ch.id || "",
+    title: ch.snippet?.title || "",
+    publishedAt: ch.snippet?.publishedAt || "",
+    subscribers: Number(ch.statistics?.subscriberCount || 0),
+    totalViews: Number(ch.statistics?.viewCount || 0),
+    videos: Number(ch.statistics?.videoCount || 0),
+    thumbnail: ch.snippet?.thumbnails?.high?.url || ch.snippet?.thumbnails?.default?.url || "",
+    uploadsPlaylistId: ch.contentDetails?.relatedPlaylists?.uploads || ""
   };
 }
 
 async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
   if (!uploadsPlaylistId) return [];
-  const data = await ytDataGET(token, "playlistItems", {
+
+  const res = await ytDataGET(token, "playlistItems", {
     part: "snippet,contentDetails",
     playlistId: uploadsPlaylistId,
-    maxResults: String(clamp(maxResults, 1, 50)),
+    maxResults: clamp(maxResults, 1, 50)
   });
-  return (data.items || [])
-    .map((it) => ({
-      videoId: it?.contentDetails?.videoId || null,
-      publishedAt: it?.contentDetails?.videoPublishedAt || it?.snippet?.publishedAt || null,
+
+  if (res?.error) return [];
+
+  const data = res.data || res;
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items
+    .map(it => ({
+      videoId: it?.contentDetails?.videoId || "",
       title: it?.snippet?.title || "",
+      publishedAt: it?.contentDetails?.videoPublishedAt || it?.snippet?.publishedAt || ""
     }))
-    .filter((x) => x.videoId);
+    .filter(x => x.videoId);
 }
 
-async function fetchVideos(token, ids = []) {
-  const idList = uniq(ids);
-  if (!idList.length) return [];
-  const data = await ytDataGET(token, "videos", {
-    part: "snippet,statistics,contentDetails",
-    id: idList.slice(0, 50).join(","),
+async function fetchVideos(token, ids) {
+  const videoIds = (ids || []).filter(Boolean).slice(0, 50);
+  const map = new Map();
+  if (!videoIds.length) return map;
+
+  const res = await ytDataGET(token, "videos", {
+    part: "snippet,contentDetails,statistics",
+    id: videoIds.join(",")
   });
-  return (data.items || [])
-    .map((v) => ({
-      videoId: v?.id || null,
-      title: v?.snippet?.title || "",
-      publishedAt: v?.snippet?.publishedAt || null,
-      views: Number(v?.statistics?.viewCount || 0),
-      likes: Number(v?.statistics?.likeCount || 0),
-      comments: Number(v?.statistics?.commentCount || 0),
-      duration: v?.contentDetails?.duration || null,
-      durationSec: parseISODurationToSeconds(v?.contentDetails?.duration || null),
-    }))
-    .filter((x) => x.videoId);
+
+  if (res?.error) return map;
+
+  const data = res.data || res;
+  for (const it of data.items || []) {
+    map.set(it.id, {
+      id: it.id,
+      title: it.snippet?.title || "",
+      publishedAt: it.snippet?.publishedAt || "",
+      durationSec: parseISODurationToSeconds(it.contentDetails?.duration),
+      views: Number(it.statistics?.viewCount || 0),
+      likes: Number(it.statistics?.likeCount || 0),
+      comments: Number(it.statistics?.commentCount || 0),
+    });
+  }
+  return map;
+}
+
+async function fetchPlaylistTitles(token, ids) {
+  const playlistIds = (ids || []).filter(Boolean).slice(0, 50);
+  const map = new Map();
+  if (!playlistIds.length) return map;
+
+  const res = await ytDataGET(token, "playlists", {
+    part: "snippet",
+    id: playlistIds.join(",")
+  });
+
+  if (res?.error) return map;
+
+  const data = res.data || res;
+  for (const it of data.items || []) {
+    map.set(it.id, it.snippet?.title || "");
+  }
+  return map;
 }
 
 /* =========================================================
@@ -1084,6 +507,458 @@ function buildVideoIntelList(videoDetails, maps, endIso) {
 }
 
 /* =========================================================
+   HUD Message Engine (300+ templates)
+   ---------------------------------------------------------
+   Returns a pre-computed message pool so the front-end HUD can rotate
+   without touching the Top Cards logic.
+   ========================================================= */
+
+function extractTokens(text) {
+  const re = /{([a-zA-Z0-9_.]+)}/g;
+  const tokens = [];
+  let m;
+  while ((m = re.exec(text))) tokens.push(m[1]);
+  return tokens;
+}
+
+function resolvePath(obj, path) {
+  if (!obj || !path) return undefined;
+  const parts = path.split(".");
+  let cur = obj;
+  for (const p of parts) {
+    if (cur == null) return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+
+function interpolate(templateText, ctx) {
+  return templateText.replace(/{([a-zA-Z0-9_.]+)}/g, (_, t) => {
+    const v = resolvePath(ctx, t);
+    return v === undefined || v === null ? "" : String(v);
+  });
+}
+
+function isSafeTemplate(templateText, ctx) {
+  const tokens = extractTokens(templateText);
+  for (const t of tokens) {
+    const v = resolvePath(ctx, t);
+    if (v === undefined || v === null) return false;
+    if (typeof v === "string" && v.trim() === "") return false;
+  }
+  return true;
+}
+
+function fmtInt(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "0";
+  return Math.round(v).toLocaleString("en-US");
+}
+
+function fmt1(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "0.0";
+  return (Math.round(v * 10) / 10).toFixed(1);
+}
+
+function fmtPct1(n) {
+  return `${fmt1(n)}%`;
+}
+
+function calcPctChange(now, prev) {
+  now = Number(now) || 0;
+  prev = Number(prev) || 0;
+  if (prev <= 0) return null;
+  return ((now - prev) / prev) * 100;
+}
+
+function pickTopVideoBy(list, selectorFn, minGuardFn = null) {
+  const arr = Array.isArray(list) ? list.slice() : [];
+  const ok = minGuardFn ? arr.filter(minGuardFn) : arr;
+  ok.sort((a, b) => Number(selectorFn(b) || 0) - Number(selectorFn(a) || 0));
+  return ok[0] || null;
+}
+
+function buildHudTemplateDeck() {
+  // We generate lots of variants programmatically so you get 300+ unique lines
+  // without sending a huge payload to the front-end.
+  const deck = [];
+  let id = 1;
+
+  const add = (tag, type, iconKey, guard, texts) => {
+    for (const t of texts) deck.push({ id: `t_${id++}`, tag, type, iconKey, guard, text: t });
+  };
+
+  // ---------------- PULSE ----------------
+  const pulsePrefixes = ["PULSE", "SIGNAL", "REALTIME", "HEARTBEAT", "LIVE CHECK", "SYSTEM"];
+  const pulseBodies = [
+    "{rt.views48hFmt} views in the last 48h. Keep feeding the algorithm.",
+    "Last hour: {rt.lastHourFmt} views. Prev hour: {rt.prevHourFmt}.",
+    "24h is at {rt.last24hFmt} vs {rt.prev24hFmt} the day before.",
+    "Your 7D pacing vs baseline is {rt.vs7dAvgDeltaFmt}.",
+  ];
+  const pulseVar = [];
+  for (const p of pulsePrefixes) for (const b of pulseBodies) pulseVar.push(`${p}: ${b}`);
+  add("PULSE", "blue", "live", "hasRealtime", pulseVar);
+
+  // ---------------- WEEKLY ----------------
+  const weeklyLines = [
+    "WEEK: {wk.viewsFmt} views • {wk.watchHoursFmt} watch hours • {wk.netSubsFmt} net subs.",
+    "WEEKLY NET: +{wk.subsGainedFmt} gained / -{wk.subsLostFmt} lost → {wk.netSubsFmt} net.",
+    "Conversion: {wk.convPer1kFmt} net subs per 1K views.",
+    "Week vs previous: views {wk.viewsChgPctFmt}, subs {wk.subsChgPctFmt}, watch {wk.watchChgPctFmt}.",
+  ];
+  const weeklyTone = ["STATUS", "WEEKLY", "ROLLING 7D", "TREND"];
+  const weeklyVar = [];
+  for (const p of weeklyTone) for (const l of weeklyLines) weeklyVar.push(`${p}: ${l}`);
+  add("WEEKLY", "green", "up", "hasWeekly", weeklyVar);
+
+  // ---------------- 28D ----------------
+  const m28Lines = [
+    "Last 28D: {m28.lastViewsFmt} views vs {m28.prevViewsFmt} prior 28D ({m28.viewsChgPctFmt}).",
+    "Last 28D net subs: {m28.lastSubsFmt} vs {m28.prevSubsFmt} prior ({m28.subsChgPctFmt}).",
+    "Baseline check: 28D views {m28.lastViewsFmt} vs 6M median {m28.medianViewsFmt}.",
+    "Watch hours 28D: {m28.lastWatchFmt} vs {m28.prevWatchFmt} ({m28.watchChgPctFmt}).",
+  ];
+  const m28Prefix = ["MONTH", "28D", "ROLLING 28D", "STABILITY"];
+  const m28Var = [];
+  for (const p of m28Prefix) for (const l of m28Lines) m28Var.push(`${p}: ${l}`);
+  add("28D", "purple", "target", "hasM28", m28Var);
+
+  // ---------------- FOCUS VIDEO ----------------
+  const focusVar = [];
+  const focusOpen = ["FOCUS", "SPOTLIGHT", "CURRENT WINNER", "PRIMARY SIGNAL", "TOP IDEA"];
+  const focusBody = [
+    "‘{focus.titleUpper}’ pulled {focus.views7dFmt} views in 7D ({focus.viewsPerDayFmt}/day).",
+    "CTR on ‘{focus.titleUpper}’: {focus.ctrFmt} from {focus.impressionsFmt} impressions.",
+    "Retention on ‘{focus.titleUpper}’: {focus.avgViewPctFmt} avg viewed.",
+    "Engagement: {focus.likesFmt} likes • {focus.commentsFmt} comments • {focus.sharesFmt} shares.",
+    "Subs: +{focus.subsGainedFmt} / -{focus.subsLostFmt} (churn {focus.churnPctFmt}).",
+  ];
+  for (const o of focusOpen) for (const b of focusBody) focusVar.push(`${o}: ${b}`);
+  add("VIDEO", "orange", "rocket", "hasFocus", focusVar);
+
+  // ---------------- BEST / LEADERBOARD ----------------
+  const bestVar = [];
+  const bestBody = [
+    "Best views (7D): ‘{best.views.titleUpper}’ with {best.views.valueFmt} views.",
+    "Best CTR (7D): ‘{best.ctr.titleUpper}’ at {best.ctr.valueFmt} CTR.",
+    "Best retention (7D): ‘{best.ret.titleUpper}’ at {best.ret.valueFmt} avg viewed.",
+    "Best subs per 1K views: ‘{best.subs.titleUpper}’ at {best.subs.valueFmt}.",
+    "Highest like density: ‘{best.likeRate.titleUpper}’ at {best.likeRate.valueFmt}.",
+    "Warning: churn is highest on ‘{best.churn.titleUpper}’ ({best.churn.valueFmt}).",
+  ];
+  const bestPrefix = ["LEADERBOARD", "RANKING", "TOP SIGNALS", "CHANNEL META"];
+  for (const p of bestPrefix) for (const b of bestBody) bestVar.push(`${p}: ${b}`);
+  add("LEADERBOARD", "yellow", "target", "hasBest", bestVar);
+
+  // ---------------- SHORTS (only if focus is a Short) ----------------
+  const shortsOpen = ["SHORTS", "VERTICAL", "FEED WAR", "SWIPE ZONE"];
+  const shortsBody = [
+    "Your focus Short is ‘{focus.titleUpper}’. Keep the first second explosive.",
+    "Short retention is {focus.avgViewPctFmt}. Tight edits win the feed.",
+    "Short CTR is {focus.ctrFmt}. Make the first frame readable.",
+    "Shorts + subs: {focus.subsPer1kFmt} subs per 1K views on the focus Short.",
+  ];
+  const shortsVar = [];
+  for (const o of shortsOpen) for (const b of shortsBody) shortsVar.push(`${o}: ${b}`);
+  add("SHORTS", "pink", "live", "isShortFocus", shortsVar);
+
+  // ---------------- DISCOVERY / TRAFFIC ----------------
+  const trafficVar = [];
+  const trafficPrefix = ["DISCOVERY", "TRAFFIC", "DISTRIBUTION", "ENTRY POINT"];
+  const trafficBody = [
+    "Top traffic door (28D): {traffic.topSourceKey} at {traffic.topSourcePctFmt}.",
+    "Top country (28D): {aud.topCountryKey} at {aud.topCountryPctFmt}.",
+    "Subscribed vs Unsubscribed (28D views): {aud.subPctFmt} / {aud.unsubPctFmt}.",
+    "Top sharing service: {traffic.topShareKey} ({traffic.topSharePctFmt}).",
+  ];
+  for (const p of trafficPrefix) for (const b of trafficBody) trafficVar.push(`${p}: ${b}`);
+  add("DISCOVERY", "blue", "rocket", "hasTraffic", trafficVar);
+
+  // ---------------- CADENCE ----------------
+  const cadVar = [];
+  const cadPrefix = ["CADENCE", "RHYTHM", "UPLOAD CLOCK", "MOMENTUM"];
+  const cadBody = [
+    "Days since last upload: {cad.daysSinceUpload}.",
+    "Best hour (UTC) from your audience curve: {cad.bestHourUtc}.",
+    "If you want browse to wake up, post again inside 72 hours.",
+    "Old videos are carrying today—fresh uploads re-trigger recommendations.",
+  ];
+  for (const p of cadPrefix) for (const b of cadBody) cadVar.push(`${p}: ${b}`);
+  add("CADENCE", "green", "up", "hasCadence", cadVar);
+
+  // ---------------- STATIC (TIP / FACT / MOTIVATION) ----------------
+  const tips = [
+    "TIP: Write titles like a promise, not a label.",
+    "TIP: If CTR is low, simplify the thumbnail to ONE focal point.",
+    "TIP: Put your strongest payoff in the first 15 seconds.",
+    "TIP: Add a pinned comment that asks a simple question.",
+    "TIP: Use end screens to force a 2-video session.",
+    "TIP: Upload when your audience is most active: {cad.bestHourUtc}.",
+    "TIP: If retention dips at the same timestamp, that moment needs a pattern interrupt.",
+    "TIP: Make the first frame readable on a phone at arm’s length.",
+    "TIP: One clear series format builds returning viewers.",
+    "TIP: Short hook, long payoff. Keep intros under 5 seconds.",
+  ];
+  const facts = [
+    "FUN FACT: YouTube often tests thumbnails with small audience pockets before scaling impressions.",
+    "FUN FACT: A 2-video session is a strong recommendation signal for many niches.",
+    "FUN FACT: CTR and retention work together—high CTR + low retention can cap distribution.",
+    "FUN FACT: Browse traffic usually rewards consistent upload rhythm.",
+    "FUN FACT: Returning viewers drive stability; new viewers drive growth.",
+    "FUN FACT: Shorts can be top-of-funnel; playlists turn viewers into fans.",
+    "FUN FACT: Watch time per viewer is often more important than raw views for recommendations.",
+    "FUN FACT: Big screens (TV/console) tend to favor cleaner thumbnails and slower cuts.",
+    "FUN FACT: ‘Evergreen’ topics earn search views long after upload.",
+    "FUN FACT: Comments can pull more impressions when conversation stays active.",
+  ];
+  const mot = [
+    "MOTIVATION: Don’t chase views—chase repeatable formats.",
+    "MOTIVATION: One better thumbnail can revive an entire library.",
+    "MOTIVATION: You’re one strong hook away from a breakout.",
+    "MOTIVATION: Consistency compounds. Keep the channel warm.",
+    "MOTIVATION: Make the next upload a direct sequel to what’s working.",
+    "MOTIVATION: Your library is an asset. Improve packaging and it pays forever.",
+    "MOTIVATION: The algorithm follows the audience—serve them and it follows you.",
+    "MOTIVATION: Build episodes, not one-offs.",
+    "MOTIVATION: Speed beats perfection. Ship, learn, iterate.",
+    "MOTIVATION: A good idea + good hook = unstoppable combo.",
+  ];
+
+  const addVarExp = (tag, type, iconKey, guard, baseLines, prefixes) => {
+    const out = [];
+    for (const p of prefixes) for (const l of baseLines) out.push(`${p}${p ? " " : ""}${l}`);
+    add(tag, type, iconKey, guard, out);
+  };
+  addVarExp("TIP", "yellow", "bulb", "hasCadence", tips, ["", "SYSTEM:", "NOTE:", "FIELD DATA:", "PLAYBOOK:"]);
+  addVarExp("FACT", "purple", "bulb", "always", facts, ["", "SYSTEM:", "OBSERVATION:", "META:", "FYI:"]);
+  addVarExp("MOTIVATION", "pink", "live", "always", mot, ["", "SYSTEM:", "PUSH:", "REMINDER:", "ENERGY:"]);
+
+
+  // ---------------- Stable Deck Size ----------------
+  // Keep a predictable number of templates so the HUD feels "full" even if you edit/trim above.
+  // We cap to exactly 380 (as requested) and backfill with safe, always-resolvable templates.
+  const TARGET_TEMPLATES = 380;
+
+  const fillers = [
+    { tag: "SYSTEMS", type: "system", iconKey: "spark", guard: null, text: "Signal check: {weekly.lastViewsFmt} views in the last 7 days. Keep the flywheel spinning." },
+    { tag: "SYSTEMS", type: "system", iconKey: "spark", guard: null, text: "Momentum: {weekly.lastWatchHoursFmt} watch-hours this week. Session time is compounding." },
+    { tag: "PACKAGING", type: "packaging", iconKey: "cursor", guard: null, text: "Packaging check: CTR is {focus.ctrFmt} on '{focus.title}'. Keep iterating titles/thumbnails." },
+    { tag: "RETENTION", type: "retention", iconKey: "clock", guard: null, text: "Retention check: avg view % is {focus.avgViewPctFmt} on '{focus.title}'. Tighten pacing where it dips." },
+    { tag: "DISCOVERY", type: "discovery", iconKey: "search", guard: null, text: "Your current growth door is {m28.topTrafficSource}. Make the next upload fit that entry path." },
+    { tag: "AUDIENCE", type: "audience", iconKey: "users", guard: null, text: "Audience split: {weekly.subscribedPctFmt}% subscribed vs {weekly.unsubscribedPctFmt}% unsubscribed views this week." },
+    { tag: "CADENCE", type: "cadence", iconKey: "calendar", guard: null, text: "Cadence check: {cadence.daysSinceUpload} days since upload. Consistency keeps Browse warm." },
+    { tag: "MONEY", type: "money", iconKey: "dollar", guard: null, text: "Revenue check: ${m28.revFmt} estimated in the last 28 days. Library value is real." }
+  ];
+
+  let fi = 0;
+  while (deck.length < TARGET_TEMPLATES) {
+    const f = fillers[fi % fillers.length];
+    deck.push({ id: `t_${id++}`, tag: f.tag, type: f.type, iconKey: f.iconKey, guard: f.guard, text: f.text });
+    fi++;
+  }
+  if (deck.length > TARGET_TEMPLATES) deck.length = TARGET_TEMPLATES;
+
+  return deck;
+
+}
+
+function buildHudEnginePayload(ctx, options = {}) {
+  const deck = buildHudTemplateDeck();
+  const totalTemplates = deck.length;
+
+  const guards = {
+    always: () => true,
+    hasRealtime: () => Number(ctx?.rt?.views48hNum || 0) > 0,
+    hasWeekly: () => Number(ctx?.wk?.viewsNum || 0) > 0 || Number(ctx?.wk?.netSubsNum || 0) !== 0,
+    hasM28: () => Number(ctx?.m28?.lastViewsNum || 0) > 0 || Number(ctx?.m28?.lastSubsNum || 0) !== 0,
+    hasFocus: () => !!ctx?.focus?.titleUpper,
+    hasBest: () => !!ctx?.best?.views?.titleUpper,
+    hasTraffic: () => !!ctx?.traffic?.topSourceKey || !!ctx?.aud?.topCountryKey,
+    hasCadence: () => ctx?.cad?.daysSinceUpload !== null && ctx?.cad?.daysSinceUpload !== undefined,
+    isShortFocus: () => ctx?.focus?.isShort === true,
+  };
+
+  const safe = deck.filter(t => {
+    const g = guards[t.guard] ? guards[t.guard]() : true;
+    if (!g) return false;
+    return isSafeTemplate(t.text, ctx);
+  });
+
+  const poolSize = clamp(safeNum(options.poolSize, 120), 3, 380);
+  const includeTemplates = Boolean(options.includeTemplates);
+  
+
+  // shuffle
+  const shuffled = safe.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  const chosen = [];
+  const seen = new Set();
+  for (const t of shuffled) {
+    if (chosen.length >= poolSize) break;
+    if (seen.has(t.id)) continue;
+    seen.add(t.id);
+    chosen.push({
+      key: t.id,
+      tag: t.tag,
+      type: t.type,
+      iconKey: t.iconKey,
+      text: interpolate(t.text, ctx).toUpperCase(),
+    });
+  }
+
+  const out = { templatesCount: totalTemplates, safeTemplatesCount: safe.length, poolSize, poolCount: chosen.length, messages: chosen };
+  if (includeTemplates) out.templates = safe;
+  return out;
+}
+
+function buildHudEngineContext(data) {
+  const wk = data?.weekly || {};
+  const m28 = data?.m28 || {};
+  const rt = data?.realtime || {};
+  const hud = data?.hud || {};
+  const vids = hud?.videoIntel?.videos || [];
+
+  const focusId = hud?.topVideo7d?.videoId || hud?.latestVideo?.videoId || null;
+  const focus = vids.find(v => v.videoId === focusId) || vids[0] || null;
+
+  const focusA = focus?.a7d || {};
+  const focusD = focus?.derived || {};
+  const titleUpper = (focus?.title || hud?.latestVideo?.title || "").toUpperCase();
+  const isShort = (Number(focus?.durationSec || 0) > 0 && Number(focus?.durationSec || 0) <= 60) || /#shorts\b/i.test(focus?.title || "");
+
+  const bestViews = pickTopVideoBy(vids, v => v?.a7d?.views, v => Number(v?.a7d?.views || 0) > 0);
+  const bestCtr = pickTopVideoBy(vids, v => v?.a7d?.ctr, v => Number(v?.a7d?.impressions || 0) >= 500 && Number(v?.a7d?.ctr || 0) > 0);
+  const bestRet = pickTopVideoBy(vids, v => v?.a7d?.avgViewPercentage, v => Number(v?.a7d?.avgViewPercentage || 0) > 0);
+  const bestSubs = pickTopVideoBy(vids, v => v?.derived?.subsPer1kViews, v => Number(v?.derived?.subsPer1kViews || 0) > 0);
+  const bestLikeRate = pickTopVideoBy(vids, v => (Number(v?.a7d?.likes || 0) / Math.max(1, Number(v?.a7d?.views || 0))) * 1000, v => Number(v?.a7d?.views || 0) > 0);
+  const worstChurn = pickTopVideoBy(vids, v => v?.derived?.churnPct, v => Number(v?.derived?.churnPct || 0) > 0);
+
+  const traffic28 = hud?.traffic?.last28 || [];
+  const trafficSum = traffic28.reduce((s, x) => s + Number(x.value || 0), 0);
+  const topTraffic = traffic28[0] || null;
+
+  const share28 = hud?.sharingServices || [];
+  const shareSum = share28.reduce((s, x) => s + Number(x.value || 0), 0);
+  const topShare = share28[0] || null;
+
+  const countries = hud?.countries || [];
+  const countrySum = countries.reduce((s, x) => s + Number(x.value || 0), 0);
+  const topCountry = countries[0] || null;
+
+  const subStatus = hud?.subscribedStatus || [];
+  const subViews = subStatus.reduce((s, x) => s + Number(x.value || 0), 0);
+  const subRow = subStatus.find(x => String(x.key).toUpperCase().includes("SUBSCRIBED")) || null;
+  const unsubRow = subStatus.find(x => String(x.key).toUpperCase().includes("UNSUB")) || null;
+  const subPct = subViews > 0 ? (Number(subRow?.value || 0) / subViews) * 100 : null;
+  const unsubPct = subViews > 0 ? (Number(unsubRow?.value || 0) / subViews) * 100 : null;
+
+  const daysSinceUpload = (hud?.uploads?.latest?.publishedAt && hud?.statsThrough)
+    ? daysBetween(isoDate(new Date(hud.uploads.latest.publishedAt)), hud.statsThrough)
+    : null;
+
+  const wkViewsChg = calcPctChange(wk.views, wk.prevViews);
+  const wkSubsChg = calcPctChange(wk.netSubs, wk.prevNetSubs);
+  const wkWatchChg = calcPctChange(wk.watchHours, wk.prevWatchHours);
+
+  const m28ViewsChg = calcPctChange(m28?.last28?.views, m28?.prev28?.views);
+  const m28SubsChg = calcPctChange(m28?.last28?.netSubs, m28?.prev28?.netSubs);
+  const m28WatchChg = calcPctChange(m28?.last28?.watchHours, m28?.prev28?.watchHours);
+
+  const rtVs7d = Number(rt.vs7dAvgDelta || 0);
+
+  return {
+    rt: {
+      views48hNum: Number(rt.views48h || 0),
+      views48hFmt: fmtInt(rt.views48h || 0),
+      last24hFmt: fmtInt(rt.last24h || 0),
+      prev24hFmt: fmtInt(rt.prev24h || 0),
+      lastHourFmt: fmtInt(rt.lastHour || 0),
+      prevHourFmt: fmtInt(rt.prevHour || 0),
+      vs7dAvgDeltaFmt: rtVs7d >= 0 ? `+${fmt1(rtVs7d)}%` : `${fmt1(rtVs7d)}%`,
+    },
+    wk: {
+      viewsNum: Number(wk.views || 0),
+      viewsFmt: fmtInt(wk.views || 0),
+      watchHoursFmt: fmtInt(wk.watchHours || 0),
+      netSubsFmt: fmtInt(wk.netSubs || 0),
+      subsGainedFmt: fmtInt(wk.subscribersGained || 0),
+      subsLostFmt: fmtInt(wk.subscribersLost || 0),
+      netSubsNum: Number(wk.netSubs || 0),
+      convPer1kFmt: (Number(wk.views || 0) > 0) ? fmt1((Number(wk.netSubs || 0) / Number(wk.views || 1)) * 1000) : "0.0",
+      viewsChgPctFmt: wkViewsChg === null ? "N/A" : (wkViewsChg >= 0 ? `+${fmt1(wkViewsChg)}%` : `${fmt1(wkViewsChg)}%`),
+      subsChgPctFmt: wkSubsChg === null ? "N/A" : (wkSubsChg >= 0 ? `+${fmt1(wkSubsChg)}%` : `${fmt1(wkSubsChg)}%`),
+      watchChgPctFmt: wkWatchChg === null ? "N/A" : (wkWatchChg >= 0 ? `+${fmt1(wkWatchChg)}%` : `${fmt1(wkWatchChg)}%`),
+    },
+    m28: {
+      lastViewsNum: Number(m28?.last28?.views || 0),
+      lastViewsFmt: fmtInt(m28?.last28?.views || 0),
+      prevViewsFmt: fmtInt(m28?.prev28?.views || 0),
+      medianViewsFmt: fmtInt(m28?.median6m?.views || 0),
+      lastSubsNum: Number(m28?.last28?.netSubs || 0),
+      lastSubsFmt: fmtInt(m28?.last28?.netSubs || 0),
+      prevSubsFmt: fmtInt(m28?.prev28?.netSubs || 0),
+      lastWatchFmt: fmtInt(m28?.last28?.watchHours || 0),
+      prevWatchFmt: fmtInt(m28?.prev28?.watchHours || 0),
+      viewsChgPctFmt: m28ViewsChg === null ? "N/A" : (m28ViewsChg >= 0 ? `+${fmt1(m28ViewsChg)}%` : `${fmt1(m28ViewsChg)}%`),
+      subsChgPctFmt: m28SubsChg === null ? "N/A" : (m28SubsChg >= 0 ? `+${fmt1(m28SubsChg)}%` : `${fmt1(m28SubsChg)}%`),
+      watchChgPctFmt: m28WatchChg === null ? "N/A" : (m28WatchChg >= 0 ? `+${fmt1(m28WatchChg)}%` : `${fmt1(m28WatchChg)}%`),
+    },
+    focus: {
+      titleUpper,
+      isShort,
+      views7dFmt: fmtInt(focusA.views || 0),
+      viewsPerDayFmt: fmt1(focusD.viewsPerDay || 0),
+      impressionsFmt: fmtInt(focusA.impressions || 0),
+      ctrFmt: fmtPct1(focusA.ctr || 0),
+      avgViewPctFmt: fmtPct1(focusA.avgViewPercentage || 0),
+      likesFmt: fmtInt(focusA.likes || 0),
+      commentsFmt: fmtInt(focusA.comments || 0),
+      sharesFmt: fmtInt(focusA.shares || 0),
+      subsGainedFmt: fmtInt(focusA.subsGained || 0),
+      subsLostFmt: fmtInt(focusA.subsLost || 0),
+      churnPctFmt: fmtPct1(focusD.churnPct || 0),
+      subsPer1kFmt: fmt1(focusD.subsPer1kViews || 0),
+    },
+    best: {
+      views: bestViews ? { titleUpper: (bestViews.title || "").toUpperCase(), valueFmt: fmtInt(bestViews?.a7d?.views || 0) } : {},
+      ctr: bestCtr ? { titleUpper: (bestCtr.title || "").toUpperCase(), valueFmt: fmtPct1(bestCtr?.a7d?.ctr || 0) } : {},
+      ret: bestRet ? { titleUpper: (bestRet.title || "").toUpperCase(), valueFmt: fmtPct1(bestRet?.a7d?.avgViewPercentage || 0) } : {},
+      subs: bestSubs ? { titleUpper: (bestSubs.title || "").toUpperCase(), valueFmt: `${fmt1(bestSubs?.derived?.subsPer1kViews || 0)} SUBS/1K` } : {},
+      likeRate: bestLikeRate ? { titleUpper: (bestLikeRate.title || "").toUpperCase(), valueFmt: `${fmt1((Number(bestLikeRate?.a7d?.likes || 0) / Math.max(1, Number(bestLikeRate?.a7d?.views || 0))) * 1000)} LIKES/1K` } : {},
+      churn: worstChurn ? { titleUpper: (worstChurn.title || "").toUpperCase(), valueFmt: fmtPct1(worstChurn?.derived?.churnPct || 0) } : {},
+    },
+    traffic: {
+      topSourceKey: topTraffic ? String(topTraffic.key) : "",
+      topSourcePctFmt: (trafficSum > 0 && topTraffic) ? fmtPct1((Number(topTraffic.value || 0) / trafficSum) * 100) : "",
+      topShareKey: topShare ? String(topShare.key) : "",
+      topSharePctFmt: (shareSum > 0 && topShare) ? fmtPct1((Number(topShare.value || 0) / shareSum) * 100) : "",
+    },
+    aud: {
+      topCountryKey: topCountry ? String(topCountry.key) : "",
+      topCountryPctFmt: (countrySum > 0 && topCountry) ? fmtPct1((Number(topCountry.value || 0) / countrySum) * 100) : "",
+      subPctFmt: subPct === null ? "" : fmtPct1(subPct),
+      unsubPctFmt: unsubPct === null ? "" : fmtPct1(unsubPct),
+    },
+    cad: {
+      daysSinceUpload,
+      bestHourUtc: hud?.cadence?.bestHourUtc || "—",
+    }
+  };
+}
+
+function buildHudEngine(data) {
+  const ctx = buildHudEngineContext(data);
+  return buildHudEnginePayload(ctx, { poolSize: 32 });
+}
+
+
+/* =========================================================
    computeKPIs(env) — main orchestrator
    ---------------------------------------------------------
        Steps (high level):
@@ -1096,7 +971,7 @@ function buildVideoIntelList(videoDetails, maps, endIso) {
          4) Fetch extra optional metrics (retention, CTR, top videos) for HUD messages
          5) Return the final JSON shape consumed by app.js
    ========================================================= */
-async function computeKPIs(env) {
+async function computeKPIs(env, opts = {}) {
   const token = await getAccessToken(env);
   const ch = await fetchChannelBasics(token);
   const end = shiftDays(new Date(), -1);
@@ -1195,6 +1070,18 @@ async function computeKPIs(env) {
   const trafficPrev28 = await safeAnalytics(token, { startDate: prev28.startDate || isoDate(shiftDays(end, -55)), endDate: prev28.endDate || isoDate(shiftDays(end, -28)), dimensions: "insightTrafficSourceType", metrics: "views", sort: "-views", maxResults: "10" });
   const subStatus28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "subscribedStatus", metrics: "views", sort: "-views", maxResults: "5" });
   const country28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "country", metrics: "views", sort: "-views", maxResults: "5" });
+const sharing28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "sharingService", metrics: "views", sort: "-views", maxResults: "5" });
+const playlist28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "playlist", metrics: "views", sort: "-views", maxResults: "5" });
+const searchTerms28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "insightTrafficSourceDetail", metrics: "views", sort: "-views", maxResults: "5", filters: "insightTrafficSourceType==YT_SEARCH" });
+
+// cadence (best hour UTC) from last 28D hourly views
+const hour28 = await safeAnalytics(token, { startDate: last28Start, endDate: endIso, dimensions: "hour", metrics: "views", sort: "-views", maxResults: "1" });
+const bestHourUtc = hour28?.rows?.[0]?.[0] !== undefined ? String(hour28.rows[0][0]).padStart(2, "0") + ":00 UTC" : null;
+
+// Playlist titles (optional)
+const playlistIds = (playlist28?.rows || []).map(r => String(r?.[0] || "")).filter(Boolean).slice(0, 25);
+const playlistTitlesMap = await fetchPlaylistTitles(token, playlistIds);
+
 
   const v7dBundle = await fetchVideoAnalytics7dBundle(token, weeklyStart, endIso, 25);
   const videoIntelList = buildVideoIntelList(videoDetails, v7dBundle, endIso);
@@ -1210,46 +1097,16 @@ async function computeKPIs(env) {
     traffic: { last28: rowsToDimList(traffic28, "insightTrafficSourceType", "views"), prev28: rowsToDimList(trafficPrev28, "insightTrafficSourceType", "views") },
     subscribedStatus: rowsToDimList(subStatus28, "subscribedStatus", "views"),
     countries: rowsToDimList(country28, "country", "views"),
+    sharingServices: rowsToDimList(sharing28, "sharingService", "views"),
+    searchTerms: rowsToDimList(searchTerms28, "insightTrafficSourceDetail", "views"),
+    playlists: { last28: (playlist28?.rows || []).map(r => ({ key: String(r[0]||""), title: playlistTitlesMap[String(r[0]||"")] || "", value: Number(r[1]||0) })).filter(x => x.key) },
+    cadence: { bestHourUtc },
     videoIntel: { range7d: { startDate: weeklyStart, endDate: endIso }, videos: videoIntelList },
   };
 
-  
-
-  // ---------------- V3 HUD templates (server-rendered, safe) ----------------
-  let v3 = null;
-  let templates = [];
-  let templatesSample = [];
-  try {
-    const start7Iso = weeklyStart || isoDate(shiftDays(end, -6));
-    const start14Iso = isoDate(shiftDays(end, -13));
-    const start28Iso = (last28 && last28.startDate) ? last28.startDate : isoDate(shiftDays(end, -27));
-
-    v3 = await buildV3DataFromKpis({
-      token,
-      endIso,
-      start7Iso,
-      start14Iso,
-      start28Iso,
-      channelTitle: ch?.title || "",
-      uploads,
-      vidsById,
-      latestVideo,
-      weekly: weeklyPacked,
-      m28: { last28: last28.metrics, prev28: prev28.metrics },
-      realtime,
-      hud,
-      videoIntelList,
-    });
-
-    templates = buildHUDMessageTemplatesV3(v3);
-    templatesSample = pickRandomN(templates, 3);
-  } catch {
-    v3 = null;
-    templates = [];
-    templatesSample = [];
-  }
-return {
+  return {
     channel: ch,
+    warnings,
     weekly: {
       startDate: weeklyStart, endDate: endIso,
       netSubs: weeklyPacked.netSubs, views: weeklyPacked.views, watchHours: weeklyPacked.watchHours,
@@ -1267,57 +1124,66 @@ return {
     lifetime: { watchHours: life.totalHours },
     history28d,
     hud,
-    v3,
-    templatesCount: templates.length,
-    templates,
-    templatesSample,
+    hudEngine: buildHudEngine({
+      poolSize: opts?.poolSize,
+      includeTemplates: opts?.includeTemplates,
+       channel: ch, weekly: {
+      startDate: weeklyStart, endDate: endIso,
+      netSubs: weeklyPacked.netSubs, views: weeklyPacked.views, watchHours: weeklyPacked.watchHours,
+      subscribersGained: weeklyPacked.gained, subscribersLost: weeklyPacked.lost, minutesWatched: weeklyPacked.minutes,
+      prevNetSubs: prevWeeklyPacked.netSubs, prevViews: prevWeeklyPacked.views, prevWatchHours: prevWeeklyPacked.watchHours,
+      prevSubscribersGained: prevWeeklyPacked.gained, prevSubscribersLost: prevWeeklyPacked.lost,
+    }, m28: {
+      last28: { netSubs: last28.metrics.netSubs, views: last28.metrics.views, watchHours: last28.metrics.watchHours },
+      prev28: { netSubs: prev28.metrics.netSubs, views: prev28.metrics.views, watchHours: prev28.metrics.watchHours },
+      avg6m: { netSubs: avgSubs, views: avgViews, watchHours: avgWatch },
+      median6m: { netSubs: medianSubs, views: medianViews, watchHours: medianWatch },
+    }, realtime, lifetime: { watchHours: life.totalHours }, history28d, hud }),
   };
 }
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Allow-Methods": "GET,OPTIONS",
-};
-
 export async function onRequest(context) {
   const req = context.request;
+  const url = new URL(req.url);
 
   // CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: { ...CORS_HEADERS } });
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Methods": "GET,OPTIONS"
+      }
+    });
   }
 
   if (req.method !== "GET") {
-    return new Response(JSON.stringify({ ok: false, error: "Method Not Allowed" }, null, 2), {
-      status: 405,
-      headers: { "Content-Type": "application/json; charset=utf-8", ...CORS_HEADERS },
-    });
+    return Response.json({ ok: false, error: "Method Not Allowed" }, { status: 405 });
   }
+
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET,OPTIONS"
+  };
 
   try {
     const cache = caches.default;
-    const cacheKey = new Request(new URL(req.url).toString(), { method: "GET" });
-
+    const cacheKey = new Request(url.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
-    const data = await computeKPIs(context.env || {});
+    const opts = {
+      poolSize: url.searchParams.get("pool"),
+      includeTemplates: ["1", "true", "yes"].includes((url.searchParams.get("templates") || "").toLowerCase())
+    };
 
-    const res = new Response(JSON.stringify(data, null, 2), {
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "public, max-age=60",
-        ...CORS_HEADERS,
-      },
-    });
-
-    context.waitUntil?.(cache.put(cacheKey, res.clone()));
+    const data = await computeKPIs(context.env, opts);
+    const res = Response.json(data, { headers: { "Cache-Control": "public, max-age=55", ...cors } });
+    context.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
-  } catch (err) {
-    return new Response(JSON.stringify({ ok: false, error: err?.message || String(err) }, null, 2), {
-      status: 500,
-      headers: { "Content-Type": "application/json; charset=utf-8", ...CORS_HEADERS },
-    });
+  } catch (e) {
+    return Response.json({ ok: false, error: String(e) }, { status: 500, headers: cors });
   }
 }
