@@ -154,20 +154,30 @@ async function getAccessToken(env) {
        ytAnalyticsGET(): calls YouTube Analytics API (reports/query)
        safeAnalytics(): same as ytAnalyticsGET but returns null on failure (HUD should degrade gracefully)
    ========================================================= */
-async function ytDataGET(token, path, params = {}) {
+async function ytDataGET(apiKey, token, path, params = {}) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
-  });
 
-  const r = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // If apiKey is present, we use API-key auth (public Data API calls) and DO NOT send OAuth header.
+  if (apiKey) url.searchParams.set("key", apiKey);
 
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
+  }
+
+  const init = {};
+  if (!apiKey && token) {
+    init.headers = { Authorization: `Bearer ${token}` };
+  }
+
+  const r = await fetch(url.toString(), init);
   const data = await safeReadJson(r);
-  if (!r.ok) throw new Error(`YT_DATA ${path} ${r.status}: ${JSON.stringify(data)}`);
+
+  if (!r.ok) {
+    throw new Error(`YT_DATA ${path} ${r.status}: ${JSON.stringify(data)}`);
+  }
   return data;
 }
+
 
 async function ytAnalyticsGET(token, params = {}) {
   const url = new URL("https://youtubeanalytics.googleapis.com/v2/reports");
@@ -227,69 +237,68 @@ async function safeAnalytics(token, params = {}, env = null) {
        fetchRecentUploads() + fetchVideos():
          - gets recent video IDs and pulls titles + publish dates + durations.
    ========================================================= */
-async function fetchChannelBasics(token) {
-  const res = await ytDataGET(token, "channels", {
-    part: "snippet,statistics,contentDetails",
-    mine: "true"
-  });
+async function fetchChannelBasics(apiKey, channelId, token = "") {
+  // Prefer API-key auth (public) when channelId is provided.
+  if (apiKey && channelId) {
+    const data = await ytDataGET(apiKey, "", "channels", {
+      part: "snippet,statistics,contentDetails",
+      id: channelId
+    });
+    const it = data?.items?.[0];
+    if (!it) return null;
 
-  if (res?.error) {
+    const uploadsPlaylistId = it?.contentDetails?.relatedPlaylists?.uploads || "";
     return {
-      ok: false,
-      error: res.data || res,
-      channelId: "",
-      title: "Your Channel",
-      publishedAt: "",
-      subscribers: 0,
-      totalViews: 0,
-      videos: 0,
-      thumbnail: "",
-      uploadsPlaylistId: ""
+      channelId: it.id,
+      title: it.snippet?.title || "",
+      publishedAt: it.snippet?.publishedAt || "",
+      thumbnail:
+        it.snippet?.thumbnails?.high?.url ||
+        it.snippet?.thumbnails?.default?.url ||
+        "",
+      subscribers: safeNum(it.statistics?.subscriberCount, 0),
+      totalViews: safeNum(it.statistics?.viewCount, 0),
+      videos: safeNum(it.statistics?.videoCount, 0),
+      uploadsPlaylistId
     };
   }
 
-  const data = res.data || res;
-  const ch = data.items?.[0];
-  if (!ch) {
+  // Fallback (requires OAuth token with YouTube Data API scopes like youtube.readonly):
+  if (token) {
+    const data = await ytDataGET("", token, "channels", {
+      part: "snippet,statistics,contentDetails",
+      mine: "true"
+    });
+    const it = data?.items?.[0];
+    if (!it) return null;
+
+    const uploadsPlaylistId = it?.contentDetails?.relatedPlaylists?.uploads || "";
     return {
-      ok: false,
-      error: "No channel returned from Data API.",
-      channelId: "",
-      title: "Your Channel",
-      publishedAt: "",
-      subscribers: 0,
-      totalViews: 0,
-      videos: 0,
-      thumbnail: "",
-      uploadsPlaylistId: ""
+      channelId: it.id,
+      title: it.snippet?.title || "",
+      publishedAt: it.snippet?.publishedAt || "",
+      thumbnail:
+        it.snippet?.thumbnails?.high?.url ||
+        it.snippet?.thumbnails?.default?.url ||
+        "",
+      subscribers: safeNum(it.statistics?.subscriberCount, 0),
+      totalViews: safeNum(it.statistics?.viewCount, 0),
+      videos: safeNum(it.statistics?.videoCount, 0),
+      uploadsPlaylistId
     };
   }
 
-  return {
-    ok: true,
-    channelId: ch.id || "",
-    title: ch.snippet?.title || "",
-    publishedAt: ch.snippet?.publishedAt || "",
-    subscribers: Number(ch.statistics?.subscriberCount || 0),
-    totalViews: Number(ch.statistics?.viewCount || 0),
-    videos: Number(ch.statistics?.videoCount || 0),
-    thumbnail: ch.snippet?.thumbnails?.high?.url || ch.snippet?.thumbnails?.default?.url || "",
-    uploadsPlaylistId: ch.contentDetails?.relatedPlaylists?.uploads || ""
-  };
+  return null;
 }
 
-async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
-  if (!uploadsPlaylistId) return [];
-
-  const res = await ytDataGET(token, "playlistItems", {
+async function fetchRecentUploads(apiKey, uploadsPlaylistId, maxResults = 25) {
+  if (!apiKey || !uploadsPlaylistId) return [];
+  const data = await ytDataGET(apiKey, "", "playlistItems", {
     part: "snippet,contentDetails",
     playlistId: uploadsPlaylistId,
     maxResults: clamp(maxResults, 1, 50)
   });
 
-  if (res?.error) return [];
-
-  const data = res.data || res;
   const items = Array.isArray(data?.items) ? data.items : [];
   return items
     .map(it => ({
@@ -300,73 +309,53 @@ async function fetchRecentUploads(token, uploadsPlaylistId, maxResults = 25) {
     .filter(x => x.videoId);
 }
 
-async function fetchVideos(token, ids) {
-  const videoIds = (ids || []).filter(Boolean).slice(0, 50);
-  const map = new Map();
-  if (!videoIds.length) return map;
+async function fetchVideos(apiKey, videoIds = []) {
+  const ids = Array.from(new Set((videoIds || []).filter(Boolean))).slice(0, 50);
+  if (!apiKey || !ids.length) return [];
 
-  const res = await ytDataGET(token, "videos", {
+  const data = await ytDataGET(apiKey, "", "videos", {
     part: "snippet,contentDetails,statistics",
-    id: videoIds.join(",")
+    id: ids.join(",")
   });
 
-  if (res?.error) return map;
-
-  const data = res.data || res;
-  for (const it of data.items || []) {
-    map.set(it.id, {
-      id: it.id,
-      title: it.snippet?.title || "",
-      publishedAt: it.snippet?.publishedAt || "",
-      durationSec: parseISODurationToSeconds(it.contentDetails?.duration),
-      views: Number(it.statistics?.viewCount || 0),
-      likes: Number(it.statistics?.likeCount || 0),
-      comments: Number(it.statistics?.commentCount || 0),
-    });
-  }
-  return map;
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items.map(v => {
+    const id = v?.id || "";
+    return {
+      // keep BOTH for compatibility
+      id,
+      videoId: id,
+      title: v?.snippet?.title || "",
+      publishedAt: v?.snippet?.publishedAt || "",
+      durationSec: parseISODurationToSeconds(v?.contentDetails?.duration || ""),
+      views: safeNum(v?.statistics?.viewCount, 0),
+      likes: safeNum(v?.statistics?.likeCount, 0),
+      comments: safeNum(v?.statistics?.commentCount, 0)
+    };
+  });
 }
 
-async function fetchPlaylistTitles(token, ids) {
-  const playlistIds = (ids || []).filter(Boolean).slice(0, 50);
-  const map = new Map();
-  if (!playlistIds.length) return map;
+async function fetchPlaylistTitles(apiKey, playlistIds = []) {
+  const ids = Array.from(new Set((playlistIds || []).filter(Boolean))).slice(0, 50);
+  if (!apiKey || !ids.length) return {};
 
-  const res = await ytDataGET(token, "playlists", {
+  const data = await ytDataGET(apiKey, "", "playlists", {
     part: "snippet",
-    id: playlistIds.join(",")
+    id: ids.join(",")
   });
 
-  if (res?.error) return map;
-
-  const data = res.data || res;
-  for (const it of data.items || []) {
-    map.set(it.id, it.snippet?.title || "");
-  }
-  return map;
-}
-
-/* =========================================================
-   Window reducers
-   ---------------------------------------------------------
-       sumDailyRows(): sum a slice of the daily array
-       packMetrics(): convert sum into {views, minutes, watchHours, gained, lost, netSubs}
-       These are used for 7D and 28D windows to keep front-end field naming stable.
-   ========================================================= */
-function sumDailyRows(rows, startIdx, endIdx) {
-  const out = { views: 0, minutes: 0, gained: 0, lost: 0 };
-  if (!Array.isArray(rows)) return out;
-  const a = clamp(startIdx, 0, rows.length - 1);
-  const b = clamp(endIdx, 0, rows.length - 1);
-  for (let i = a; i <= b; i++) {
-    const r = rows[i];
-    out.views += Number(r.views || 0);
-    out.minutes += Number(r.minutes || 0);
-    out.gained += Number(r.gained || 0);
-    out.lost += Number(r.lost || 0);
+  const out = {};
+  const items = Array.isArray(data?.items) ? data.items : [];
+  for (const pl of items) {
+    const id = pl?.id;
+    if (!id) continue;
+    out[id] = pl?.snippet?.title || "";
   }
   return out;
 }
+
+
+
 
 function packMetrics(sum) {
   const minutes = Number(sum.minutes || 0);
@@ -934,16 +923,16 @@ function buildHudEngineContext(data) {
       churn: worstChurn ? { titleUpper: (worstChurn.title || "").toUpperCase(), valueFmt: fmtPct1(worstChurn?.derived?.churnPct || 0) } : {},
     },
     traffic: {
-      topSourceKey: topTraffic ? String(topTraffic.key) : "",
-      topSourcePctFmt: (trafficSum > 0 && topTraffic) ? fmtPct1((Number(topTraffic.value || 0) / trafficSum) * 100) : "",
-      topShareKey: topShare ? String(topShare.key) : "",
-      topSharePctFmt: (shareSum > 0 && topShare) ? fmtPct1((Number(topShare.value || 0) / shareSum) * 100) : "",
+      topSourceKey: topTraffic ? String(topTraffic.key) : "UNKNOWN",
+      topSourcePctFmt: (trafficSum > 0 && topTraffic) ? fmtPct1((Number(topTraffic.value || 0) / trafficSum) * 100) : "0%",
+      topShareKey: topShare ? String(topShare.key) : "OTHER",
+      topSharePctFmt: (shareSum > 0 && topShare) ? fmtPct1((Number(topShare.value || 0) / shareSum) * 100) : "0%",
     },
     aud: {
-      topCountryKey: topCountry ? String(topCountry.key) : "",
+      topCountryKey: topCountry ? String(topCountry.key) : "UNKNOWN",
       topCountryPctFmt: (countrySum > 0 && topCountry) ? fmtPct1((Number(topCountry.value || 0) / countrySum) * 100) : "",
-      subPctFmt: subPct === null ? "" : fmtPct1(subPct),
-      unsubPctFmt: unsubPct === null ? "" : fmtPct1(unsubPct),
+      subPctFmt: subPct === null ? "0%" : fmtPct1(subPct),
+      unsubPctFmt: unsubPct === null ? "0%" : fmtPct1(unsubPct),
     },
     cad: {
       daysSinceUpload,
@@ -973,7 +962,15 @@ function buildHudEngine(data) {
    ========================================================= */
 async function computeKPIs(env, opts = {}) {
   const token = await getAccessToken(env);
-  const ch = await fetchChannelBasics(token);
+  const apiKey = env.YT_API_KEY || "";
+  const channelId = opts.channelId || env.YT_CHANNEL_ID || "";
+
+  const ch = await fetchChannelBasics(apiKey, channelId, token);
+  if (!ch) {
+    throw new Error(
+      "Unable to fetch channel basics. Provide ?channelId=YOUR_CHANNEL_ID and set YT_API_KEY (or re-auth with YouTube Data API scopes like youtube.readonly)."
+    );
+  }
   const end = shiftDays(new Date(), -1);
   const endIso = isoDate(end);
   const dailyStart = isoDate(shiftDays(end, -195));
@@ -1050,14 +1047,14 @@ async function computeKPIs(env, opts = {}) {
   }));
 
   const life = await fetchLifetimeWatchHours(token, ch.publishedAt, endIso);
-  const uploads = await fetchRecentUploads(token, ch.uploadsPlaylistId, 25);
+  const uploads = await fetchRecentUploads(apiKey, ch.uploadsPlaylistId, 25);
   const latestUpload = uploads[0] || null;
 
   const top7Resp = await safeAnalytics(token, { startDate: weeklyStart, endDate: endIso, dimensions: "video", metrics: "views", sort: "-views", maxResults: "1" });
   const top7VideoId = top7Resp?.rows?.[0]?.[0] || null;
   
   const videoIds = uniq([...(uploads.map((u) => u.videoId)), top7VideoId]);
-  const videoDetails = await fetchVideos(token, videoIds);
+  const videoDetails = await fetchVideos(apiKey, videoIds);
   const vidsById = Object.fromEntries(videoDetails.map((v) => [v.videoId, v]));
   const latestVideo = latestUpload?.videoId ? vidsById[latestUpload.videoId] || null : null;
   const top7Video = top7VideoId ? vidsById[top7VideoId] || null : null;
@@ -1080,7 +1077,7 @@ const bestHourUtc = hour28?.rows?.[0]?.[0] !== undefined ? String(hour28.rows[0]
 
 // Playlist titles (optional)
 const playlistIds = (playlist28?.rows || []).map(r => String(r?.[0] || "")).filter(Boolean).slice(0, 25);
-const playlistTitlesMap = await fetchPlaylistTitles(token, playlistIds);
+const playlistTitlesMap = await fetchPlaylistTitles(apiKey, playlistIds);
 
 
   const v7dBundle = await fetchVideoAnalytics7dBundle(token, weeklyStart, endIso, 25);
@@ -1176,7 +1173,8 @@ export async function onRequest(context) {
 
     const opts = {
       poolSize: url.searchParams.get("pool"),
-      includeTemplates: ["1", "true", "yes"].includes((url.searchParams.get("templates") || "").toLowerCase())
+      includeTemplates: ["1", "true", "yes"].includes((url.searchParams.get("templates") || "").toLowerCase()),
+      channelId: url.searchParams.get("channelId") || url.searchParams.get("cid") || ""
     };
 
     const data = await computeKPIs(context.env, opts);
